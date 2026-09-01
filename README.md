@@ -56,8 +56,9 @@ ids cannot be predicted by a seed file. `link-auth-users.sql` matches the accoun
 up the profile, role, branch access and employee link. It prints who was linked and what each of them
 can now do.
 
-`seed.sql` also creates a demo dealer with three branches and eight employees. Delete it before going
-live — the teardown is documented at the top of the file.
+`seed.sql` also creates a demo dealer with three branches and eight employees. Remove it before going
+live with `psql "$DATABASE_URL" -f scripts/remove-demo-dealer.sql`, which keeps the permission
+catalogue, the system roles and the audit trail.
 
 ---
 

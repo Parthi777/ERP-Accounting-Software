@@ -13052,7 +13052,12 @@ select r.id, p.code
 -- DEMO — one dealer, three branches, seven users, chart of accounts
 -- =============================================================================
 -- Remove everything below with:
---   delete from public.dealers where code = 'SBM';
+--   psql "$DATABASE_URL" -f scripts/remove-demo-dealer.sql
+--
+-- Not a plain `delete from public.dealers where code = 'SBM'` — that fails on
+-- branches_dealer_id_fkey, and deleting the children first fails on the
+-- append-only ledger triggers. Both are the schema defending itself correctly;
+-- the script is the sanctioned way through.
 -- =============================================================================
 do $$
 declare
