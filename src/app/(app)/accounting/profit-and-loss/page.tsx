@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/data-table/data-table';
 import { SolidPanel } from '@/components/ui/panel';
 import { StatementFilters } from '@/components/accounting/statement-filters';
 import { StatementSection } from '@/components/accounting/statement-section';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, subtract, ZERO, type Paise } from '@/lib/money';
 import { formatDateRange } from '@/lib/format';
 import { monthRange } from '@/lib/period';
@@ -37,14 +38,17 @@ export default async function ProfitAndLossPage({
         title="Profit & Loss"
         description={formatDateRange(from, to)}
         action={
-          <StatementFilters
-            basePath="/accounting/profit-and-loss"
-            branches={context.accessibleBranches.map((b) => ({ id: b.id, name: b.name }))}
-            canViewAllBranches={context.hasAllBranchAccess}
-            branchId={branchId}
-            from={from}
-            to={to}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <StatementFilters
+              basePath="/accounting/profit-and-loss"
+              branches={context.accessibleBranches.map((b) => ({ id: b.id, name: b.name }))}
+              canViewAllBranches={context.hasAllBranchAccess}
+              branchId={branchId}
+              from={from}
+              to={to}
+            />
+            <ExportButtons report="profit-and-loss" />
+          </div>
         }
       />
 

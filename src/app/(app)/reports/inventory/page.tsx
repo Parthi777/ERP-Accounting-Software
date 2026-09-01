@@ -13,6 +13,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, paise } from '@/lib/money';
 import { monthRange } from '@/lib/period';
 import { formatDate } from '@/lib/format';
@@ -144,6 +145,17 @@ export default async function Page({
         title="Inventory report"
         description="Vehicle stock, parts stock and movement. Local and company stock stay separate (spec §31, §60.16)."
         count={view === 'VEHICLES' ? vehicles.length : view === 'PARTS' ? items.length : movement.length}
+        action={
+          <ExportButtons
+            report={
+              view === 'VEHICLES'
+                ? 'vehicle-stock'
+                : view === 'PARTS'
+                  ? 'inventory-stock-summary'
+                  : 'inventory-movement'
+            }
+          />
+        }
       />
 
       <Panel className="mb-4 p-4">

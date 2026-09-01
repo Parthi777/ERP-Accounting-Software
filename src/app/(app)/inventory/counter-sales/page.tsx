@@ -13,6 +13,7 @@ import { CounterSaleStart } from '@/components/service/counter-sale-start';
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -91,7 +92,12 @@ export default async function Page({
         title="Counter sales"
         description="Accessories and spares sold over the counter, billed through the same engine as service (spec §33)."
         count={rows.length}
-        action={<CounterSaleStart customers={customers} requireCustomer={requireCustomer} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="counter-sales" />
+            <CounterSaleStart customers={customers} requireCustomer={requireCustomer} />
+          </div>
+        }
       />
 
       <Panel className="mb-4 p-4">

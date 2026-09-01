@@ -5,6 +5,7 @@ import { requirePermission } from '@/server/auth/tenant-context';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, paise, percentageOf } from '@/lib/money';
 import { monthRange } from '@/lib/period';
 import { formatDate } from '@/lib/format';
@@ -62,6 +63,7 @@ export default async function Page({
         title="Margin report"
         description={`Where the money is actually made, ${formatDate(range.from)} – ${formatDate(range.to)} (spec §41).`}
         count={rows.length}
+        action={<ExportButtons report="margin" />}
       />
 
       <Panel className="mb-4 p-4">

@@ -7,6 +7,7 @@ import {
 import { requirePermission } from '@/server/auth/tenant-context';
 import { PageHeader } from '@/components/data-table/data-table';
 import { PartyLedgerView, SUPPLIER_LEDGER_LABELS } from '@/components/accounting/party-ledger-view';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { monthRange } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Supplier ledger' };
@@ -41,6 +42,7 @@ export default async function Page({
         title="Supplier ledger"
         description="A supplier's running account, derived from party-tagged journal lines so it always agrees with Supplier Payables (spec §41)."
         count={ledger?.lines.length}
+        action={<ExportButtons report="supplier-ledger" />}
       />
 
       <PartyLedgerView

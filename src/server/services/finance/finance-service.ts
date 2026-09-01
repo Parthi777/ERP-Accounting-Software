@@ -80,6 +80,12 @@ export async function getFinanceApplications(params: {
   readonly status: string;
   readonly branchId: string | null;
   readonly q?: string;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<FinanceApplicationRow[]> {
   const context = await requirePermission('finance.applications.view');
   const supabase = await createSupabaseServerClient();
@@ -90,7 +96,7 @@ export async function getFinanceApplications(params: {
       'id, application_number, application_date, loan_amount, down_payment, approved_amount, disbursed_amount, pending_amount, approval_status, disbursement_status, dd_number, bank_reference, commission_amount, customer_id, finance_company_id, customers!inner ( name ), finance_companies!inner ( name ), branches!inner ( name ), vehicles ( chassis_no )',
     )
     .order('application_date', { ascending: false })
-    .limit(200);
+    .limit(params.limit ?? 200);
 
   if (params.status !== 'ALL') {
     query = query.eq('approval_status', params.status as ApprovalStatus);
@@ -489,7 +495,7 @@ export interface SettlementRow {
   readonly journalEntryId: string | null;
 }
 
-export async function getFinanceSettlements(status: string): Promise<SettlementRow[]> {
+export async function getFinanceSettlements(status: string, limit = 200): Promise<SettlementRow[]> {
   const context = await requirePermission('finance.settlements.manage');
   const supabase = await createSupabaseServerClient();
 
@@ -499,7 +505,7 @@ export async function getFinanceSettlements(status: string): Promise<SettlementR
       'id, settlement_number, settlement_date, from_date, to_date, gross_amount, commission_amount, deductions, net_amount, status, journal_entry_id, finance_companies!inner ( name )',
     )
     .order('settlement_date', { ascending: false })
-    .limit(200);
+    .limit(limit);
 
   if (status !== 'ALL') {
     query = query.eq('status', status as SettlementStatus);

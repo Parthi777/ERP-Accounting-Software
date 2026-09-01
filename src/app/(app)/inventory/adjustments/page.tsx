@@ -5,6 +5,7 @@ import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { StockAdjustmentForm } from '@/components/inventory/stock-adjustment-form';
 import { Badge } from '@/components/ui/badge';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Stock adjustments' };
@@ -55,6 +56,7 @@ export default async function Page() {
         title="Stock adjustments"
         description="Always an explicit, audited movement with a reason — never a silent quantity change (spec §34, §60.22)."
         count={lots.length}
+        action={<ExportButtons report="stock-lots" />}
       />
 
       <div className="mb-4">

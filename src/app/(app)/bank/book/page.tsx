@@ -9,6 +9,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { BankEntryForm } from '@/components/bank/bank-entry-form';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -98,9 +99,12 @@ export default async function Page({
         description={`${account.name} · ${account.bankName} · ${account.accountNumber}`}
         count={entries.length}
         action={
-          <Button variant="secondary" size="sm" asChild>
-            <Link href="/bank"><ArrowLeft aria-hidden />Accounts</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="bank-book" extra={{ account: account.id }} />
+            <Button variant="secondary" size="sm" asChild>
+              <Link href="/bank"><ArrowLeft aria-hidden />Accounts</Link>
+            </Button>
+          </div>
         }
       />
 

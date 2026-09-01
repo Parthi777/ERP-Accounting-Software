@@ -8,6 +8,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, paise } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -102,9 +103,12 @@ export default async function Page({
         description="Workshop invoices (spec §32). Posting recognises revenue, GST, cost and stock together."
         count={rows.length}
         action={
-          <Button variant="secondary" size="sm" asChild>
-            <Link href="/service"><ArrowLeft aria-hidden />Job cards</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="service-invoices" />
+            <Button variant="secondary" size="sm" asChild>
+              <Link href="/service"><ArrowLeft aria-hidden />Job cards</Link>
+            </Button>
+          </div>
         }
       />
 

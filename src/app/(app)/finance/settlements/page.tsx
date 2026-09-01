@@ -12,6 +12,7 @@ import { SettlementForm, SettlementPostAction } from '@/components/finance/settl
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -132,6 +133,7 @@ export default async function Page({
         title="Finance settlements"
         description="What a finance company has paid against financed vehicles, and what it withheld (spec §26)."
         count={rows.length}
+        action={<ExportButtons report="finance-settlements" />}
       />
 
       <div className="mb-4">

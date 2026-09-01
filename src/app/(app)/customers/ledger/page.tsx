@@ -7,6 +7,7 @@ import {
 import { requirePermission } from '@/server/auth/tenant-context';
 import { PageHeader } from '@/components/data-table/data-table';
 import { PartyLedgerView, CUSTOMER_LEDGER_LABELS } from '@/components/accounting/party-ledger-view';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { monthRange } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Customer ledger' };
@@ -41,6 +42,7 @@ export default async function Page({
         title="Customer ledger"
         description="A customer's running account: what was invoiced, what was received, and what is outstanding (spec §11)."
         count={ledger?.lines.length}
+        action={<ExportButtons report="customer-ledger" />}
       />
 
       <PartyLedgerView

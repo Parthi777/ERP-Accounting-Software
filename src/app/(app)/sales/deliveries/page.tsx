@@ -12,6 +12,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { DeliverAction } from '@/components/sales/deliver-action';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDate, formatDateTime } from '@/lib/format';
 
@@ -178,6 +179,7 @@ export default async function Page({
         title="Deliveries"
         description="Posted sales waiting to be handed over. Delivery issues a note and closes the sale (spec §19)."
         count={rows.length}
+        action={<ExportButtons report="deliveries" />}
       />
       <Filters view={view} q={params.q} />
       <DataTable

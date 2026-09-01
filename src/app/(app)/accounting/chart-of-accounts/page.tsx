@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { getChartOfAccounts, type ChartAccount } from '@/server/services/accounting/accounting-service';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Badge } from '@/components/ui/badge';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = { title: 'Chart of Accounts' };
@@ -68,6 +69,7 @@ export default async function ChartOfAccountsPage() {
         title="Chart of Accounts"
         description="Every module posts into these accounts. Mappings are configured as accounting rules, never hard-coded."
         count={accounts.length}
+        action={<ExportButtons report="chart-of-accounts" />}
       />
       <DataTable
         columns={columns}

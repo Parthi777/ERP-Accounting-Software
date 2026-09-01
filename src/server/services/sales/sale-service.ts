@@ -60,6 +60,12 @@ export async function getSales(params: {
   readonly status: string;
   readonly branchId: string | null;
   readonly q?: string;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<SaleListRow[]> {
   const context = await requirePermission('sales.view');
   const supabase = await createSupabaseServerClient();
@@ -70,7 +76,7 @@ export async function getSales(params: {
       'id, invoice_number, invoice_date, total_amount, paid_amount, finance_amount, balance_amount, status, customers!inner ( name, customer_code ), vehicles!inner ( chassis_no, vehicle_models ( brand, name ) ), branches!inner ( name )',
     )
     .order('invoice_date', { ascending: false })
-    .limit(200);
+    .limit(params.limit ?? 200);
 
   if (params.status !== 'ALL') {
     query = query.eq('status', params.status as SaleStatus);
@@ -608,6 +614,12 @@ export interface DeliveryRow {
 export async function getDeliveries(params: {
   readonly branchId: string | null;
   readonly q?: string;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<DeliveryRow[]> {
   const context = await requirePermission('sales.view');
   const supabase = await createSupabaseServerClient();
@@ -618,7 +630,7 @@ export async function getDeliveries(params: {
       'id, delivery_number, delivered_at, sale_id, received_by_name, odometer, remarks, sales!inner ( invoice_number, customers!inner ( name ) ), vehicles!inner ( chassis_no, vehicle_models ( brand, name ) ), branches!inner ( name )',
     )
     .order('delivered_at', { ascending: false })
-    .limit(200);
+    .limit(params.limit ?? 200);
 
   const branchId = resolveBranch(context, params.branchId);
   if (branchId) {

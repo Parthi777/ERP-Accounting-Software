@@ -8,6 +8,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR, subtract } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -87,11 +88,14 @@ export default async function BookingsPage({
         description="An advance is money held, not revenue — it posts to Customer Advances until the sale is raised."
         count={rows.length}
         action={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/bookings/new"><Plus aria-hidden />New booking</Link>
-            </Button>
-          ) : undefined
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="bookings" />
+            {canCreate && (
+              <Button asChild>
+                <Link href="/bookings/new"><Plus aria-hidden />New booking</Link>
+              </Button>
+            )}
+          </div>
         }
       />
 

@@ -7,6 +7,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 import { monthRange } from '@/lib/period';
@@ -99,6 +100,7 @@ export default async function JournalsPage({
         title="Journal Entries"
         description="Every module posts into this one ledger. A posted entry is immutable; corrections are reversals."
         count={rows.length}
+        action={<ExportButtons report="journal-register" />}
       />
 
       <Panel className="mb-4 p-3">

@@ -142,3 +142,43 @@ than not displaying them.
 4. Add a repository, then a service that checks permissions and redacts restricted fields.
 5. Replace the placeholder page; set `status: 'ready'` in `src/config/navigation.ts`.
 6. `npm run verify`.
+
+## Report exports (PDF and Excel)
+
+Every report screen offers an Excel and a PDF download. Both are generated on the
+server by `GET /api/export/<report>?format=xlsx|pdf`, carrying the screen's own
+query string so the file matches the filters on display.
+
+The unit of the system is a **report registry entry** (`src/server/export/reports/`).
+An entry names a permission, a loader, and a list of columns. The loader calls the
+same service the page called — never the database — which is what makes an export
+obey the same tenant scoping and the same restricted-field rules as the screen it
+came from (§47, §52). Cost, margin and commission columns are dropped for sessions
+that may not see them, so the header does not advertise what the data withholds.
+
+    screen ──┐
+             ├── service ── repository ── database
+    export ──┘
+
+Adding an export is a registry entry plus `<ExportButtons report="..."/>`; there is
+no new route and no second copy of the query. `npm run check:exports` fails the
+build if a button names a report that does not exist.
+
+Three details worth knowing:
+
+- **Money lands in Excel as a number in rupees**, with the Indian grouping format
+  `#,##,##0.00`, not as a formatted string — the first thing anyone does with an
+  export is sum a column, and `"₹1,25,000.00"` sums to zero. Dates land as dates.
+- **Row caps are raised for exports and truncation is declared.** Screens cap at
+  200–500 rows; exports ask for `EXPORT_ROW_CAP` (10,000). If a loader comes back
+  with a full page, both renderers print an incomplete-export banner. A financial
+  extract that quietly stops partway is worse than none.
+- **The PDF embeds DejaVu Sans Condensed** (`src/server/export/fonts/`). The PDF
+  base-fourteen fonts are WinAnsi and have no ₹, so the built-ins cannot render a
+  single amount in this application. `next.config.ts` lists the directory under
+  `outputFileTracingIncludes`, because file tracing follows imports and cannot see
+  a font opened by path — without it the standalone build would fall back to
+  Helvetica and print `INR`.
+
+Every successful export writes an `EXPORT` audit row (§46): who, which report,
+which filters, how many rows.

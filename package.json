@@ -16,9 +16,10 @@
     "check:permissions": "tsx scripts/check-permissions-sync.ts",
     "check:nav": "tsx scripts/check-nav-status.ts",
     "db:verify": "bash scripts/verify-migrations.sh",
-    "verify": "npm run typecheck && npm run lint && npm run check:permissions && npm run check:nav && npm run db:verify && npm run build",
+    "verify": "npm run typecheck && npm run lint && npm run check:permissions && npm run check:nav && npm run check:exports && npm run db:verify && npm run build",
     "types:generate": "bash scripts/generate-types.sh",
-    "db:incremental": "bash scripts/build-incremental.sh"
+    "db:incremental": "bash scripts/build-incremental.sh",
+    "check:exports": "tsx scripts/check-exports.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.2.6",
@@ -39,8 +40,10 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
+    "exceljs": "^4.4.0",
     "lucide-react": "^1.37.0",
     "next": "^16.3.3",
+    "pdfkit": "^0.20.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.86.0",
@@ -52,6 +55,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.10.1",
+    "@types/pdfkit": "^0.17.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "eslint": "^9.39.0",

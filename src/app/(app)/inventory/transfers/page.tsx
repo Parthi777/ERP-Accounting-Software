@@ -5,6 +5,7 @@ import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { StockTransferForm } from '@/components/inventory/stock-transfer-form';
 import { Badge } from '@/components/ui/badge';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Stock transfers' };
@@ -55,6 +56,7 @@ export default async function Page() {
         title="Stock transfers"
         description="Accessory and spare movements between branches, with the local/company split preserved (spec §35, §60.16)."
         count={lots.length}
+        action={<ExportButtons report="stock-lots" />}
       />
 
       <div className="mb-4">

@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/data-table/data-table';
 import { SolidPanel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { StatementFilters } from '@/components/accounting/statement-filters';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, ZERO, type Paise } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -35,13 +36,16 @@ export default async function TrialBalancePage({
         title="Trial Balance"
         description={`As at ${formatDate(asOn)}`}
         action={
-          <StatementFilters
-            basePath="/accounting/trial-balance"
-            branches={context.accessibleBranches.map((b) => ({ id: b.id, name: b.name }))}
-            canViewAllBranches={context.hasAllBranchAccess}
-            branchId={branchId}
-            asOn={asOn}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <StatementFilters
+              basePath="/accounting/trial-balance"
+              branches={context.accessibleBranches.map((b) => ({ id: b.id, name: b.name }))}
+              canViewAllBranches={context.hasAllBranchAccess}
+              branchId={branchId}
+              asOn={asOn}
+            />
+            <ExportButtons report="trial-balance" />
+          </div>
         }
       />
 

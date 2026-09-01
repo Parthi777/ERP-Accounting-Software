@@ -42,6 +42,12 @@ export async function getBookings(params: {
   readonly status: string;
   readonly branchId: string | null;
   readonly q?: string;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<BookingListRow[]> {
   const context = await requirePermission('bookings.view');
   const supabase = await createSupabaseServerClient();
@@ -52,7 +58,7 @@ export async function getBookings(params: {
       'id, booking_number, booking_date, booking_amount, received_amount, status, expected_delivery, customers!inner ( name, customer_code ), vehicle_models!inner ( brand, name ), branches!inner ( name )',
     )
     .order('booking_date', { ascending: false })
-    .limit(200);
+    .limit(params.limit ?? 200);
 
   if (params.status !== 'ALL') {
     query = query.eq('status', params.status as 'OPEN');

@@ -13,6 +13,7 @@ import { ApplicationActions } from '@/components/finance/application-actions';
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR, toRupees } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -160,6 +161,7 @@ export default async function Page({
         title="HP sales"
         description="Hire-purchase applications from request to disbursement (spec §27)."
         count={rows.length}
+        action={<ExportButtons report="finance-applications" />}
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

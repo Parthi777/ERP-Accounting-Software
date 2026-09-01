@@ -44,6 +44,12 @@ export async function getJournals(params: {
   readonly branchId: string | null;
   readonly module: SourceModule | null;
   readonly status: JournalStatus | null;
+  /**
+   * Row cap. Defaults to the repository's 200, which is all the screen shows;
+   * the report exporter raises it, because a journal register that stops at 200
+   * entries without saying so is not a register.
+   */
+  readonly limit?: number;
 }) {
   const context = await requirePermission('accounting.journals.view');
   return repository.listJournals({ ...params, branchId: resolveBranch(context, params.branchId) });

@@ -64,6 +64,12 @@ function resolveBranch(context: TenantContext, requested: string | null): string
 export async function getVehicleTransfers(params: {
   readonly status: string;
   readonly branchId: string | null;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<VehicleTransferRow[]> {
   const context = await requirePermission('vehicles.transfers.view');
   const supabase = await createSupabaseServerClient();
@@ -74,7 +80,7 @@ export async function getVehicleTransfers(params: {
       'id, transfer_number, status, dispatched_at, received_at, remarks, from_branch_id, to_branch_id, vehicles!inner ( chassis_no, vehicle_models ( brand, name ) ), from_branch:branches!vehicle_transfers_from_tenant_fkey ( name ), to_branch:branches!vehicle_transfers_to_tenant_fkey ( name )',
     )
     .order('dispatched_at', { ascending: false })
-    .limit(200);
+    .limit(params.limit ?? 200);
 
   if (params.status !== 'ALL') {
     query = query.eq('status', params.status as VehicleTransferRow['status']);

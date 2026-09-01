@@ -5,6 +5,7 @@ import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, paise } from '@/lib/money';
 import { monthRange } from '@/lib/period';
 import { formatDate } from '@/lib/format';
@@ -73,6 +74,7 @@ export default async function Page({
         title="Finance report"
         description={`Hire-purchase business by finance company, ${formatDate(range.from)} – ${formatDate(range.to)} (spec §41).`}
         count={rows.length}
+        action={<ExportButtons report="finance-summary" />}
       />
 
       <Panel className="mb-4 p-4">

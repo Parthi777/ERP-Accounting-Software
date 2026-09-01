@@ -8,6 +8,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, paise } from '@/lib/money';
 import { monthRange } from '@/lib/period';
 import { formatDate } from '@/lib/format';
@@ -105,9 +106,13 @@ export default async function Page({
         description="Every outward supply behind the return, invoice by invoice (spec §40, §41)."
         count={rows.length}
         action={
-          <Button variant="secondary" size="sm" asChild>
-            <Link href="/gst"><ArrowLeft aria-hidden />GST summary</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="gst-register" label={false} />
+            <ExportButtons report="gst-hsn-summary" />
+            <Button variant="secondary" size="sm" asChild>
+              <Link href="/gst"><ArrowLeft aria-hidden />GST summary</Link>
+            </Button>
+          </div>
         }
       />
 

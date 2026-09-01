@@ -105,6 +105,12 @@ export async function getJobCards(params: {
   readonly status: string;
   readonly branchId?: string | null;
   readonly q?: string;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<JobCardRow[]> {
   const context = await requirePermission('service.jobcards.view');
   const supabase = await createSupabaseServerClient();
@@ -115,7 +121,7 @@ export async function getJobCards(params: {
       'id, job_card_number, job_date, registration_no, service_type, complaint, status, customer_id, customers!inner ( name ), branches!inner ( name ), employees!jc_advisor_tenant_fkey ( name ), service_invoices ( id, invoice_number, total_amount, status )',
     )
     .order('job_date', { ascending: false })
-    .limit(200);
+    .limit(params.limit ?? 200);
 
   if (params.status !== 'ALL') {
     query = query.eq('status', params.status as 'OPEN');
@@ -558,6 +564,12 @@ export interface ServiceInvoiceRow {
 export async function getServiceInvoices(params: {
   readonly status: string;
   readonly branchId?: string | null;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<ServiceInvoiceRow[]> {
   const context = await requirePermission('service.jobcards.view');
   const supabase = await createSupabaseServerClient();
@@ -570,7 +582,7 @@ export async function getServiceInvoices(params: {
     // Counter sales share this table but are their own screen (spec §33).
     .eq('invoice_type', 'SERVICE')
     .order('invoice_date', { ascending: false })
-    .limit(200);
+    .limit(params.limit ?? 200);
 
   if (params.status !== 'ALL') {
     query = query.eq('status', params.status as 'DRAFT');
@@ -678,6 +690,12 @@ export async function getCustomerServiceRollup(params: {
 export async function getCounterInvoices(params: {
   readonly status: string;
   readonly branchId?: string | null;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<ServiceInvoiceRow[]> {
   const context = await requirePermission('inventory.counter_sale.create');
   const supabase = await createSupabaseServerClient();
@@ -689,7 +707,7 @@ export async function getCounterInvoices(params: {
     )
     .eq('invoice_type', 'COUNTER')
     .order('invoice_date', { ascending: false })
-    .limit(200);
+    .limit(params.limit ?? 200);
 
   if (params.status !== 'ALL') {
     query = query.eq('status', params.status as 'DRAFT');

@@ -8,6 +8,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR, paise } from '@/lib/money';
 import { formatDate, formatTime } from '@/lib/format';
 
@@ -102,6 +103,7 @@ export default async function Page({
         count={day.entries.length}
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="cash-book" label={false} />
             {canReceive && !locked && (
               <Button size="sm" asChild>
                 <Link href={`/cash-book/receipts?date=${date}`}>

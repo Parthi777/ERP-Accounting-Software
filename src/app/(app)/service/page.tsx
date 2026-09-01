@@ -9,6 +9,7 @@ import { JobCardActions } from '@/components/service/job-card-actions';
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -128,6 +129,7 @@ export default async function Page({
         count={rows.length}
         action={
           <div className="flex flex-wrap gap-2">
+            <ExportButtons report="job-cards" />
             {hasPermission(context, 'service.history.view') && (
               <Button variant="secondary" size="sm" asChild>
                 <Link href="/service/history"><History aria-hidden />History</Link>

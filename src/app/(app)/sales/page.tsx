@@ -8,6 +8,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
@@ -102,9 +103,12 @@ export default async function SalesPage({
         description="Draft → submitted → accounts verification → approved → posted → delivered. Posting happens only after approval."
         count={rows.length}
         action={
-          canCreate ? (
-            <Button asChild><Link href="/sales/new"><Plus aria-hidden />New sale</Link></Button>
-          ) : undefined
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="sales-register" />
+            {canCreate && (
+              <Button asChild><Link href="/sales/new"><Plus aria-hidden />New sale</Link></Button>
+            )}
+          </div>
         }
       />
 

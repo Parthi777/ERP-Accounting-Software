@@ -59,6 +59,12 @@ export async function getStockLots(params: {
   readonly branchId: string | null;
   readonly itemType?: 'ACCESSORY' | 'SPARE' | 'ALL';
   readonly q?: string;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<StockLotRow[]> {
   const context = await requirePermission('inventory.view');
   const supabase = await createSupabaseServerClient();
@@ -69,7 +75,7 @@ export async function getStockLots(params: {
       'item_id, branch_id, source, quantity, average_cost, stock_value, inventory_items!inner ( item_code, name, item_type ), branches!inner ( name )',
     )
     .order('quantity', { ascending: false })
-    .limit(1000);
+    .limit(params.limit ?? 1000);
 
   const branchId = resolveBranch(context, params.branchId);
   if (branchId) {
@@ -315,6 +321,12 @@ export async function getStockLedger(params: {
   readonly source?: string;
   readonly from: string;
   readonly to: string;
+  /**
+   * Row cap. Defaults to the screen's, which is all anyone scrolls; the
+   * report exporter raises it, because a spreadsheet has no such limit and a
+   * silently truncated financial extract is worse than none.
+   */
+  readonly limit?: number;
 }): Promise<{ entries: LedgerEntry[]; totals: LedgerTotals }> {
   const context = await requirePermission('inventory.ledger.view');
   const supabase = await createSupabaseServerClient();
@@ -329,7 +341,7 @@ export async function getStockLedger(params: {
     .lte('created_at', `${params.to}T23:59:59.999`)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
-    .limit(500);
+    .limit(params.limit ?? 500);
 
   const branchId = resolveBranch(context, params.branchId);
   if (branchId) {

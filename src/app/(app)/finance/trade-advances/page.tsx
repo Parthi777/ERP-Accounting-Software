@@ -12,6 +12,7 @@ import { TradeAdvanceForm } from '@/components/finance/trade-advance-form';
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR, negate, type Paise } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 import { monthRange } from '@/lib/period';
@@ -93,6 +94,12 @@ export default async function Page({
         title="Trade advances"
         description="One running account per finance company — spec §25 keeps them apart, never pooled into a single balance."
         count={ledger?.lines.length}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="finance-balances" label={false} />
+            <ExportButtons report="finance-company-ledger" />
+          </div>
+        }
       />
 
       {/* Every company, always visible: a combined figure would hide which one is owed. */}

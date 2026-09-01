@@ -12,6 +12,7 @@ import { TransferReceiveAction } from '@/components/vehicles/transfer-receive-ac
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Vehicle transfers' };
@@ -110,6 +111,7 @@ export default async function Page({
         title="Vehicle transfers"
         description="Branch to branch, with an in-transit state so a unit on the road belongs to neither (spec §35)."
         count={rows.length}
+        action={<ExportButtons report="vehicle-transfers" />}
       />
 
       {canManage && (

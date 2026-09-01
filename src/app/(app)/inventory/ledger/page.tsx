@@ -11,6 +11,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDateTime } from '@/lib/format';
 import { monthRange } from '@/lib/period';
@@ -156,6 +157,7 @@ export default async function Page({
         title="Stock ledger"
         description="Every accessory and spare movement, in the order it happened, with the balance it left behind (spec §34)."
         count={entries.length}
+        action={<ExportButtons report="stock-ledger" />}
       />
 
       <Panel className="mb-4 p-4">
