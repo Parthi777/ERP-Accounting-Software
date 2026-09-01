@@ -80,15 +80,19 @@
 
 :root {
   /* ── Page ground ─────────────────────────────────────────────────────────
-     Three very low-saturation washes — blue, violet, teal — over near-white.
-     They give the glass something to refract, which is what makes a frosted
-     surface read as frosted rather than as flat grey. Kept under 6% alpha: at
-     any more, coloured light bleeds into the numbers on top of it. */
-  --tint-blue:   rgba(59, 130, 246, 0.055);
-  --tint-violet: rgba(139, 92, 246, 0.045);
-  --tint-teal:   rgba(20, 184, 166, 0.040);
+     Three washes — blue, violet, teal — over a tinted base. They give the glass
+     something to refract, which is what makes a frosted surface read as frosted
+     rather than as flat grey.
+     Around 10%: enough to be seen as colour rather than as a dirty white, and
+     still well under the point where it tints the figures on the panels above. */
+  --tint-blue:   rgba(59, 130, 246, 0.13);
+  --tint-violet: rgba(139, 92, 246, 0.10);
+  --tint-teal:   rgba(20, 184, 166, 0.09);
 
-  --page-base: linear-gradient(180deg, #f4f8ff 0%, #f9fbff 42%, #ffffff 100%);
+  /* The ground is tinted rather than white. Panels sit on top as near-white
+     glass, so the contrast a ledger needs comes from the panel against the
+     page — not from the page being blank. */
+  --page-base: linear-gradient(170deg, #e9f1ff 0%, #eef4fe 40%, #f6f9ff 72%, #fbfdff 100%);
 
   /* Glass surface tokens. Changing these changes every glass surface at once,
      which is the point — the effect cannot drift panel by panel. */
@@ -210,6 +214,17 @@ body {
   animation: pop 200ms var(--ease-ui) backwards;
 }
 
+/* The page transition. Shorter and smaller than a panel entrance, because it is
+   felt on every click — longer reads as latency, not polish. */
+@keyframes page-in {
+  from { opacity: 0; transform: translate3d(0, 4px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@utility animate-page {
+  animation: page-in 180ms var(--ease-ui) backwards;
+}
+
 /* A short stagger down a group of cards. Beyond about six the delay starts to
    feel like waiting, so the ladder stops there and the rest arrive together. */
 @utility stagger {
@@ -309,6 +324,84 @@ textarea,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* =============================================================================
+   Mobile — spec §8 ("Desktop-first, responsive")
+   =============================================================================
+   An accounting screen on a phone is mostly a scrolling table, so the work here
+   is making dense content survive a narrow viewport rather than hiding it.
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  /* Reclaim the horizontal space the desktop padding takes. On a 360px screen
+     that padding is a tenth of the viewport. */
+  body {
+    font-size: 15px;
+  }
+
+  /* Filter bars are built as flex rows of labelled controls. At this width they
+     wrap into a stack, and half-width controls become unusable — so every
+     control takes the full line. */
+  form.flex > div {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  form.flex select,
+  form.flex input {
+    width: 100%;
+  }
+
+  /* Touch targets. 44px is the smallest reliably tappable height; the desktop
+     control height of 36px is not. */
+  button,
+  [role='button'],
+  select,
+  input[type='date'],
+  input[type='number'],
+  input[type='text'] {
+    min-height: 2.75rem;
+  }
+
+  /* A dense table cannot be made narrow, so it scrolls — but the page itself
+     must not. The momentum scroll keeps it feeling native. */
+  .table-sticky {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-sticky table {
+    font-size: 13px;
+  }
+
+  .table-sticky th,
+  .table-sticky td {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  /* Glass is expensive to composite and least visible on a small screen. Panels
+     stay translucent but stop blurring, which is the single biggest scrolling
+     win on a mid-range phone. */
+  .glass,
+  .glass-strong {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.92);
+  }
+
+  /* Entrance motion is charming once and tiring on a phone, where navigation is
+     the main activity. Keep the page transition, drop the per-panel ladder. */
+  .stagger > * {
+    animation-delay: 0ms !important;
+  }
+}
+
+/* Never let the page scroll sideways, whatever a table is doing inside it. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 @media print {
