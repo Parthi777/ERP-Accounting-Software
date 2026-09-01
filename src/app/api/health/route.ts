@@ -21,12 +21,20 @@ export const dynamic = 'force-dynamic';
  * Deliberately reports no data and no configuration values — this endpoint is
  * public.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  // The database probe is opt-in: GET /api/health?db=1
+  //
+  // Railway calls this endpoint on a schedule, and a health check that makes two
+  // cross-region queries every time is both slower to answer and a standing cost
+  // for a number nobody is reading. The plain check stays instant; the probe is
+  // there when someone is actually diagnosing latency.
+  const probeDatabase = new URL(request.url).searchParams.get('db') === '1';
+
   let firstMs: number | null = null;
   let warmMs: number | null = null;
   let databaseOk = false;
 
-  if (isSupabaseConfigured) {
+  if (isSupabaseConfigured && probeDatabase) {
     try {
       const supabase = await createSupabaseServerClient();
 
