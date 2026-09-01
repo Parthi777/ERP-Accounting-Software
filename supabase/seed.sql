@@ -484,6 +484,14 @@ begin
   -- upgraded, where the dealer is already present.)
   perform app.seed_default_accounting_rules(v_dealer_id);
   perform app.seed_finance_accounting_rules(v_dealer_id);
+  perform app.seed_cogs_accounting_rules(v_dealer_id);
+
+  -- ── One cash account per branch (spec §36) ────────────────────────────────
+  -- Here rather than with the branches above, because a cash account needs a
+  -- ledger account to point at and the chart of accounts is only created a few
+  -- lines up. The trigger in 0049 covers branches created later, once the
+  -- accounts already exist.
+  perform app.ensure_branch_cash_accounts(v_dealer_id);
 
   -- ── Accounting period: Indian FY 2026-27 ──────────────────────────────────
   insert into public.accounting_periods (dealer_id, name, start_date, end_date, status)

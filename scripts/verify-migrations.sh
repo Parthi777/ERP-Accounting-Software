@@ -78,9 +78,11 @@ done
 
 blue "==> Applying seeds"
 run_sql "seed.sql" "$ROOT_DIR/supabase/seed.sql"
-if [ -f "$ROOT_DIR/supabase/seed-demo-ledger.sql" ]; then
-  run_sql "seed-demo-ledger.sql" "$ROOT_DIR/supabase/seed-demo-ledger.sql"
-fi
+
+# scripts/seed-demo-data.sql is deliberately NOT loaded here. It consumes document
+# numbers and creates stock of its own, which the integrity tests below assert
+# against. Its own correctness is checked by running it against a database seeded
+# this way; see the header of that file.
 
 blue "==> Running integrity tests"
 for f in "$ROOT_DIR"/supabase/test/[1-9]*.sql; do

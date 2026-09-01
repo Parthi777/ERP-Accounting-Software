@@ -40,6 +40,7 @@ declare
   v_matched   boolean;
   v_recon     uuid;
   v_number    text;
+  v_before    numeric;
 begin
   select id into v_dealer from public.dealers where code = 'SBM';
   select id into v_branch from public.branches where dealer_id = v_dealer and code = 'MAIN';
@@ -59,9 +60,16 @@ begin
   perform app_test.assert_equals(v_expense is not null, true, 'an expense account exists');
 
   -- ── A cash account for the branch (spec §36) ──────────────────────────────
+  -- The branch already has a cash account: seed.sql creates one per branch, as
+  -- spec §36 requires. So the conflict path is the one that runs, and it has to
+  -- carry the opening balance across — the assertions below are about what
+  -- ensure_cash_day() does with it.
   insert into public.cash_accounts (dealer_id, branch_id, name, ledger_account_id, opening_balance, current_balance)
   values (v_dealer, v_branch, 'Main counter cash', v_cash_ldg, 10000, 10000)
-  on conflict (branch_id) do update set name = excluded.name
+  on conflict (branch_id) do update
+    set name = excluded.name,
+        opening_balance = excluded.opening_balance,
+        current_balance = excluded.current_balance
   returning id into v_cash_acct;
 
   -- ── The day opens on demand, carrying the account's opening balance ───────
@@ -79,11 +87,23 @@ begin
   perform app_test.assert_equals(v_count, 1, 'opening the same day twice creates one row');
 
   -- ── A receipt ─────────────────────────────────────────────────────────────
+  -- Asserted as a movement rather than an absolute, because cash_transactions
+  -- carries one running balance per account and earlier tests now put receipts
+  -- through it: since 0049 a booking advance taken in cash reaches the cash book
+  -- like any other receipt. What matters here is that this receipt moves the
+  -- balance by its own amount.
+  select coalesce(
+           (select ct.balance_after from public.cash_transactions ct
+             where ct.cash_account_id = v_cash_acct
+             order by ct.id desc limit 1),
+           (select ca.opening_balance from public.cash_accounts ca where ca.id = v_cash_acct))
+    into v_before;
+
   select transaction_id, balance_after into v_txn, v_balance
     from public.record_cash_transaction(
       v_branch, 'RECEIPT', 5000, 'Advance from walk-in customer', v_income, null, 'REC-T1', date '2026-06-01');
 
-  perform app_test.assert_equals(v_balance, 15000::numeric, 'a receipt raises cash in hand');
+  perform app_test.assert_equals(v_balance - v_before, 5000::numeric, 'a receipt raises cash in hand');
 
   select status into v_status from public.cash_day_closings where id = v_day;
   perform app_test.assert_equals(v_status, 'IN_PROGRESS', 'the first entry moves the day to IN_PROGRESS');
@@ -103,7 +123,8 @@ begin
     from public.record_cash_transaction(
       v_branch, 'PAYMENT', 2000, 'Fuel for delivery van', v_expense, null, 'PAY-T1', date '2026-06-01');
 
-  perform app_test.assert_equals(v_balance, 13000::numeric, 'a payment lowers cash in hand');
+  perform app_test.assert_equals(v_balance - v_before, 3000::numeric,
+    'a payment lowers cash in hand (5000 in, 2000 out)');
 
   select total_receipts, total_payments, expected_closing
     into v_balance, v_diff, v_expected

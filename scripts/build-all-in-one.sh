@@ -27,8 +27,10 @@ OUT="$ROOT_DIR/supabase/ALL-IN-ONE.sql"
 -- Run once, on an empty project. Re-running fails on the first CREATE TABLE,
 -- which is the intended signal that there is nothing to do.
 --
--- Includes the demo ledger. For a production database, delete the
--- seed-demo-ledger.sql section at the end before running.
+-- Includes the demo trading data. For a production database, delete the
+-- seed-demo-data.sql section at the end before running — or load it anyway and
+-- remove it later with scripts/remove-demo-dealer.sql, which takes the demo
+-- dealer and everything under it.
 -- =============================================================================
 
 begin;
@@ -40,9 +42,13 @@ HDR
     cat "$f"
   done
 
-  for f in seed.sql seed-demo-ledger.sql; do
-    printf '\n\n-- ═══════════════════════════════════════════════════════════════════════════\n-- SOURCE: supabase/%s\n-- ═══════════════════════════════════════════════════════════════════════════\n\n' "$f"
-    cat "$ROOT_DIR/supabase/$f"
+  # The demo data lives in scripts/ rather than supabase/ because it is a tool,
+  # not part of the schema. Backslash lines are psql meta-commands (\set and the
+  # like) — they are valid when the file is run through psql, and a syntax error
+  # in the Supabase SQL Editor, which this bundle is written for. Strip them.
+  for f in supabase/seed.sql scripts/seed-demo-data.sql; do
+    printf '\n\n-- ═══════════════════════════════════════════════════════════════════════════\n-- SOURCE: %s\n-- ═══════════════════════════════════════════════════════════════════════════\n\n' "$f"
+    grep -v '^\\' "$ROOT_DIR/$f"
   done
 
   printf '\n\ncommit;\n'

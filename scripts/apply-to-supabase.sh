@@ -9,11 +9,13 @@
 #   DATABASE_URL='postgresql://...' bash scripts/apply-to-supabase.sh
 #   DATABASE_URL='postgresql://...' WITH_DEMO=1 bash scripts/apply-to-supabase.sh
 #
-# WITH_DEMO=1 also loads seed-demo-ledger.sql, which posts a month of balanced
-# demo journals so the dashboard has figures. Leave it off for production.
+# WITH_DEMO=1 also loads scripts/seed-demo-data.sql, which trades a couple of
+# months through the real business functions — stock, bookings, sales, service,
+# counter sales and finance — so every screen has something on it. Leave it off
+# for production, or load it and remove it later with remove-demo-dealer.sql.
 #
-# Safe to re-run: seed.sql is idempotent, and the demo ledger skips itself if it
-# has already been applied. The migrations are NOT idempotent — re-running them
+# Safe to re-run: seed.sql is idempotent, and the demo data refuses to load twice
+# rather than doubling the stock and the ledger. The migrations are NOT idempotent — re-running them
 # against a database that already has the schema will fail on the first CREATE
 # TABLE, which is the intended signal that there is nothing to do.
 # =============================================================================
@@ -86,8 +88,8 @@ blue "==> Seeding permissions, roles and the demo dealer"
 run_sql "seed.sql" "$ROOT_DIR/supabase/seed.sql"
 
 if [ "${WITH_DEMO:-0}" = "1" ]; then
-  blue "==> Seeding the demo ledger (dashboard figures)"
-  run_sql "seed-demo-ledger.sql" "$ROOT_DIR/supabase/seed-demo-ledger.sql"
+  blue "==> Seeding demo trading data (stock, sales, service, finance)"
+  run_sql "seed-demo-data.sql" "$ROOT_DIR/scripts/seed-demo-data.sql"
 fi
 
 blue "==> Summary"

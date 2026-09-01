@@ -46,8 +46,11 @@ Order matters — later migrations depend on earlier ones. `0009` defines polici
 which nobody can be authorized for anything. It also creates a demo dealer; the teardown for that is
 documented at the top of the file.
 
-`seed-demo-ledger.sql` is optional and demo-only. It posts a month of balanced journals so the
-dashboard shows real figures before the sales and inventory modules exist. Skip it in production.
+`scripts/seed-demo-data.sql` is optional and demo-only. It trades a couple of months through the real
+business functions — vehicle stock, bookings, sales, service, counter sales, finance and the cash and
+bank books — so every screen has something on it and the ledger genuinely balances. Skip it in
+production, or load it to check the deployment and then remove it with
+`scripts/remove-demo-dealer.sql`.
 
 ### Verify before you deploy
 
@@ -145,10 +148,12 @@ crash-looping before anyone can add the variables. `configured` tells you which 
 
 ## Going live
 
-- [ ] Migrations `0001`–`0012` applied
+- [ ] Every migration in `supabase/migrations/` applied, in order
 - [ ] `seed.sql` applied (permissions and system roles)
-- [ ] `seed-demo-ledger.sql` **not** applied
-- [ ] Demo dealer removed — `delete from public.dealers where code = 'SBM';` after its children
+- [ ] `scripts/seed-demo-data.sql` **not** applied, or applied and then removed
+- [ ] Demo dealer removed — `psql "$DATABASE_URL" -f scripts/remove-demo-dealer.sql`
+      (a plain `delete from public.dealers` cannot work: financial history is `on delete restrict`
+      and the stock and finance ledgers are append-only)
 - [ ] Real dealer, branches, users and role assignments created
 - [ ] Chart of accounts reviewed against the dealer's actual books
 - [ ] Document sequences configured for every document type and the current financial year

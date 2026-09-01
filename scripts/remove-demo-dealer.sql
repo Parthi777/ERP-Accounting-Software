@@ -13,6 +13,17 @@
 -- deliberately kept — the application cannot authorize anything without them.
 -- The audit trail is kept too; see the note at the end.
 --
+-- ⚠ If you have attached a REAL login to the demo dealer — which is the normal
+-- way to look around before your own dealer exists — this takes its profile and
+-- role with the dealer. The Supabase Auth account itself survives, because it is
+-- matched on an @sribalajimotors.example address that a real login does not have,
+-- so the password still works; but until the profile is recreated the person can
+-- sign in and be authorized for nothing.
+--
+-- The way back is scripts/link-auth-users.sql, which matches auth accounts by
+-- email and reprovisions profile, role and branch access. Put your own address
+-- in its list BEFORE running this, and run it again afterwards.
+--
 -- Why this is not the one-liner seed.sql used to suggest
 -- ------------------------------------------------------
 -- `delete from public.dealers where code = 'SBM'` fails immediately:
@@ -48,6 +59,7 @@ set local session_replication_role = 'replica';
 do $$
 declare
   v_dealer  uuid;
+  v_users   uuid[];
   v_table   text;
   v_removed bigint;
   v_total   bigint := 0;
@@ -58,6 +70,15 @@ begin
     raise notice 'No demo dealer (code SBM) found — nothing to remove.';
     return;
   end if;
+
+  -- Collected BEFORE the sweep below, which deletes user_profiles along with
+  -- every other dealer_id table. Reading the ids afterwards finds nothing, and
+  -- the role grants — which are keyed on the user, not the dealer — would be
+  -- left behind pointing at profiles that no longer exist. There is no foreign
+  -- key to catch that, and re-seeding reuses these same fixed demo uuids, so the
+  -- new users would silently inherit the old grants.
+  select coalesce(array_agg(id), '{}') into v_users
+    from public.user_profiles where dealer_id = v_dealer;
 
   -- Every table carrying a dealer_id, discovered rather than hardcoded, so a
   -- table added later is covered without editing this script.
@@ -80,11 +101,11 @@ begin
     v_total := v_total + v_removed;
   end loop;
 
-  -- Profiles and role grants are keyed on the user, not the dealer, so they are
-  -- not caught by the sweep above.
-  delete from public.user_roles ur
-   using public.user_profiles up
-   where up.id = ur.user_id and up.dealer_id = v_dealer;
+  -- Role grants, using the ids captured before the sweep. user_profiles itself
+  -- was already removed by the loop, since it carries a dealer_id.
+  delete from public.user_roles where user_id = any (v_users);
+  get diagnostics v_removed = row_count;
+  v_total := v_total + v_removed;
 
   delete from public.user_profiles where dealer_id = v_dealer;
   delete from public.dealers where id = v_dealer;

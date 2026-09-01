@@ -12,8 +12,10 @@
 -- Run once, on an empty project. Re-running fails on the first CREATE TABLE,
 -- which is the intended signal that there is nothing to do.
 --
--- Includes the demo ledger. For a production database, delete the
--- seed-demo-ledger.sql section at the end before running.
+-- Includes the demo trading data. For a production database, delete the
+-- seed-demo-data.sql section at the end before running — or load it anyway and
+-- remove it later with scripts/remove-demo-dealer.sql, which takes the demo
+-- dealer and everything under it.
 -- =============================================================================
 
 begin;
@@ -12770,6 +12772,1033 @@ $$;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0049_cash_book_and_cogs_classification.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0049 — Money received reaches the cash and bank books; accessory cost reaches
+--        the accessory accounts
+-- =============================================================================
+-- Spec §21, §24, §28, §36, §37, §38, §41, §59.
+--
+-- Two defects, both found by seeding a full set of trading data through the real
+-- posting functions and then reconciling the reports against the ledger.
+--
+-- ── 1. The cash and bank books do not see money taken by other modules ───────
+--
+-- public.cash_book() reads public.cash_transactions, and public.bank_book() reads
+-- public.bank_transactions. Only three functions have ever written to those
+-- tables: record_cash_transaction, record_bank_transaction and (since 0046)
+-- refund_booking_advance.
+--
+-- Meanwhile a booking advance, a vehicle sale receipt and a service receipt all
+-- debit the cash or bank ledger account directly and write no subsidiary row at
+-- all. So the money is in the general ledger and absent from the book that is
+-- supposed to itemise it. On a representative day's trading that was ₹50,647.60
+-- of receipts missing from the cash book — every cash receipt the business took
+-- other than through the cash-book screen itself.
+--
+-- Spec §36 makes the daily cash book mandatory and §37 defines it as every
+-- receipt and payment with a running balance; §59 requires reports to reconcile
+-- with transaction data. A cash book that omits the takings is not a cash book,
+-- and the day-close difference it computes is meaningless — expected closing was
+-- being derived from a fraction of the day's movements.
+--
+-- Fixed by giving the three functions a shared helper that writes the subsidiary
+-- row alongside the journal they already post.
+--
+-- ── 2. Accessory cost is charged to vehicle and spare accounts ──────────────
+--
+-- Accounts 1600 (Accessories Inventory) and 5200 (Accessories COGS) exist in
+-- every dealer's chart of accounts and had never received a single entry.
+--
+-- post_vehicle_sale summed cost_amount across all invoice lines into one figure
+-- and posted it to SALES/INVOICE/COGS → 5100, so accessories fitted to a vehicle
+-- were charged to Vehicle COGS. post_service_invoice did the same into
+-- SERVICE/INVOICE/COGS → 5300, so accessories sold over the counter were charged
+-- to Spare COGS.
+--
+-- Spec §24 lists the accessory accounts separately and §41 requires an
+-- accessories margin report for owners and accounts. Neither can be derived from
+-- a ledger that never posts to them, and both the vehicle and the spare margin
+-- were overstated in cost by the accessory content.
+--
+-- Fixed by classifying the cost by what was actually sold before posting it.
+--
+-- Rollback: restore public.create_booking_with_advance and public.record_sale_payment
+--           from 0028, public.record_sale_payment from 0043, public.record_service_payment
+--           and public.post_service_invoice from 0033, public.post_vehicle_sale
+--           from 0025; drop app.record_money_movement and
+--           app.seed_cogs_accounting_rules; delete the accounting_rules rows
+--           whose description is 'Cost classification (0049)'.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- Accounting rules for the accessory cost accounts
+-- -----------------------------------------------------------------------------
+-- Added as new components rather than by repointing COGS/INVENTORY, so a dealer
+-- who has already mapped those to their own accounts keeps that mapping. The
+-- existing COGS/INVENTORY components keep their meaning: the module's primary
+-- stock — vehicles for a sale, spares for a service invoice.
+create or replace function app.seed_cogs_accounting_rules(p_dealer_id uuid)
+returns integer
+language plpgsql
+as $$
+declare
+  v_added integer := 0;
+  v_rule  record;
+  v_account uuid;
+begin
+  for v_rule in
+    select * from (values
+      ('SALES',   'INVOICE', 'ACCESSORY_COGS',      'DEBIT',  '5200'),
+      ('SALES',   'INVOICE', 'ACCESSORY_INVENTORY', 'CREDIT', '1600'),
+      ('SERVICE', 'INVOICE', 'ACCESSORY_COGS',      'DEBIT',  '5200'),
+      ('SERVICE', 'INVOICE', 'ACCESSORY_INVENTORY', 'CREDIT', '1600')
+    ) as t(module, event, component, side, account_code)
+  loop
+    select id into v_account
+      from public.chart_of_accounts
+     where dealer_id = p_dealer_id and code = v_rule.account_code;
+
+    -- A dealer running a chart of accounts of their own may not have this code.
+    -- Skipping is right: the posting paths below fall back to the module's
+    -- existing COGS mapping when no accessory rule is configured, so nothing
+    -- breaks — the split simply does not happen for them.
+    continue when v_account is null;
+
+    insert into public.accounting_rules
+      (dealer_id, module, event, component, side, account_id, description)
+    values
+      (p_dealer_id, v_rule.module, v_rule.event, v_rule.component, v_rule.side,
+       v_account, 'Cost classification (0049)')
+    on conflict do nothing;
+
+    if found then v_added := v_added + 1; end if;
+  end loop;
+
+  return v_added;
+end;
+$$;
+
+comment on function app.seed_cogs_accounting_rules(uuid) is
+  'Maps accessory cost and accessory stock relief to accounts 5200 and 1600 '
+  '(spec §24). Skips any code the dealer does not have; the posting paths fall '
+  'back to the module COGS mapping when a rule is absent.';
+
+do $$
+declare d record;
+begin
+  for d in select id from public.dealers loop
+    perform app.seed_cogs_accounting_rules(d.id);
+  end loop;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Every branch has a cash account — spec §36, now actually guaranteed
+-- -----------------------------------------------------------------------------
+-- cash_accounts has carried `unique (branch_id)` since 0022, but nothing ever
+-- created the row: seed.sql does not, and neither does branch creation. Every
+-- branch in existence has been without one, which is why nothing noticed that
+-- receipts were not reaching the cash book — there was nowhere to put them.
+--
+-- SECURITY DEFINER because cash_accounts_write requires admin.settings.manage,
+-- and the point is that this happens automatically rather than being remembered.
+-- It only ever inserts a row for the branch being created, so there is nothing a
+-- caller can steer.
+create or replace function app.branches_ensure_cash_account()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_account uuid;
+begin
+  v_account := public.resolve_account(new.dealer_id, 'CASH', 'RECEIPT', 'CASH', new.id);
+
+  if v_account is null then
+    select id into v_account from public.chart_of_accounts
+     where dealer_id = new.dealer_id and code = '1100';
+  end if;
+
+  -- A branch can be created before the chart of accounts exists. Skipping leaves
+  -- the backfill below to catch it once the accounts are in place.
+  if v_account is null then
+    return new;
+  end if;
+
+  insert into public.cash_accounts (dealer_id, branch_id, name, ledger_account_id)
+  values (new.dealer_id, new.id, new.name || ' — Cash', v_account)
+  on conflict (branch_id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists branches_ensure_cash_account on public.branches;
+create trigger branches_ensure_cash_account
+  after insert on public.branches
+  for each row execute function app.branches_ensure_cash_account();
+
+-- The same logic, callable: a branch is often created before the chart of
+-- accounts exists (seed.sql does exactly that), so the trigger above cannot
+-- always succeed at insert time. seed.sql calls this once the accounts are in.
+create or replace function app.ensure_branch_cash_accounts(p_dealer_id uuid default null)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  b record;
+  v_account uuid;
+  v_made int := 0;
+begin
+  for b in
+    select br.id, br.dealer_id, br.name
+      from public.branches br
+      left join public.cash_accounts ca on ca.branch_id = br.id
+     where ca.id is null
+       and (p_dealer_id is null or br.dealer_id = p_dealer_id)
+  loop
+    v_account := public.resolve_account(b.dealer_id, 'CASH', 'RECEIPT', 'CASH', b.id);
+    if v_account is null then
+      select id into v_account from public.chart_of_accounts
+       where dealer_id = b.dealer_id and code = '1100';
+    end if;
+    continue when v_account is null;
+
+    insert into public.cash_accounts (dealer_id, branch_id, name, ledger_account_id)
+    values (b.dealer_id, b.id, b.name || ' — Cash', v_account)
+    on conflict (branch_id) do nothing;
+    v_made := v_made + 1;
+  end loop;
+
+  return v_made;
+end;
+$$;
+
+comment on function app.ensure_branch_cash_accounts(uuid) is
+  'Creates the missing per-branch cash account required by spec §36. Safe to '
+  'call repeatedly; skips branches whose dealer has no cash ledger account yet.';
+
+-- Backfill every branch that already exists.
+do $$
+declare v_made int;
+begin
+  v_made := app.ensure_branch_cash_accounts();
+  if v_made > 0 then
+    raise notice '0049: created % missing branch cash account(s).', v_made;
+  end if;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- The roles that take the money must be allowed to write the book
+-- -----------------------------------------------------------------------------
+-- ct_insert admitted only cashbook.receipts.create / cashbook.payments.create,
+-- which CASHIER and COUNTER_SALES hold but SALES_EXECUTIVE and SERVICE_ADVISOR
+-- do not. Without this, the helper below would turn a sales executive's booking
+-- advance and a service advisor's receipt — both already authorized, both
+-- already posting a journal — into an RLS failure.
+--
+-- Same reasoning as 0043 adding finance.applications.manage to ft_insert and
+-- 0045 adding sales.deliver to cv_write: the subsidiary row is part of the act
+-- the user is already permitted to perform, not a separate privilege.
+drop policy if exists ct_insert on public.cash_transactions;
+
+create policy ct_insert on public.cash_transactions for insert to authenticated
+  with check (app.is_platform_admin()
+         or (dealer_id = app.current_dealer_id()
+             and (app.has_permission('cashbook.receipts.create')
+                  or app.has_permission('cashbook.payments.create')
+                  or app.has_permission('bookings.create')
+                  or app.has_permission('bookings.refund')
+                  or app.has_permission('sales.create')
+                  or app.has_permission('service.payments.collect')
+                  or app.has_permission('inventory.counter_sale.create'))));
+
+drop policy if exists bt_write on public.bank_transactions;
+
+create policy bt_write on public.bank_transactions for all to authenticated
+  using (app.is_platform_admin()
+         or (dealer_id = app.current_dealer_id()
+             and (app.has_permission('bank.reconcile')
+                  or app.has_permission('cashbook.payments.create'))))
+  with check (app.is_platform_admin()
+         or (dealer_id = app.current_dealer_id()
+             and (app.has_permission('bank.reconcile')
+                  or app.has_permission('cashbook.payments.create')
+                  or app.has_permission('bookings.create')
+                  or app.has_permission('bookings.refund')
+                  or app.has_permission('sales.create')
+                  or app.has_permission('service.payments.collect')
+                  or app.has_permission('inventory.counter_sale.create'))));
+
+-- The USING clause stays narrow on purpose: taking a payment writes a row, it
+-- does not amend or reconcile one. Only bank.reconcile and cashbook.payments.create
+-- can touch a bank row after the fact.
+
+-- -----------------------------------------------------------------------------
+-- app.record_money_movement() — the subsidiary row behind a posted receipt
+-- -----------------------------------------------------------------------------
+-- Called after the journal is posted, by every function that takes or returns
+-- money outside the cash-book and bank-book screens. It writes the cash or bank
+-- row that makes the movement visible in the book, and nothing else — the
+-- journal is already written and is not touched here.
+--
+-- Three modes, and the third is the interesting one:
+--
+--   CASH     — opens the day if needed and writes a cash_transactions row.
+--   BANK etc — writes a bank_transactions row against the branch's account.
+--   FINANCE  — writes nothing, deliberately. A sale settled by finance has moved
+--              the debt to the finance company; no money has arrived yet, and it
+--              must not appear in a book that says it has. The disbursement is
+--              what hits the bank, and disburse_finance_application already
+--              writes that row.
+create or replace function app.record_money_movement(
+  p_dealer_id   uuid,
+  p_branch_id   uuid,
+  p_date        date,
+  p_mode        text,
+  p_direction   text,      -- RECEIPT | PAYMENT
+  p_amount      numeric,
+  p_particular  text,
+  p_reference   text,
+  p_journal_entry_id uuid,
+  p_customer_id uuid default null
+)
+returns void
+language plpgsql
+as $$
+declare
+  v_cash public.cash_accounts;
+  v_bank uuid;
+begin
+  if p_mode = 'FINANCE' then
+    return;
+  end if;
+
+  if p_mode = 'CASH' then
+    select * into v_cash from public.cash_accounts
+     where branch_id = p_branch_id and status = 'ACTIVE';
+
+    -- A branch with no cash account cannot have a cash book. Silence here would
+    -- reintroduce exactly the defect this migration exists to close.
+    if v_cash.id is null then
+      raise exception 'Branch has no active cash account, so this receipt cannot reach the cash book.'
+        using errcode = 'no_data_found',
+              hint = 'Create a cash account for the branch (spec §36: each branch has one).';
+    end if;
+
+    -- Opens the day, and refuses if it is already closed (spec §36).
+    perform public.ensure_cash_day(p_branch_id, p_date);
+
+    insert into public.cash_transactions
+      (dealer_id, branch_id, cash_account_id, business_date, direction, amount,
+       particular, reference_number, customer_id, journal_entry_id, created_by)
+    values
+      (p_dealer_id, p_branch_id, v_cash.id, p_date, p_direction, p_amount,
+       p_particular, p_reference, p_customer_id, p_journal_entry_id, auth.uid());
+
+    return;
+  end if;
+
+  -- Anything else settles through a bank account: the branch's own, else the
+  -- dealer-wide one.
+  select id into v_bank from public.bank_accounts
+   where dealer_id = p_dealer_id and status = 'ACTIVE' and branch_id = p_branch_id
+   order by created_at limit 1;
+
+  if v_bank is null then
+    select id into v_bank from public.bank_accounts
+     where dealer_id = p_dealer_id and status = 'ACTIVE' and branch_id is null
+     order by created_at limit 1;
+  end if;
+
+  -- Unlike cash, this one does not raise. A dealer may genuinely have no bank
+  -- account configured yet and still take a UPI payment on day one; refusing the
+  -- receipt would be a worse failure than a bank book that has nothing to show.
+  -- The journal is posted either way, so no money is lost — only the subsidiary
+  -- row is skipped, and it reappears as soon as an account exists.
+  if v_bank is null then
+    return;
+  end if;
+
+  insert into public.bank_transactions
+    (dealer_id, bank_account_id, transaction_date, direction, amount, particular,
+     reference_number, customer_id, journal_entry_id, created_by)
+  values
+    (p_dealer_id, v_bank, p_date, p_direction, p_amount, p_particular,
+     p_reference, p_customer_id, p_journal_entry_id, auth.uid());
+end;
+$$;
+
+comment on function app.record_money_movement(uuid, uuid, date, text, text, numeric, text, text, uuid, uuid) is
+  'Writes the cash_transactions or bank_transactions row behind a receipt that '
+  'another module has already journalled, so the cash book (spec §37) and bank '
+  'book (spec §38) show it. FINANCE writes nothing: the money has not arrived.';
+
+-- -----------------------------------------------------------------------------
+-- public.create_booking_with_advance() — spec §18
+-- -----------------------------------------------------------------------------
+-- Unchanged from 0028 apart from the closing call: the advance now reaches the
+-- cash or bank book.
+create or replace function public.create_booking_with_advance(
+  p_customer_id       uuid,
+  p_model_id          uuid,
+  p_branch_id         uuid,
+  p_booking_amount    numeric,
+  p_advance_amount    numeric,
+  p_payment_mode      text,
+  p_variant_id        uuid default null,
+  p_vehicle_id        uuid default null,
+  p_expected_delivery date default null,
+  p_sales_executive_id uuid default null,
+  p_reference         text default null,
+  p_notes             text default null
+)
+returns table (booking_id uuid, booking_number text, receipt_number text, journal_entry_id uuid)
+language plpgsql
+as $$
+declare
+  v_dealer_id uuid;
+  v_year      text;
+  v_booking   uuid;
+  v_bnumber   text;
+  v_rnumber   text;
+  v_entry     uuid;
+  v_debit_acc uuid;
+  v_credit_acc uuid;
+  v_cash_component text;
+begin
+  if p_advance_amount <= 0 then
+    raise exception 'The advance amount must be greater than zero.'
+      using errcode = 'check_violation';
+  end if;
+  if p_booking_amount > 0 and p_advance_amount > p_booking_amount then
+    raise exception 'The advance cannot exceed the booking amount.'
+      using errcode = 'check_violation';
+  end if;
+
+  select dealer_id into v_dealer_id from public.branches where id = p_branch_id;
+  if v_dealer_id is null then
+    raise exception 'Branch not found.' using errcode = 'no_data_found';
+  end if;
+
+  v_year := app.financial_year_token(v_dealer_id, current_date);
+
+  -- Resolve accounts before writing anything: an unconfigured mapping should
+  -- fail before a booking number is consumed.
+  v_cash_component := case when p_payment_mode = 'CASH' then 'CASH' else 'BANK' end;
+  v_debit_acc  := app.require_account(v_dealer_id, 'BOOKING', 'ADVANCE', v_cash_component, p_branch_id);
+  v_credit_acc := app.require_account(v_dealer_id, 'BOOKING', 'ADVANCE', 'CUSTOMER_ADVANCE', p_branch_id);
+
+  v_bnumber := app.next_document_number(v_dealer_id, p_branch_id, 'BOOKING', v_year);
+  v_rnumber := app.next_document_number(v_dealer_id, p_branch_id, 'RECEIPT', v_year);
+
+  insert into public.bookings
+    (dealer_id, branch_id, booking_number, customer_id, model_id, variant_id, vehicle_id,
+     booking_amount, expected_delivery, sales_executive_id, notes, created_by)
+  values
+    (v_dealer_id, p_branch_id, v_bnumber, p_customer_id, p_model_id, p_variant_id, p_vehicle_id,
+     p_booking_amount, p_expected_delivery, p_sales_executive_id, p_notes, auth.uid())
+  returning id into v_booking;
+
+  -- Spec §18: the advance is a liability until the sale is raised.
+  v_entry := app.post_journal(
+    v_dealer_id, p_branch_id, current_date, 'BOOKING',
+    'Booking advance ' || v_bnumber,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_debit_acc, 'debit', p_advance_amount, 'credit', 0,
+                         'narration', p_payment_mode || ' received'),
+      jsonb_build_object('account_id', v_credit_acc, 'debit', 0, 'credit', p_advance_amount,
+                         'narration', 'Customer advance',
+                         'party_type', 'CUSTOMER', 'party_id', p_customer_id)
+    ),
+    'BOOKING', v_booking, 'booking:' || v_booking::text
+  );
+
+  insert into public.booking_payments
+    (dealer_id, booking_id, receipt_number, amount, payment_mode, reference,
+     journal_entry_id, created_by)
+  values
+    (v_dealer_id, v_booking, v_rnumber, p_advance_amount, p_payment_mode, p_reference,
+     v_entry, auth.uid());
+
+  -- Reserving a specific chassis takes it out of available stock (spec §13).
+  if p_vehicle_id is not null then
+    update public.vehicles set status = 'BOOKED', updated_by = auth.uid()
+     where id = p_vehicle_id and status = 'IN_STOCK';
+  end if;
+
+  -- 0049: and into the cash or bank book, which is where the cashier looks.
+  perform app.record_money_movement(
+    v_dealer_id, p_branch_id, current_date, p_payment_mode, 'RECEIPT',
+    p_advance_amount, 'Booking advance ' || v_bnumber, coalesce(p_reference, v_rnumber),
+    v_entry, p_customer_id);
+
+  booking_id := v_booking; booking_number := v_bnumber;
+  receipt_number := v_rnumber; journal_entry_id := v_entry;
+  return next;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- public.record_sale_payment() — spec §19, §27
+-- -----------------------------------------------------------------------------
+-- Carries forward from 0043: the FINANCE_RECEIVABLE line stays party-tagged to
+-- the finance company and a FINANCE payment still writes its finance_transactions
+-- row. New in 0049: a cash or bank receipt reaches its book.
+create or replace function public.record_sale_payment(
+  p_sale_id      uuid,
+  p_amount       numeric,
+  p_payment_mode text,
+  p_reference    text default null,
+  p_finance_company_id uuid default null
+)
+returns table (receipt_number text, journal_entry_id uuid)
+language plpgsql
+as $$
+declare
+  v_sale     public.sales;
+  v_year     text;
+  v_rnumber  text;
+  v_entry    uuid;
+  v_debit    uuid;
+  v_credit   uuid;
+  v_component text;
+  v_party    text;
+  v_party_id uuid;
+begin
+  if p_amount <= 0 then
+    raise exception 'The payment amount must be greater than zero.' using errcode = 'check_violation';
+  end if;
+
+  select * into v_sale from public.sales where id = p_sale_id for update;
+  if v_sale.id is null then
+    raise exception 'Sale not found.' using errcode = 'no_data_found';
+  end if;
+  if v_sale.status not in ('POSTED', 'DELIVERED') then
+    raise exception 'Payments can only be recorded against a posted invoice; this one is %.', v_sale.status
+      using errcode = 'check_violation';
+  end if;
+
+  v_year := app.financial_year_token(v_sale.dealer_id, current_date);
+  v_rnumber := app.next_document_number(v_sale.dealer_id, v_sale.branch_id, 'RECEIPT', v_year);
+
+  -- Finance disbursement moves the debt to the finance company rather than
+  -- settling it in cash (spec §27).
+  if p_payment_mode = 'FINANCE' then
+    if p_finance_company_id is null then
+      raise exception 'A finance payment must name the finance company carrying the debt.'
+        using errcode = 'check_violation';
+    end if;
+    v_component := 'FINANCE_RECEIVABLE';
+    v_debit  := app.require_account(v_sale.dealer_id, 'FINANCE', 'INVOICE', 'FINANCE_RECEIVABLE', v_sale.branch_id);
+    v_party := 'FINANCE_COMPANY';
+    v_party_id := p_finance_company_id;
+  else
+    v_component := case when p_payment_mode = 'CASH' then 'CASH' else 'BANK' end;
+    v_debit := app.require_account(
+      v_sale.dealer_id,
+      case when p_payment_mode = 'CASH' then 'CASH' else 'BANK' end,
+      'RECEIPT', v_component, v_sale.branch_id);
+  end if;
+
+  v_credit := app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'RECEIVABLE', v_sale.branch_id);
+
+  v_entry := app.post_journal(
+    v_sale.dealer_id, v_sale.branch_id, current_date,
+    case when p_payment_mode = 'CASH' then 'CASH' else 'BANK' end,
+    'Receipt ' || v_rnumber || ' against ' || v_sale.invoice_number,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_debit, 'debit', p_amount, 'credit', 0,
+                         'narration', p_payment_mode || ' received',
+                         'party_type', v_party, 'party_id', v_party_id),
+      jsonb_build_object('account_id', v_credit, 'debit', 0, 'credit', p_amount,
+                         'narration', 'Against ' || v_sale.invoice_number,
+                         'party_type', 'CUSTOMER', 'party_id', v_sale.customer_id)
+    ),
+    'SALE_PAYMENT', p_sale_id, 'receipt:' || v_rnumber
+  );
+
+  insert into public.sale_payments
+    (dealer_id, sale_id, receipt_number, amount, payment_mode, reference,
+     finance_company_id, journal_entry_id, created_by)
+  values
+    (v_sale.dealer_id, p_sale_id, v_rnumber, p_amount, p_payment_mode, p_reference,
+     p_finance_company_id, v_entry, auth.uid());
+
+  -- The company now owes the dealer for this vehicle, so its position rises.
+  if p_payment_mode = 'FINANCE' then
+    insert into public.finance_transactions
+      (dealer_id, branch_id, finance_company_id, transaction_date, transaction_type,
+       debit, credit, reference_type, reference_id, reference_number, narration,
+       sale_id, journal_entry_id, created_by)
+    values
+      (v_sale.dealer_id, v_sale.branch_id, p_finance_company_id, current_date, 'VEHICLE_ADJUSTMENT',
+       0, p_amount, 'SALE', p_sale_id, v_sale.invoice_number,
+       'Financed ' || v_sale.invoice_number, p_sale_id, v_entry, auth.uid());
+  end if;
+
+  -- 0049: FINANCE returns immediately inside the helper — no money has moved.
+  perform app.record_money_movement(
+    v_sale.dealer_id, v_sale.branch_id, current_date, p_payment_mode, 'RECEIPT',
+    p_amount, 'Receipt ' || v_rnumber || ' — ' || v_sale.invoice_number,
+    coalesce(p_reference, v_rnumber), v_entry, v_sale.customer_id);
+
+  receipt_number := v_rnumber; journal_entry_id := v_entry;
+  return next;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- public.record_service_payment() — spec §32, §33
+-- -----------------------------------------------------------------------------
+-- Unchanged from 0033 apart from the closing call. Counter sales come through
+-- here too, so this is what puts counter takings into the cash book.
+create or replace function public.record_service_payment(
+  p_invoice_id   uuid,
+  p_amount       numeric,
+  p_payment_mode text default 'CASH',
+  p_reference    text default null,
+  p_date         date default current_date
+)
+returns table (payment_id uuid, receipt_number text, balance_due numeric)
+language plpgsql
+as $$
+declare
+  v_invoice public.service_invoices;
+  v_number  text;
+  v_entry   uuid;
+  v_debit   uuid;
+  v_credit  uuid;
+  v_id      uuid;
+  v_balance numeric(18, 4);
+begin
+  select * into v_invoice from public.service_invoices where id = p_invoice_id for update;
+
+  if v_invoice.id is null then
+    raise exception 'Invoice not found.' using errcode = 'no_data_found';
+  end if;
+  if v_invoice.status <> 'POSTED' then
+    raise exception 'Invoice % is % — only a posted invoice can take a payment.',
+      v_invoice.invoice_number, v_invoice.status using errcode = 'check_violation';
+  end if;
+  if p_amount <= 0 then
+    raise exception 'The payment amount must be greater than zero.' using errcode = 'check_violation';
+  end if;
+  if p_amount > v_invoice.total_amount - v_invoice.paid_amount then
+    raise exception 'That is more than the % outstanding on this invoice.',
+      v_invoice.total_amount - v_invoice.paid_amount using errcode = 'check_violation';
+  end if;
+
+  v_number := app.next_document_number(
+    v_invoice.dealer_id, v_invoice.branch_id, 'RECEIPT',
+    app.financial_year_token(v_invoice.dealer_id, p_date));
+
+  v_debit := app.require_account(
+    v_invoice.dealer_id,
+    case when p_payment_mode = 'CASH' then 'CASH' else 'BANK' end,
+    'RECEIPT',
+    case when p_payment_mode = 'CASH' then 'CASH' else 'BANK' end,
+    v_invoice.branch_id);
+
+  v_credit := app.require_account(v_invoice.dealer_id, 'SERVICE', 'INVOICE', 'RECEIVABLE', v_invoice.branch_id);
+
+  v_entry := app.post_journal(
+    v_invoice.dealer_id, v_invoice.branch_id, p_date,
+    case when p_payment_mode = 'CASH' then 'CASH' else 'BANK' end,
+    'Receipt ' || v_number || ' against ' || v_invoice.invoice_number,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_debit, 'debit', p_amount, 'credit', 0,
+                         'narration', v_number),
+      jsonb_build_object('account_id', v_credit, 'debit', 0, 'credit', p_amount,
+                         'narration', v_invoice.invoice_number,
+                         'party_type', case when v_invoice.customer_id is not null then 'CUSTOMER' end,
+                         'party_id', v_invoice.customer_id)
+    ),
+    'SERVICE_RECEIPT', p_invoice_id, null);
+
+  insert into public.service_payments
+    (dealer_id, invoice_id, receipt_number, payment_date, amount, payment_mode,
+     reference, journal_entry_id, created_by)
+  values
+    (v_invoice.dealer_id, p_invoice_id, v_number, p_date, p_amount, p_payment_mode,
+     p_reference, v_entry, auth.uid())
+  returning id into v_id;
+
+  -- 0049: counter and workshop takings reach the cash book.
+  perform app.record_money_movement(
+    v_invoice.dealer_id, v_invoice.branch_id, p_date, p_payment_mode, 'RECEIPT',
+    p_amount, 'Receipt ' || v_number || ' — ' || v_invoice.invoice_number,
+    coalesce(p_reference, v_number), v_entry, v_invoice.customer_id);
+
+  select si.total_amount - si.paid_amount into v_balance
+    from public.service_invoices si where si.id = p_invoice_id;
+
+  payment_id := v_id; receipt_number := v_number; balance_due := v_balance;
+  return next;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- public.post_vehicle_sale() — spec §19, §22, §24
+-- -----------------------------------------------------------------------------
+-- Carries forward from 0025 unchanged, except that the cost accumulator is split
+-- in two: what came out of vehicle stock, and what came out of accessory stock.
+-- FITTING and ACCESSORY lines are accessories; everything else with a cost is
+-- the vehicle. Charges that carry no stock — insurance, registration, forwarding
+-- — have no cost_amount and contribute to neither.
+create or replace function public.post_vehicle_sale(
+  p_sale_id uuid,
+  p_idempotency_key text default null
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_sale    public.sales;
+  v_vehicle public.vehicles;
+  v_lines   jsonb := '[]'::jsonb;
+  v_entry   uuid;
+  v_line    record;
+  v_cogs    numeric(18, 4) := 0;   -- vehicle stock
+  v_acc_cogs numeric(18, 4) := 0;  -- accessory stock
+  v_acc_debit  uuid;
+  v_acc_credit uuid;
+begin
+  -- Step 3: lock the sale and the vehicle. A second concurrent post blocks here
+  -- and then fails the status check below (spec §49).
+  select * into v_sale from public.sales where id = p_sale_id for update;
+
+  if v_sale.id is null then
+    raise exception 'Sale not found.' using errcode = 'no_data_found';
+  end if;
+
+  if v_sale.status <> 'APPROVED' then
+    raise exception 'Sale % is % — only an APPROVED sale can be posted.', v_sale.invoice_number, v_sale.status
+      using errcode = 'check_violation',
+            hint = 'Spec §19: posting happens only after accounts approval.';
+  end if;
+
+  select * into v_vehicle from public.vehicles where id = v_sale.vehicle_id for update;
+
+  if v_vehicle.status not in ('IN_STOCK', 'BOOKED') then
+    raise exception 'Vehicle % is % and cannot be sold.', v_vehicle.chassis_no, v_vehicle.status
+      using errcode = 'check_violation';
+  end if;
+
+  -- Step 8–10: build the journal from the invoice lines, resolving every account
+  -- through accounting_rules.
+  v_lines := v_lines || jsonb_build_array(jsonb_build_object(
+    'account_id', app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'RECEIVABLE', v_sale.branch_id),
+    'debit', v_sale.total_amount, 'credit', 0,
+    'narration', 'Sale ' || v_sale.invoice_number,
+    'party_type', 'CUSTOMER', 'party_id', v_sale.customer_id
+  ));
+
+  for v_line in
+    select line_type, sum(taxable_value) taxable, sum(cost_amount) cost
+      from public.sale_lines where sale_id = p_sale_id
+     group by line_type
+  loop
+    if v_line.taxable > 0 then
+      v_lines := v_lines || jsonb_build_array(jsonb_build_object(
+        'account_id', app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', v_line.line_type, v_sale.branch_id),
+        'debit', 0, 'credit', v_line.taxable,
+        'narration', v_line.line_type || ' revenue'
+      ));
+    end if;
+
+    -- 0049: accessory cost is accessory cost, whichever invoice it rides on.
+    if v_line.line_type in ('FITTING', 'ACCESSORY') then
+      v_acc_cogs := v_acc_cogs + coalesce(v_line.cost, 0);
+    else
+      v_cogs := v_cogs + coalesce(v_line.cost, 0);
+    end if;
+  end loop;
+
+  if v_sale.cgst_amount > 0 then
+    v_lines := v_lines || jsonb_build_array(jsonb_build_object(
+      'account_id', app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'CGST', v_sale.branch_id),
+      'debit', 0, 'credit', v_sale.cgst_amount, 'narration', 'Output CGST'));
+  end if;
+  if v_sale.sgst_amount > 0 then
+    v_lines := v_lines || jsonb_build_array(jsonb_build_object(
+      'account_id', app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'SGST', v_sale.branch_id),
+      'debit', 0, 'credit', v_sale.sgst_amount, 'narration', 'Output SGST'));
+  end if;
+  if v_sale.igst_amount > 0 then
+    v_lines := v_lines || jsonb_build_array(jsonb_build_object(
+      'account_id', app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'IGST', v_sale.branch_id),
+      'debit', 0, 'credit', v_sale.igst_amount, 'narration', 'Output IGST'));
+  end if;
+
+  -- Step 11: inventory relief and COGS recognition (spec §22).
+  if v_cogs > 0 then
+    v_lines := v_lines || jsonb_build_array(
+      jsonb_build_object('account_id', app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'COGS', v_sale.branch_id),
+                         'debit', v_cogs, 'credit', 0, 'narration', 'Vehicle cost of goods sold'),
+      jsonb_build_object('account_id', app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'INVENTORY', v_sale.branch_id),
+                         'debit', 0, 'credit', v_cogs, 'narration', 'Vehicle stock relieved'));
+  end if;
+
+  if v_acc_cogs > 0 then
+    -- resolve_account rather than require_account: a dealer whose chart has no
+    -- 1600/5200 keeps the pre-0049 behaviour instead of being unable to post.
+    v_acc_debit  := public.resolve_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'ACCESSORY_COGS', v_sale.branch_id);
+    v_acc_credit := public.resolve_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'ACCESSORY_INVENTORY', v_sale.branch_id);
+
+    if v_acc_debit is null or v_acc_credit is null then
+      v_acc_debit  := app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'COGS', v_sale.branch_id);
+      v_acc_credit := app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'INVENTORY', v_sale.branch_id);
+    end if;
+
+    v_lines := v_lines || jsonb_build_array(
+      jsonb_build_object('account_id', v_acc_debit, 'debit', v_acc_cogs, 'credit', 0,
+                         'narration', 'Accessories cost of goods sold'),
+      jsonb_build_object('account_id', v_acc_credit, 'debit', 0, 'credit', v_acc_cogs,
+                         'narration', 'Accessory stock relieved'));
+  end if;
+
+  -- Steps 10 and 13: post atomically. Unbalanced input raises and the whole
+  -- function rolls back, leaving neither invoice status nor stock changed.
+  v_entry := app.post_journal(
+    v_sale.dealer_id, v_sale.branch_id, v_sale.invoice_date, 'SALES',
+    'Vehicle sale ' || v_sale.invoice_number, v_lines,
+    'SALE', v_sale.id,
+    coalesce(p_idempotency_key, 'sale:' || v_sale.id::text)
+  );
+
+  -- Step 12: vehicle status.
+  update public.vehicles
+     set status = 'SOLD_PENDING_DELIVERY', sale_id = v_sale.id, updated_by = auth.uid()
+   where id = v_sale.vehicle_id;
+
+  update public.sales
+     set status = 'POSTED', journal_entry_id = v_entry, posted_by = auth.uid()
+   where id = p_sale_id;
+
+  return v_entry;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- public.post_service_invoice() — spec §32, §33, §24
+-- -----------------------------------------------------------------------------
+-- Carries forward from 0033 unchanged, except that stock relief is accumulated
+-- per item type as it is allocated, so a counter sale of helmets no longer
+-- charges Spare COGS.
+create or replace function public.post_service_invoice(
+  p_invoice_id      uuid,
+  p_idempotency_key text default null
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_invoice public.service_invoices;
+  v_dealer  uuid;
+  v_branch  uuid;
+  v_lines   jsonb := '[]'::jsonb;
+  v_entry   uuid;
+  v_line    record;
+  v_alloc   record;
+  v_cogs    numeric(18, 4) := 0;   -- spares
+  v_acc_cogs numeric(18, 4) := 0;  -- accessories
+  v_remaining numeric(14, 3);
+  v_acc_debit  uuid;
+  v_acc_credit uuid;
+begin
+  select * into v_invoice from public.service_invoices where id = p_invoice_id for update;
+
+  if v_invoice.id is null then
+    raise exception 'Invoice not found.' using errcode = 'no_data_found';
+  end if;
+  if v_invoice.status = 'POSTED' then
+    -- Idempotent: a retried request returns the entry the first one wrote.
+    return v_invoice.journal_entry_id;
+  end if;
+  if v_invoice.status <> 'DRAFT' then
+    raise exception 'Invoice % is % and cannot be posted.', v_invoice.invoice_number, v_invoice.status
+      using errcode = 'check_violation';
+  end if;
+  if not exists (select 1 from public.service_lines where invoice_id = p_invoice_id) then
+    raise exception 'Invoice % has no lines.', v_invoice.invoice_number
+      using errcode = 'check_violation';
+  end if;
+
+  v_dealer := v_invoice.dealer_id;
+  v_branch := v_invoice.branch_id;
+
+  -- ── Revenue, one line per component ───────────────────────────────────────
+  for v_line in
+    select line_type, sum(taxable_value) as taxable
+      from public.service_lines
+     where invoice_id = p_invoice_id and line_type <> 'DISCOUNT'
+     group by line_type
+     having sum(taxable_value) > 0
+  loop
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', app.require_account(v_dealer, 'SERVICE', 'INVOICE', v_line.line_type, v_branch),
+      'debit', 0, 'credit', v_line.taxable,
+      'narration', v_invoice.invoice_number || ' — ' || v_line.line_type);
+  end loop;
+
+  -- ── GST ───────────────────────────────────────────────────────────────────
+  if v_invoice.cgst_amount > 0 then
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'CGST', v_branch),
+      'debit', 0, 'credit', v_invoice.cgst_amount, 'narration', 'CGST');
+  end if;
+  if v_invoice.sgst_amount > 0 then
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'SGST', v_branch),
+      'debit', 0, 'credit', v_invoice.sgst_amount, 'narration', 'SGST');
+  end if;
+  if v_invoice.igst_amount > 0 then
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'IGST', v_branch),
+      'debit', 0, 'credit', v_invoice.igst_amount, 'narration', 'IGST');
+  end if;
+
+  -- ── The customer owes the total ───────────────────────────────────────────
+  v_lines := v_lines || jsonb_build_object(
+    'account_id', app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'RECEIVABLE', v_branch),
+    'debit', v_invoice.total_amount, 'credit', 0,
+    'narration', v_invoice.invoice_number,
+    'party_type', case when v_invoice.customer_id is not null then 'CUSTOMER' end,
+    'party_id', v_invoice.customer_id);
+
+  -- A discount reduces what is owed, so it is a debit against revenue.
+  for v_line in
+    select sum(taxable_value + discount) as amount
+      from public.service_lines
+     where invoice_id = p_invoice_id and line_type = 'DISCOUNT'
+     having sum(taxable_value + discount) > 0
+  loop
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'LABOUR', v_branch),
+      'debit', v_line.amount, 'credit', 0, 'narration', 'Discount');
+  end loop;
+
+  -- ── Stock relief and COGS (spec §31) ──────────────────────────────────────
+  -- item_type comes along for the ride so the cost can be classified (0049).
+  for v_line in
+    select sl.id, sl.item_id, sl.quantity, sl.unit_rate, sl.line_number, i.item_type
+      from public.service_lines sl
+      join public.inventory_items i on i.id = sl.item_id
+     where sl.invoice_id = p_invoice_id and sl.item_id is not null
+     order by sl.line_number
+  loop
+    v_remaining := v_line.quantity;
+
+    for v_alloc in
+      select * from public.allocate_stock(v_line.item_id, v_branch, v_line.quantity)
+    loop
+      -- Stock can have moved since the line was drafted, so the shortfall is
+      -- checked again here. 'SHORTFALL' is not a stock source and must never
+      -- reach inventory_transactions.
+      if v_alloc.source = 'SHORTFALL' then
+        raise exception 'Insufficient stock to post this invoice: short by % on one line.', v_alloc.quantity
+          using errcode = 'check_violation',
+                hint = 'Spec §31: block rather than overselling.';
+      end if;
+
+      -- Quantity is signed: negative issues. One movement per source, never
+      -- merged, so the ledger shows which stock the part actually came out of.
+      insert into public.inventory_transactions
+        (dealer_id, branch_id, item_id, source, transaction_type, quantity, unit_cost,
+         reference_type, reference_id, reference_number, narration, created_by)
+      values
+        (v_dealer, v_branch, v_line.item_id, v_alloc.source, 'CONSUMPTION',
+         -v_alloc.quantity, v_alloc.unit_cost,
+         'SERVICE_INVOICE', p_invoice_id, v_invoice.invoice_number,
+         'Consumed on ' || v_invoice.invoice_number, auth.uid());
+
+      if v_line.item_type = 'ACCESSORY' then
+        v_acc_cogs := v_acc_cogs + round(v_alloc.quantity * v_alloc.unit_cost, 2);
+      else
+        v_cogs := v_cogs + round(v_alloc.quantity * v_alloc.unit_cost, 2);
+      end if;
+      v_remaining := v_remaining - v_alloc.quantity;
+    end loop;
+
+    if v_remaining > 0 then
+      raise exception 'Not enough stock to fulfil line for item %.', v_line.item_id
+        using errcode = 'check_violation';
+    end if;
+  end loop;
+
+  if v_cogs > 0 then
+    v_lines := v_lines
+      || jsonb_build_object(
+           'account_id', app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'COGS', v_branch),
+           'debit', v_cogs, 'credit', 0, 'narration', 'Cost of parts consumed')
+      || jsonb_build_object(
+           'account_id', app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'INVENTORY', v_branch),
+           'debit', 0, 'credit', v_cogs, 'narration', 'Parts issued from stock');
+  end if;
+
+  if v_acc_cogs > 0 then
+    v_acc_debit  := public.resolve_account(v_dealer, 'SERVICE', 'INVOICE', 'ACCESSORY_COGS', v_branch);
+    v_acc_credit := public.resolve_account(v_dealer, 'SERVICE', 'INVOICE', 'ACCESSORY_INVENTORY', v_branch);
+
+    if v_acc_debit is null or v_acc_credit is null then
+      v_acc_debit  := app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'COGS', v_branch);
+      v_acc_credit := app.require_account(v_dealer, 'SERVICE', 'INVOICE', 'INVENTORY', v_branch);
+    end if;
+
+    v_lines := v_lines
+      || jsonb_build_object('account_id', v_acc_debit, 'debit', v_acc_cogs, 'credit', 0,
+                            'narration', 'Cost of accessories sold')
+      || jsonb_build_object('account_id', v_acc_credit, 'debit', 0, 'credit', v_acc_cogs,
+                            'narration', 'Accessories issued from stock');
+  end if;
+
+  v_entry := app.post_journal(
+    v_dealer, v_branch, v_invoice.invoice_date, 'SERVICE',
+    'Service invoice ' || v_invoice.invoice_number,
+    v_lines, 'SERVICE_INVOICE', p_invoice_id,
+    coalesce(p_idempotency_key, 'service:' || p_invoice_id::text));
+
+  update public.service_invoices
+     set status = 'POSTED', posted_at = now(), journal_entry_id = v_entry,
+         total_cost = v_cogs + v_acc_cogs,
+         idempotency_key = coalesce(p_idempotency_key, 'service:' || p_invoice_id::text),
+         updated_by = auth.uid()
+   where id = p_invoice_id;
+
+  -- The job card is billed, which is what closes it to further work.
+  if v_invoice.job_card_id is not null then
+    update public.job_cards
+       set status = 'INVOICED', updated_by = auth.uid()
+     where id = v_invoice.job_card_id;
+  end if;
+
+  return v_entry;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Grants
+-- -----------------------------------------------------------------------------
+-- create or replace preserves the grants on the public functions above; the new
+-- app helper needs its own.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant execute on function app.record_money_movement(uuid, uuid, date, text, text, numeric, text, text, uuid, uuid) to authenticated';
+  end if;
+end;
+$$;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- SOURCE: supabase/seed.sql
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -13259,6 +14288,14 @@ begin
   -- upgraded, where the dealer is already present.)
   perform app.seed_default_accounting_rules(v_dealer_id);
   perform app.seed_finance_accounting_rules(v_dealer_id);
+  perform app.seed_cogs_accounting_rules(v_dealer_id);
+
+  -- ── One cash account per branch (spec §36) ────────────────────────────────
+  -- Here rather than with the branches above, because a cash account needs a
+  -- ledger account to point at and the chart of accounts is only created a few
+  -- lines up. The trigger in 0049 covers branches created later, once the
+  -- accounts already exist.
+  perform app.ensure_branch_cash_accounts(v_dealer_id);
 
   -- ── Accounting period: Indian FY 2026-27 ──────────────────────────────────
   insert into public.accounting_periods (dealer_id, name, start_date, end_date, status)
@@ -13321,294 +14358,1122 @@ $$;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- SOURCE: supabase/seed-demo-ledger.sql
+-- SOURCE: scripts/seed-demo-data.sql
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- =============================================================================
--- seed-demo-ledger.sql — DEMO ONLY
+-- seed-demo-data.sql — realistic trading data for the demo dealer
 -- =============================================================================
--- Posts a month of balanced journal entries for the demo dealer so the dashboard
--- has real numbers behind it before the sales, inventory and service modules
--- exist.
+-- supabase/seed.sql creates the dealer, its branches, staff, chart of accounts,
+-- accounting rules and document sequences. It stops there, so a fresh deployment
+-- has an ERP with nothing in it: Sales, Inventory, Service and Finance are all
+-- empty and there is no way to tell a working screen from a broken one.
 --
--- These are not mock values painted onto the UI. Every figure the dashboard shows
--- is computed by public.account_balances() from double-entry journals that
--- satisfy the same constraints and immutability rules as production data — the
--- entries are simply seeded rather than raised by a business module.
+-- This fills in the trading.
 --
--- Remove with:
---   delete from public.journal_entry_lines l using public.journal_entries je
---    where je.id = l.journal_entry_id and je.narration like '[DEMO]%';
---   -- posted journals cannot be deleted, so drop the dealer to fully reset:
---   -- see the teardown note in seed.sql
+--   psql "$DATABASE_URL" -f scripts/seed-demo-data.sql
 --
--- Skip this file entirely for a production deployment.
+-- Everything goes through the real business functions — create_booking_with_advance,
+-- post_vehicle_sale, deliver_vehicle, post_service_invoice, record_trade_advance
+-- and the rest — rather than being inserted row by row. Two reasons:
+--
+--   * the ledger comes out genuinely balanced, with stock relieved, COGS
+--     recognised, tax split and documents numbered exactly as they would be in
+--     use. Rows inserted directly would look right on screen and be wrong
+--     underneath, which is worse than an empty screen;
+--   * it exercises the same code paths a user does. If this script runs clean,
+--     the application's write paths work against this database.
+--
+-- The exceptions are the masters — models, price versions, customers, items —
+-- which have no posting behaviour to exercise and are plain inserts.
+--
+-- Idempotent by refusal, not by merging: it stops if trading data is already
+-- present, because running it twice would double the stock and the ledger.
+--
+-- Remove it with scripts/remove-demo-dealer.sql, which takes the demo dealer and
+-- everything under it, this data included.
 -- =============================================================================
 
+
+-- =============================================================================
+-- 1 — Masters
+-- =============================================================================
 do $$
 declare
   v_dealer   uuid;
   v_main     uuid;
   v_north    uuid;
   v_south    uuid;
-  v_period   uuid;
-  v_branches uuid[];
-  v_branch   uuid;
-  v_day      date;
-  v_je       uuid;
-  v_number   text;
-  v_scale    numeric;
-  v_i        int;
-
-  -- Account ids, resolved once.
-  a_cash uuid; a_bank uuid; a_recv uuid; a_finrecv uuid;
-  a_veh_stock uuid; a_acc_stock uuid; a_spr_stock uuid;
-  a_advance uuid; a_payable uuid; a_cgst uuid; a_sgst uuid; a_capital uuid;
-  a_veh_sales uuid; a_acc_sales uuid; a_spr_sales uuid; a_service uuid;
-  a_fin_comm uuid; a_ins_comm uuid; a_fwd uuid;
-  a_veh_cogs uuid; a_acc_cogs uuid; a_spr_cogs uuid; a_svc_cost uuid;
-  a_salaries uuid; a_rent uuid;
-
-  function_missing boolean;
+  v_hsn_veh  uuid;
+  v_hsn_part uuid;
+  v_hsn_lab  uuid;
+  v_jup uuid; v_jup_v uuid;
+  v_ntq uuid; v_ntq_v uuid;
+  v_apa uuid; v_apa_v uuid;
+  v_cust record;
+  v_n int;
 begin
   select id into v_dealer from public.dealers where code = 'SBM';
   if v_dealer is null then
-    raise notice 'Demo dealer SBM not found; skipping demo ledger.';
-    return;
+    raise exception 'No demo dealer (code SBM). Run supabase/seed.sql first.';
   end if;
 
-  -- Already seeded? Leave it alone so re-running is harmless.
-  select exists (
-    select 1 from public.journal_entries
-     where dealer_id = v_dealer and narration like '[DEMO]%'
-  ) into function_missing;
-  if function_missing then
-    raise notice 'Demo ledger already present; skipping.';
-    return;
+  select count(*) into v_n from public.vehicles where dealer_id = v_dealer;
+  if v_n > 0 then
+    raise exception 'Demo trading data is already present (% vehicles). Remove it with '
+                    'scripts/remove-demo-dealer.sql and re-seed, rather than running this twice.', v_n
+      using errcode = 'unique_violation';
   end if;
 
   select id into v_main  from public.branches where dealer_id = v_dealer and code = 'MAIN';
   select id into v_north from public.branches where dealer_id = v_dealer and code = 'NORTH';
   select id into v_south from public.branches where dealer_id = v_dealer and code = 'SOUTH';
-  v_branches := array[v_main, v_north, v_south];
 
-  select id into v_period from public.accounting_periods
-   where dealer_id = v_dealer and start_date = date '2026-04-01';
+  -- ── HSN / SAC and tax codes (spec §16 — rates are configuration) ──────────
+  insert into public.hsn_codes (dealer_id, code, code_type, description) values
+    (v_dealer, '87112019', 'HSN', 'Motorcycles and scooters'),
+    (v_dealer, '87141090', 'HSN', 'Parts and accessories of two-wheelers'),
+    (v_dealer, '998714',   'SAC', 'Maintenance and repair of motor vehicles');
 
-  select id into a_cash      from public.chart_of_accounts where dealer_id = v_dealer and code = '1100';
-  select id into a_bank      from public.chart_of_accounts where dealer_id = v_dealer and code = '1200';
-  select id into a_recv      from public.chart_of_accounts where dealer_id = v_dealer and code = '1300';
-  select id into a_finrecv   from public.chart_of_accounts where dealer_id = v_dealer and code = '1400';
-  select id into a_veh_stock from public.chart_of_accounts where dealer_id = v_dealer and code = '1500';
-  select id into a_acc_stock from public.chart_of_accounts where dealer_id = v_dealer and code = '1600';
-  select id into a_spr_stock from public.chart_of_accounts where dealer_id = v_dealer and code = '1700';
-  select id into a_advance   from public.chart_of_accounts where dealer_id = v_dealer and code = '2100';
-  select id into a_payable   from public.chart_of_accounts where dealer_id = v_dealer and code = '2200';
-  select id into a_cgst      from public.chart_of_accounts where dealer_id = v_dealer and code = '2300';
-  select id into a_sgst      from public.chart_of_accounts where dealer_id = v_dealer and code = '2400';
-  select id into a_capital   from public.chart_of_accounts where dealer_id = v_dealer and code = '3100';
-  select id into a_veh_sales from public.chart_of_accounts where dealer_id = v_dealer and code = '4100';
-  select id into a_acc_sales from public.chart_of_accounts where dealer_id = v_dealer and code = '4200';
-  select id into a_spr_sales from public.chart_of_accounts where dealer_id = v_dealer and code = '4300';
-  select id into a_service   from public.chart_of_accounts where dealer_id = v_dealer and code = '4400';
-  select id into a_fin_comm  from public.chart_of_accounts where dealer_id = v_dealer and code = '4500';
-  select id into a_ins_comm  from public.chart_of_accounts where dealer_id = v_dealer and code = '4600';
-  select id into a_fwd       from public.chart_of_accounts where dealer_id = v_dealer and code = '4700';
-  select id into a_veh_cogs  from public.chart_of_accounts where dealer_id = v_dealer and code = '5100';
-  select id into a_acc_cogs  from public.chart_of_accounts where dealer_id = v_dealer and code = '5200';
-  select id into a_spr_cogs  from public.chart_of_accounts where dealer_id = v_dealer and code = '5300';
-  select id into a_svc_cost  from public.chart_of_accounts where dealer_id = v_dealer and code = '5400';
-  select id into a_salaries  from public.chart_of_accounts where dealer_id = v_dealer and code = '5500';
-  select id into a_rent      from public.chart_of_accounts where dealer_id = v_dealer and code = '5600';
+  select id into v_hsn_veh  from public.hsn_codes where dealer_id = v_dealer and code = '87112019';
+  select id into v_hsn_part from public.hsn_codes where dealer_id = v_dealer and code = '87141090';
+  select id into v_hsn_lab  from public.hsn_codes where dealer_id = v_dealer and code = '998714';
 
-  -- ── Opening balances: capital funds cash, bank and stock ──────────────────
-  v_number := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
-  insert into public.journal_entries
-    (dealer_id, branch_id, entry_number, entry_date, period_id, source_module, narration)
-  values (v_dealer, v_main, v_number, date '2026-04-01', v_period, 'OPENING',
-          '[DEMO] Opening balances FY 2026-27')
-  returning id into v_je;
+  -- igst_rate = cgst + sgst is enforced by tax_codes_igst_matches_check.
+  insert into public.tax_codes
+    (dealer_id, code, name, hsn_code_id, cgst_rate, sgst_rate, igst_rate, effective_from) values
+    (v_dealer, 'GST28',  'GST 28% — vehicles',       v_hsn_veh,  14,  14,  28, date '2020-04-01'),
+    (v_dealer, 'GST18',  'GST 18% — parts',          v_hsn_part,  9,   9,  18, date '2020-04-01'),
+    (v_dealer, 'GST18L', 'GST 18% — service labour', v_hsn_lab,   9,   9,  18, date '2020-04-01'),
+    (v_dealer, 'GST5',   'GST 5% — concessional',    v_hsn_part, 2.5, 2.5,  5, date '2020-04-01');
 
-  insert into public.journal_entry_lines
-    (journal_entry_id, dealer_id, line_number, account_id, branch_id, debit, credit, narration)
+  -- ── Vehicle catalogue ────────────────────────────────────────────────────
+  insert into public.vehicle_models
+    (dealer_id, brand, name, model_code, category, hsn_code_id, tax_code) values
+    (v_dealer, 'TVS', 'Jupiter 110', 'JUPITER110', 'SCOOTER',    v_hsn_veh, 'GST28'),
+    (v_dealer, 'TVS', 'Ntorq 125',   'NTORQ125',   'SCOOTER',    v_hsn_veh, 'GST28'),
+    (v_dealer, 'TVS', 'Apache RTR',  'APACHE160',  'MOTORCYCLE', v_hsn_veh, 'GST28');
+
+  select id into v_jup from public.vehicle_models where dealer_id = v_dealer and model_code = 'JUPITER110';
+  select id into v_ntq from public.vehicle_models where dealer_id = v_dealer and model_code = 'NTORQ125';
+  select id into v_apa from public.vehicle_models where dealer_id = v_dealer and model_code = 'APACHE160';
+
+  insert into public.vehicle_variants
+    (dealer_id, model_id, name, variant_code, engine_cc, brake_type, start_type) values
+    (v_dealer, v_jup, 'Sheet Metal',  'JUPITER110-SM', 109.7, 'DRUM', 'SELF'),
+    (v_dealer, v_ntq, 'Race XP',      'NTORQ125-RXP',  124.8, 'DISC', 'SELF'),
+    (v_dealer, v_apa, 'Race Edition', 'APACHE160-RE',  159.7, 'DISC', 'SELF');
+
+  select id into v_jup_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'JUPITER110-SM';
+  select id into v_ntq_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'NTORQ125-RXP';
+  select id into v_apa_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'APACHE160-RE';
+
+  -- ── Prices (spec §15) ────────────────────────────────────────────────────
+  -- Written ACTIVE with an approval stamp rather than driven through
+  -- decide_price_version(). That workflow deliberately refuses to let the
+  -- submitter approve their own price, and a seed has nobody to be the second
+  -- pair of eyes. The approval path is covered by supabase/test/95_price_approval.sql.
+  --
+  -- Jupiter gets a superseded version 1 as well, so Price History (spec §42) has
+  -- a real before-and-after and an invoice can be checked against the price that
+  -- applied on its own date rather than today's.
+  insert into public.vehicle_price_versions
+    (dealer_id, model_id, variant_id, version_number, ex_showroom, insurance, registration,
+     mandatory_accessories, forwarding_charge, purchase_cost, max_discount, tax_code,
+     effective_from, effective_to, status, approved_at, notes)
   values
-    (v_je, v_dealer, 1, a_cash,      v_main,   650000.00,        0, 'Opening cash'),
-    (v_je, v_dealer, 2, a_bank,      v_main, 11200000.00,        0, 'Opening bank'),
-    (v_je, v_dealer, 3, a_veh_stock, v_main, 30500000.00,        0, 'Opening vehicle stock'),
-    (v_je, v_dealer, 4, a_acc_stock, v_main,  2400000.00,        0, 'Opening accessories stock'),
-    (v_je, v_dealer, 5, a_spr_stock, v_main,  1650000.00,        0, 'Opening spare stock'),
-    (v_je, v_dealer, 6, a_payable,   v_main,          0, 2350000.00, 'Opening supplier payables'),
-    (v_je, v_dealer, 7, a_capital,   v_main,          0, 44050000.00, 'Share capital');
+    (v_dealer, v_jup, v_jup_v, 1, 79000, 6000, 7300, 1800, 1200, 66000, 2500, 'GST28',
+     date '2026-04-01', date '2026-06-30', 'SUPERSEDED', now(), 'Opening FY price');
 
-  update public.journal_entries set status = 'POSTED' where id = v_je;
+  insert into public.vehicle_price_versions
+    (dealer_id, model_id, variant_id, version_number, ex_showroom, insurance, registration,
+     mandatory_accessories, forwarding_charge, purchase_cost, max_discount, tax_code,
+     effective_from, status, approved_at, notes)
+  values
+    (v_dealer, v_jup, v_jup_v, 2,  82000, 6200,  7500, 1800, 1200,  68500, 3000, 'GST28',
+     date '2026-07-01', 'ACTIVE', now(), 'July revision'),
+    (v_dealer, v_ntq, v_ntq_v, 1,  98000, 7100,  8800, 2400, 1400,  82000, 3500, 'GST28',
+     date '2026-04-01', 'ACTIVE', now(), 'Opening FY price'),
+    (v_dealer, v_apa, v_apa_v, 1, 124000, 8600, 10500, 3000, 1600, 104000, 4000, 'GST28',
+     date '2026-04-01', 'ACTIVE', now(), 'Opening FY price');
 
-  -- ── A month of trading, spread across the three branches ──────────────────
-  -- Each day posts one composite sales entry and one service entry. Amounts vary
-  -- deterministically so the sales-trend chart has a believable shape without
-  -- being random from run to run.
-  v_i := 0;
-  for v_day in select generate_series(date '2026-08-01', date '2026-08-30', interval '1 day')::date loop
-    v_i := v_i + 1;
-    v_branch := v_branches[1 + (v_i % 3)];
-    -- A repeating weekly rhythm plus a slow upward drift.
-    v_scale := 0.72 + 0.34 * sin(v_i::numeric / 2.1) + 0.010 * v_i;
+  -- One price awaiting a decision, so /masters/pricing has a queue rather than
+  -- a blank screen.
+  insert into public.vehicle_price_versions
+    (dealer_id, model_id, variant_id, version_number, ex_showroom, insurance, registration,
+     mandatory_accessories, forwarding_charge, purchase_cost, max_discount, tax_code,
+     effective_from, status, submitted_at, notes)
+  values
+    (v_dealer, v_ntq, v_ntq_v, 2, 101500, 7300, 9000, 2400, 1400, 84500, 3500, 'GST28',
+     date '2026-10-01', 'SUBMITTED', now(), 'Festive season revision — awaiting approval');
 
-    -- Vehicle sale: part cash, part finance, with GST and COGS.
-    v_number := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
-    insert into public.journal_entries
-      (dealer_id, branch_id, entry_number, entry_date, period_id, source_module, narration)
-    values (v_dealer, v_branch, v_number, v_day, v_period, 'SALES',
-            '[DEMO] Vehicle sales ' || to_char(v_day, 'DD Mon YYYY'))
-    returning id into v_je;
-
-    insert into public.journal_entry_lines
-      (journal_entry_id, dealer_id, line_number, account_id, branch_id, debit, credit, narration)
+  -- ── Customers (spec §11 — the code is issued by a trigger) ───────────────
+  for v_cust in
+    select * from (values
+      ('Ramesh Kumar',       '9840110001', 'INDIVIDUAL', null,              'Chennai',  '600042', 'ABCPK1234M'),
+      ('Lakshmi Narayanan',  '9840110002', 'INDIVIDUAL', null,              'Chennai',  '600017', null),
+      ('Anitha Selvam',      '9840110003', 'INDIVIDUAL', null,              'Tambaram', '600045', null),
+      ('Karthik Industries', '9840110004', 'BUSINESS',   '33AACCK9012B1ZP', 'Ambattur', '600053', 'AACCK9012B'),
+      ('Vijay Transport',    '9840110005', 'BUSINESS',   '33AABCV3456C1ZQ', 'Chennai',  '600032', 'AABCV3456C'),
+      ('Deepa Ravi',         '9840110006', 'INDIVIDUAL', null,              'Chennai',  '600020', null),
+      ('Mohan Raghavan',     '9840110007', 'INDIVIDUAL', null,              'Tambaram', '600045', null),
+      ('Meena Traders',      '9840110008', 'BUSINESS',   '33AAFCM7788D1ZR', 'Chennai',  '600028', 'AAFCM7788D')
+    ) as t(name, mobile, ctype, gstin, city, pincode, pan)
+  loop
+    insert into public.customers
+      (dealer_id, name, mobile, customer_type, gstin, pan, address_line1, city,
+       state, state_code, pincode, origin_branch_id)
     values
-      (v_je, v_dealer, 1, a_cash,      v_branch, round(240000 * v_scale, 2), 0, 'Cash collected'),
-      (v_je, v_dealer, 2, a_finrecv,   v_branch, round(560000 * v_scale, 2), 0, 'Finance receivable'),
-      (v_je, v_dealer, 3, a_veh_sales, v_branch, 0, round(620000 * v_scale, 2), 'Ex-showroom value'),
-      (v_je, v_dealer, 4, a_acc_sales, v_branch, 0, round( 46000 * v_scale, 2), 'Fitted accessories'),
-      (v_je, v_dealer, 5, a_fwd,       v_branch, 0, round(  8000 * v_scale, 2), 'Forwarding charges'),
-      (v_je, v_dealer, 6, a_ins_comm,  v_branch, 0, round(  7400 * v_scale, 2), 'Insurance commission'),
-      (v_je, v_dealer, 7, a_cgst,      v_branch, 0, round( 59300 * v_scale, 2), 'Output CGST'),
-      (v_je, v_dealer, 8, a_sgst,      v_branch, 0, round( 59300 * v_scale, 2), 'Output SGST'),
-      -- COGS and the matching stock relief.
-      (v_je, v_dealer, 9, a_veh_cogs,  v_branch, round(521000 * v_scale, 2), 0, 'Vehicle COGS'),
-      (v_je, v_dealer, 10, a_acc_cogs, v_branch, round( 31000 * v_scale, 2), 0, 'Accessories COGS'),
-      (v_je, v_dealer, 11, a_veh_stock, v_branch, 0, round(521000 * v_scale, 2), 'Vehicle stock relief'),
-      (v_je, v_dealer, 12, a_acc_stock, v_branch, 0, round( 31000 * v_scale, 2), 'Accessories stock relief');
-
-    -- Balance the rounding: the debit and credit legs above are independently
-    -- rounded, so square them off against cash before posting.
-    declare
-      v_debit  numeric(18, 4);
-      v_credit numeric(18, 4);
-      v_diff   numeric(18, 4);
-    begin
-      select coalesce(sum(debit), 0), coalesce(sum(credit), 0)
-        into v_debit, v_credit
-        from public.journal_entry_lines where journal_entry_id = v_je;
-      v_diff := v_debit - v_credit;
-
-      if v_diff <> 0 then
-        update public.journal_entry_lines
-           set debit = debit - v_diff
-         where journal_entry_id = v_je and line_number = 1;
-      end if;
-    end;
-
-    update public.journal_entries set status = 'POSTED' where id = v_je;
-
-    -- Service billing: labour and spares, collected in cash.
-    v_number := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
-    insert into public.journal_entries
-      (dealer_id, branch_id, entry_number, entry_date, period_id, source_module, narration)
-    values (v_dealer, v_branch, v_number, v_day, v_period, 'SERVICE',
-            '[DEMO] Service billing ' || to_char(v_day, 'DD Mon YYYY'))
-    returning id into v_je;
-
-    insert into public.journal_entry_lines
-      (journal_entry_id, dealer_id, line_number, account_id, branch_id, debit, credit, narration)
-    values
-      (v_je, v_dealer, 1, a_cash,      v_branch, round(42000 * v_scale, 2), 0, 'Service collections'),
-      (v_je, v_dealer, 2, a_service,   v_branch, 0, round(21000 * v_scale, 2), 'Labour'),
-      (v_je, v_dealer, 3, a_spr_sales, v_branch, 0, round(14600 * v_scale, 2), 'Spares billed'),
-      (v_je, v_dealer, 4, a_cgst,      v_branch, 0, round( 3200 * v_scale, 2), 'Output CGST'),
-      (v_je, v_dealer, 5, a_sgst,      v_branch, 0, round( 3200 * v_scale, 2), 'Output SGST'),
-      (v_je, v_dealer, 6, a_spr_cogs,  v_branch, round( 9800 * v_scale, 2), 0, 'Spare COGS'),
-      (v_je, v_dealer, 7, a_svc_cost,  v_branch, round( 2600 * v_scale, 2), 0, 'Service consumables'),
-      (v_je, v_dealer, 8, a_spr_stock, v_branch, 0, round( 9800 * v_scale, 2), 'Spare stock relief'),
-      (v_je, v_dealer, 9, a_acc_stock, v_branch, 0, round( 2600 * v_scale, 2), 'Consumables relief');
-
-    declare
-      v_debit  numeric(18, 4);
-      v_credit numeric(18, 4);
-      v_diff   numeric(18, 4);
-    begin
-      select coalesce(sum(debit), 0), coalesce(sum(credit), 0)
-        into v_debit, v_credit
-        from public.journal_entry_lines where journal_entry_id = v_je;
-      v_diff := v_debit - v_credit;
-
-      if v_diff <> 0 then
-        update public.journal_entry_lines
-           set debit = debit - v_diff
-         where journal_entry_id = v_je and line_number = 1;
-      end if;
-    end;
-
-    update public.journal_entries set status = 'POSTED' where id = v_je;
+      (v_dealer, v_cust.name, v_cust.mobile, v_cust.ctype, v_cust.gstin, v_cust.pan,
+       'Plot ' || right(v_cust.mobile, 2) || ', ' || v_cust.city, v_cust.city,
+       'Tamil Nadu', '33', v_cust.pincode,
+       case when v_cust.city = 'Tambaram' then v_south else v_main end);
   end loop;
 
-  -- ── Booking advances outstanding ──────────────────────────────────────────
-  v_number := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
-  insert into public.journal_entries
-    (dealer_id, branch_id, entry_number, entry_date, period_id, source_module, narration)
-  values (v_dealer, v_main, v_number, date '2026-08-28', v_period, 'BOOKING',
-          '[DEMO] Booking advances received')
-  returning id into v_je;
+  -- ── Suppliers (spec §24 — the payable side of the ledger) ────────────────
+  insert into public.suppliers
+    (dealer_id, name, supplier_type, contact_person, mobile, city, state, state_code,
+     gstin, credit_days) values
+    (v_dealer, 'TVS Motor Company',  'OEM',     'Ravi Shankar',   '9840220001', 'Hosur',   'Tamil Nadu', '33', '33AAACT1234E1ZS', 30),
+    (v_dealer, 'Chennai Lubricants', 'GOODS',   'Suresh Iyer',    '9840220002', 'Chennai', 'Tamil Nadu', '33', '33AAGCL5566F1ZT', 15),
+    (v_dealer, 'Southern Logistics', 'SERVICE', 'Prakash Nair',   '9840220003', 'Chennai', 'Tamil Nadu', '33', null,               7);
 
-  insert into public.journal_entry_lines
-    (journal_entry_id, dealer_id, line_number, account_id, branch_id, debit, credit, narration)
-  values
-    (v_je, v_dealer, 1, a_cash,    v_main, 1124500.00, 0, 'Advances collected'),
-    (v_je, v_dealer, 2, a_advance, v_main, 0, 1124500.00, 'Customer advances (spec §18)');
+  -- ── Finance companies (spec §25 — one ledger each, never merged) ─────────
+  insert into public.finance_companies
+    (dealer_id, code, name, contact_person, mobile, gstin, commission_percent) values
+    (v_dealer, 'TVSCREDIT', 'TVS Credit Services Ltd', 'Priya Menon',    '9840330001', '33AAACT8899G1ZU', 2.500),
+    (v_dealer, 'HDFCBANK',  'HDFC Bank Ltd',           'Arun Prasad',    '9840330002', '33AAACH2233H1ZV', 2.000),
+    (v_dealer, 'CHOLA',     'Cholamandalam Finance',   'Sneha Krishnan', '9840330003', null,              2.750);
 
-  update public.journal_entries set status = 'POSTED' where id = v_je;
+  raise notice 'Masters: 3 models, 5 price versions, 8 customers, 3 suppliers, 3 finance companies.';
+end;
+$$;
 
-  -- ── Finance commission and a bank deposit ─────────────────────────────────
-  v_number := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
-  insert into public.journal_entries
-    (dealer_id, branch_id, entry_number, entry_date, period_id, source_module, narration)
-  values (v_dealer, v_main, v_number, date '2026-08-29', v_period, 'FINANCE',
-          '[DEMO] Finance disbursement and commission')
-  returning id into v_je;
+-- =============================================================================
+-- 2 — Cash and bank accounts
+-- =============================================================================
+-- seed.sql already creates one cash account per branch (spec §36) with a nil
+-- opening balance. A demo wants a float in the till, so the balances are set
+-- here; the bank accounts have no equivalent and are created outright.
+do $$
+declare
+  v_dealer uuid;
+  v_bankgl uuid;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_bankgl from public.chart_of_accounts where dealer_id = v_dealer and code = '1200';
 
-  insert into public.journal_entry_lines
-    (journal_entry_id, dealer_id, line_number, account_id, branch_id, debit, credit, narration)
-  values
-    (v_je, v_dealer, 1, a_bank,     v_main, 9850000.00, 0, 'Finance disbursements received'),
-    (v_je, v_dealer, 2, a_finrecv,  v_main, 0, 9850000.00, 'Finance receivable settled'),
-    (v_je, v_dealer, 3, a_bank,     v_main,  384000.00, 0, 'Commission credited'),
-    (v_je, v_dealer, 4, a_fin_comm, v_main, 0,  384000.00, 'Finance commission income');
+  update public.cash_accounts
+     set opening_balance = 25000, current_balance = 25000
+   where dealer_id = v_dealer;
 
-  update public.journal_entries set status = 'POSTED' where id = v_je;
+  insert into public.bank_accounts
+    (dealer_id, branch_id, name, bank_name, account_number, ifsc, account_type,
+     ledger_account_id, opening_balance, current_balance)
+  select v_dealer, b.id, b.name || ' — Current A/c', 'HDFC Bank',
+         '5010' || lpad((row_number() over (order by b.code))::text, 8, '0'),
+         'HDFC0001234', 'CURRENT', v_bankgl, 500000, 500000
+    from public.branches b
+   where b.dealer_id = v_dealer and b.is_head_office;
 
-  -- ── Operating expenses ────────────────────────────────────────────────────
-  v_number := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
-  insert into public.journal_entries
-    (dealer_id, branch_id, entry_number, entry_date, period_id, source_module, narration)
-  values (v_dealer, v_main, v_number, date '2026-08-30', v_period, 'EXPENSE',
-          '[DEMO] Monthly operating expenses')
-  returning id into v_je;
+  insert into public.bank_accounts
+    (dealer_id, branch_id, name, bank_name, account_number, ifsc, account_type,
+     ledger_account_id, opening_balance, current_balance)
+  values (v_dealer, null, 'Dealer Collection A/c', 'ICICI Bank', '602201234567',
+          'ICIC0006022', 'CURRENT', v_bankgl, 250000, 250000);
 
-  insert into public.journal_entry_lines
-    (journal_entry_id, dealer_id, line_number, account_id, branch_id, debit, credit, narration)
-  values
-    (v_je, v_dealer, 1, a_salaries, v_main, 1860000.00, 0, 'Salaries'),
-    (v_je, v_dealer, 2, a_rent,     v_main,  420000.00, 0, 'Rent'),
-    (v_je, v_dealer, 3, a_bank,     v_main, 0, 2280000.00, 'Paid by bank transfer');
+  raise notice 'Cash and bank: 3 branch cash accounts, 2 bank accounts.';
+end;
+$$;
 
-  update public.journal_entries set status = 'POSTED' where id = v_je;
+-- =============================================================================
+-- 3 — Accessories and spares, with opening stock
+-- =============================================================================
+do $$
+declare
+  v_dealer uuid;
+  v_main uuid; v_north uuid; v_south uuid;
+  v_hsn_part uuid;
+  v_helmet uuid; v_mat uuid; v_guard uuid; v_cover uuid;
+  v_oil uuid; v_brake uuid; v_filter uuid; v_plug uuid;
+  v_jup uuid; v_jup_v uuid; v_ntq uuid; v_ntq_v uuid;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_main  from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_north from public.branches where dealer_id = v_dealer and code = 'NORTH';
+  select id into v_south from public.branches where dealer_id = v_dealer and code = 'SOUTH';
+  select id into v_hsn_part from public.hsn_codes where dealer_id = v_dealer and code = '87141090';
+  select id into v_jup   from public.vehicle_models   where dealer_id = v_dealer and model_code = 'JUPITER110';
+  select id into v_ntq   from public.vehicle_models   where dealer_id = v_dealer and model_code = 'NTORQ125';
+  select id into v_jup_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'JUPITER110-SM';
+  select id into v_ntq_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'NTORQ125-RXP';
 
-  -- ── Trade payables partly settled, some receivables outstanding ───────────
-  v_number := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
-  insert into public.journal_entries
-    (dealer_id, branch_id, entry_number, entry_date, period_id, source_module, narration)
-  values (v_dealer, v_main, v_number, date '2026-08-30', v_period, 'CASH',
-          '[DEMO] Customer dues outstanding')
-  returning id into v_je;
+  insert into public.inventory_items
+    (dealer_id, item_code, name, item_type, brand, category, uom, hsn_code_id, tax_code,
+     standard_cost, selling_price, reorder_level, is_fitment) values
+    (v_dealer, 'AC-HELM-01', 'Full face helmet', 'ACCESSORY', 'Studds', 'Safety',    'NOS', v_hsn_part, 'GST18', 900, 1450,  6, false),
+    (v_dealer, 'AC-MAT-01',  'Floor mat',        'ACCESSORY', 'Local',  'Fitment',   'NOS', v_hsn_part, 'GST18', 320,  580, 10, true),
+    (v_dealer, 'AC-GRD-01',  'Leg guard',        'ACCESSORY', 'Local',  'Fitment',   'NOS', v_hsn_part, 'GST18', 640, 1100,  8, true),
+    (v_dealer, 'AC-SEAT-01', 'Seat cover',       'ACCESSORY', 'Local',  'Fitment',   'NOS', v_hsn_part, 'GST18', 380,  720,  8, true),
+    (v_dealer, 'SP-OIL-01',  'Engine oil 1L',    'SPARE',     'TVS',    'Lubricant', 'LTR', v_hsn_part, 'GST18', 310,  480, 20, false),
+    (v_dealer, 'SP-BRK-01',  'Brake shoe set',   'SPARE',     'TVS',    'Braking',   'SET', v_hsn_part, 'GST18', 240,  420, 12, false),
+    (v_dealer, 'SP-FLT-01',  'Air filter',       'SPARE',     'TVS',    'Engine',    'NOS', v_hsn_part, 'GST18', 185,  330, 15, false),
+    (v_dealer, 'SP-PLG-01',  'Spark plug',       'SPARE',     'TVS',    'Engine',    'NOS', v_hsn_part, 'GST18',  95,  190, 25, false);
 
-  insert into public.journal_entry_lines
-    (journal_entry_id, dealer_id, line_number, account_id, branch_id, debit, credit, narration)
-  values
-    (v_je, v_dealer, 1, a_recv,  v_main, 4875430.00, 0, 'Customer receivables'),
-    (v_je, v_dealer, 2, a_cash,  v_main, 0, 4875430.00, 'Credit extended against cash sales');
+  select id into v_helmet from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-HELM-01';
+  select id into v_mat    from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-MAT-01';
+  select id into v_guard  from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-GRD-01';
+  select id into v_cover  from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-SEAT-01';
+  select id into v_oil    from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-OIL-01';
+  select id into v_brake  from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-BRK-01';
+  select id into v_filter from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-FLT-01';
+  select id into v_plug   from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-PLG-01';
 
-  update public.journal_entries set status = 'POSTED' where id = v_je;
+  -- Spec §28: LOCAL and COMPANY lots stay separately traceable, so several items
+  -- are stocked from both sources at different costs. balance_after is left to
+  -- the trigger — writing a derived figure by hand is how ledgers drift.
+  insert into public.inventory_transactions
+    (dealer_id, branch_id, item_id, source, transaction_type, quantity, unit_cost,
+     reference_type, reference_number, narration) values
+    (v_dealer, v_main,  v_helmet, 'COMPANY', 'OPENING', 24, 900, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_mat,    'LOCAL',   'OPENING', 18, 300, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_mat,    'COMPANY', 'OPENING', 30, 330, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_guard,  'LOCAL',   'OPENING', 12, 620, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_guard,  'COMPANY', 'OPENING', 16, 660, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_cover,  'LOCAL',   'OPENING', 20, 375, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_oil,    'COMPANY', 'OPENING', 60, 310, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_brake,  'COMPANY', 'OPENING', 40, 240, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_filter, 'COMPANY', 'OPENING', 35, 185, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_main,  v_plug,   'COMPANY', 'OPENING', 80,  95, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_north, v_helmet, 'COMPANY', 'OPENING', 10, 900, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_north, v_mat,    'COMPANY', 'OPENING', 14, 330, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_north, v_oil,    'COMPANY', 'OPENING', 25, 310, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_north, v_plug,   'COMPANY', 'OPENING', 30,  95, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_south, v_helmet, 'COMPANY', 'OPENING',  8, 900, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_south, v_oil,    'COMPANY', 'OPENING', 20, 310, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026'),
+    (v_dealer, v_south, v_brake,  'COMPANY', 'OPENING', 15, 240, 'OPENING', 'OPEN-2026', 'Opening stock 01-Jul-2026');
 
-  raise notice '[DEMO] Ledger seeded: % posted journals.',
-    (select count(*) from public.journal_entries where dealer_id = v_dealer and status = 'POSTED');
+  -- Movements, so the stock ledger is not made entirely of openings.
+  perform public.transfer_inventory_stock(v_oil,  v_main, v_north,  5, 'COMPANY', 'Branch indent — North workshop');
+  perform public.transfer_inventory_stock(v_plug, v_main, v_south, 10, 'COMPANY', 'Branch indent — South workshop');
+  perform public.adjust_inventory_stock(v_brake, v_main, 'COMPANY', -2, 'Two sets damaged in storage — written off after count');
+  perform public.adjust_inventory_stock(v_mat,   v_main, 'LOCAL',    3, 'Physical count found three more than the ledger');
+
+  -- ── Fitting templates (spec §30) ─────────────────────────────────────────
+  insert into public.accessory_vehicle_mappings
+    (dealer_id, model_id, variant_id, item_id, quantity, is_default, priority) values
+    (v_dealer, v_jup, v_jup_v, v_mat,   1, true,  10),
+    (v_dealer, v_jup, v_jup_v, v_guard, 1, true,  20),
+    (v_dealer, v_jup, v_jup_v, v_cover, 1, false, 30),
+    (v_dealer, v_ntq, v_ntq_v, v_mat,   1, true,  10),
+    (v_dealer, v_ntq, v_ntq_v, v_cover, 1, true,  20);
+
+  raise notice 'Inventory: 8 items, 17 opening lots, 2 transfers, 2 adjustments, 5 fitting mappings.';
+end;
+$$;
+
+-- =============================================================================
+-- 4 — Vehicle stock (spec §13 — chassis level, never a quantity)
+-- =============================================================================
+do $$
+declare
+  v_dealer uuid;
+  v_main uuid; v_north uuid; v_south uuid;
+  v_jup uuid; v_jup_v uuid; v_ntq uuid; v_ntq_v uuid; v_apa uuid; v_apa_v uuid;
+  v_moving uuid;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_main  from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_north from public.branches where dealer_id = v_dealer and code = 'NORTH';
+  select id into v_south from public.branches where dealer_id = v_dealer and code = 'SOUTH';
+  select id into v_jup   from public.vehicle_models   where dealer_id = v_dealer and model_code = 'JUPITER110';
+  select id into v_ntq   from public.vehicle_models   where dealer_id = v_dealer and model_code = 'NTORQ125';
+  select id into v_apa   from public.vehicle_models   where dealer_id = v_dealer and model_code = 'APACHE160';
+  select id into v_jup_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'JUPITER110-SM';
+  select id into v_ntq_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'NTORQ125-RXP';
+  select id into v_apa_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'APACHE160-RE';
+
+  -- Purchase dates spread over three months, so stock ageing has a shape.
+  insert into public.vehicles
+    (dealer_id, branch_id, model_id, variant_id, chassis_no, engine_no, key_no, model_year,
+     purchase_cost, purchase_invoice, purchase_date, stock_date) values
+    (v_dealer, v_main,  v_jup, v_jup_v, 'MD625JU10P1A00001', 'JU1AP1000001', 'K1001', 2026,  68500, 'PINV-4401', date '2026-06-02', date '2026-06-03'),
+    (v_dealer, v_main,  v_jup, v_jup_v, 'MD625JU10P1A00002', 'JU1AP1000002', 'K1002', 2026,  68500, 'PINV-4401', date '2026-06-02', date '2026-06-03'),
+    (v_dealer, v_main,  v_jup, v_jup_v, 'MD625JU10P1A00003', 'JU1AP1000003', 'K1003', 2026,  68500, 'PINV-4401', date '2026-06-02', date '2026-06-03'),
+    (v_dealer, v_main,  v_jup, v_jup_v, 'MD625JU10P1A00004', 'JU1AP1000004', 'K1004', 2026,  68500, 'PINV-4412', date '2026-07-14', date '2026-07-15'),
+    (v_dealer, v_main,  v_ntq, v_ntq_v, 'MD625NT12P2B00001', 'NT2BP2000001', 'K2001', 2026,  82000, 'PINV-4402', date '2026-07-10', date '2026-07-11'),
+    (v_dealer, v_main,  v_ntq, v_ntq_v, 'MD625NT12P2B00002', 'NT2BP2000002', 'K2002', 2026,  82000, 'PINV-4402', date '2026-07-10', date '2026-07-11'),
+    (v_dealer, v_main,  v_apa, v_apa_v, 'MD634AP16P3C00001', 'AP3CP3000001', 'K3001', 2026, 104000, 'PINV-4403', date '2026-07-18', date '2026-07-19'),
+    (v_dealer, v_main,  v_apa, v_apa_v, 'MD634AP16P3C00002', 'AP3CP3000002', 'K3002', 2026, 104000, 'PINV-4419', date '2026-08-08', date '2026-08-09'),
+    (v_dealer, v_north, v_jup, v_jup_v, 'MD625JU10P1A00005', 'JU1AP1000005', 'K1005', 2026,  68500, 'PINV-4404', date '2026-07-20', date '2026-07-21'),
+    (v_dealer, v_north, v_jup, v_jup_v, 'MD625JU10P1A00006', 'JU1AP1000006', 'K1006', 2026,  68500, 'PINV-4404', date '2026-07-20', date '2026-07-21'),
+    (v_dealer, v_north, v_ntq, v_ntq_v, 'MD625NT12P2B00003', 'NT2BP2000003', 'K2003', 2026,  82000, 'PINV-4404', date '2026-07-20', date '2026-07-21'),
+    (v_dealer, v_south, v_apa, v_apa_v, 'MD634AP16P3C00003', 'AP3CP3000003', 'K3003', 2026, 104000, 'PINV-4405', date '2026-07-25', date '2026-07-26'),
+    (v_dealer, v_south, v_jup, v_jup_v, 'MD625JU10P1A00007', 'JU1AP1000007', 'K1007', 2026,  68500, 'PINV-4405', date '2026-07-25', date '2026-07-26'),
+    (v_dealer, v_south, v_ntq, v_ntq_v, 'MD625NT12P2B00004', 'NT2BP2000004', 'K2004', 2026,  82000, 'PINV-4420', date '2026-08-12', date '2026-08-13');
+
+  -- One unit in transit between branches (spec §35), so the transfer screen has
+  -- something outstanding to receive.
+  select id into v_moving from public.vehicles where dealer_id = v_dealer and chassis_no = 'MD625JU10P1A00007';
+  perform public.dispatch_vehicle_transfer(v_moving, v_main, 'Stock rebalancing — MAIN is short of Jupiter');
+
+  raise notice 'Vehicles: 14 units across 3 branches, 1 in transit.';
+end;
+$$;
+
+-- =============================================================================
+-- 5 — Opening capital and the purchases that put the stock on the books
+-- =============================================================================
+-- Stock arrives in this ERP through two paths that write no journal at all: the
+-- vehicle upload (0017) and an OPENING inventory transaction (0019). Both are
+-- deliberate — they are bulk data loads, not business transactions — but it
+-- means an asset exists in the stock ledger that the general ledger has never
+-- heard of. Sell it and COGS relieves an inventory account that was never
+-- debited, so the balance sheet shows negative inventory.
+--
+-- Real dealers close that gap with opening entries. So does this: the capital
+-- introduced, then one purchase journal per supplier invoice, party-tagged so
+-- the supplier ledger (0041) has a balance to work with and the payments made
+-- further down draw a real payable down rather than into a debit.
+do $$
+declare
+  v_dealer uuid;
+  v_head   uuid;
+  v_cash uuid; v_bank uuid; v_capital uuid;
+  v_veh_inv uuid; v_acc_inv uuid; v_spr_inv uuid; v_payable uuid;
+  v_tvs uuid; v_local uuid;
+  v_cash_amt numeric; v_bank_amt numeric;
+  v_pinv record;
+  v_lot  record;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_head from public.branches where dealer_id = v_dealer and is_head_office;
+
+  select id into v_cash    from public.chart_of_accounts where dealer_id = v_dealer and code = '1100';
+  select id into v_bank    from public.chart_of_accounts where dealer_id = v_dealer and code = '1200';
+  select id into v_veh_inv from public.chart_of_accounts where dealer_id = v_dealer and code = '1500';
+  select id into v_acc_inv from public.chart_of_accounts where dealer_id = v_dealer and code = '1600';
+  select id into v_spr_inv from public.chart_of_accounts where dealer_id = v_dealer and code = '1700';
+  select id into v_payable from public.chart_of_accounts where dealer_id = v_dealer and code = '2200';
+  select id into v_capital from public.chart_of_accounts where dealer_id = v_dealer and code = '3100';
+
+  select id into v_tvs   from public.suppliers where dealer_id = v_dealer and name = 'TVS Motor Company';
+  select id into v_local from public.suppliers where dealer_id = v_dealer and name = 'Chennai Lubricants';
+
+  select coalesce(sum(opening_balance), 0) into v_cash_amt from public.cash_accounts where dealer_id = v_dealer;
+  select coalesce(sum(opening_balance), 0) into v_bank_amt from public.bank_accounts where dealer_id = v_dealer;
+
+  -- ── Capital introduced ───────────────────────────────────────────────────
+  -- The cash and bank accounts carry an opening_balance of their own; this is
+  -- the journal that makes the general ledger agree with them.
+  perform app.post_journal(
+    v_dealer, v_head, date '2026-06-01', 'OPENING',
+    'Opening balances — capital introduced',
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_cash,    'debit', v_cash_amt, 'credit', 0,
+                         'narration', 'Opening cash in hand across branches'),
+      jsonb_build_object('account_id', v_bank,    'debit', v_bank_amt, 'credit', 0,
+                         'narration', 'Opening bank balances'),
+      jsonb_build_object('account_id', v_capital, 'debit', 0, 'credit', v_cash_amt + v_bank_amt,
+                         'narration', 'Proprietor capital')
+    ),
+    'OPENING', null, 'demo-opening-capital'
+  );
+
+  -- ── Vehicle purchases, one journal per supplier invoice ─────────────────
+  -- Dated on the invoice, so stock ageing and the ledger tell the same story.
+  for v_pinv in
+    select purchase_invoice, purchase_date, branch_id, sum(purchase_cost) as cost, count(*) as units
+      from public.vehicles
+     where dealer_id = v_dealer
+     group by purchase_invoice, purchase_date, branch_id
+     order by purchase_date, purchase_invoice
+  loop
+    perform app.post_journal(
+      v_dealer, v_pinv.branch_id, v_pinv.purchase_date, 'INVENTORY',
+      'Vehicle purchase ' || v_pinv.purchase_invoice,
+      jsonb_build_array(
+        jsonb_build_object('account_id', v_veh_inv, 'debit', v_pinv.cost, 'credit', 0,
+                           'narration', v_pinv.units || ' unit(s) into stock'),
+        jsonb_build_object('account_id', v_payable, 'debit', 0, 'credit', v_pinv.cost,
+                           'narration', 'TVS Motor Company — ' || v_pinv.purchase_invoice,
+                           'party_type', 'SUPPLIER', 'party_id', v_tvs)
+      ),
+      'PURCHASE_INVOICE', null, 'demo-vpurchase:' || v_pinv.purchase_invoice || ':' || v_pinv.branch_id::text
+    );
+  end loop;
+
+  -- ── Opening accessory and spare stock, by branch and source ─────────────
+  -- LOCAL lots are bought locally, COMPANY lots come from the manufacturer, so
+  -- the payable lands on the supplier who actually supplied them (spec §28).
+  for v_lot in
+    select t.branch_id, t.source, i.item_type, sum(t.quantity * t.unit_cost) as cost
+      from public.inventory_transactions t
+      join public.inventory_items i on i.id = t.item_id
+     where t.dealer_id = v_dealer and t.transaction_type = 'OPENING'
+     group by t.branch_id, t.source, i.item_type
+     order by t.branch_id, t.source, i.item_type
+  loop
+    perform app.post_journal(
+      v_dealer, v_lot.branch_id, date '2026-07-01', 'INVENTORY',
+      'Opening stock — ' || lower(v_lot.item_type) || ' (' || lower(v_lot.source) || ')',
+      jsonb_build_array(
+        jsonb_build_object(
+          'account_id', case when v_lot.item_type = 'ACCESSORY' then v_acc_inv else v_spr_inv end,
+          'debit', v_lot.cost, 'credit', 0, 'narration', 'Stock on hand at 01-Jul-2026'),
+        jsonb_build_object(
+          'account_id', v_payable, 'debit', 0, 'credit', v_lot.cost,
+          'narration', 'Opening purchase payable',
+          'party_type', 'SUPPLIER',
+          'party_id', case when v_lot.source = 'LOCAL' then v_local else v_tvs end)
+      ),
+      'PURCHASE_INVOICE', null,
+      'demo-opening-stock:' || v_lot.branch_id::text || ':' || v_lot.source || ':' || v_lot.item_type
+    );
+  end loop;
+
+  raise notice 'Opening: capital introduced, vehicle purchases and opening stock brought onto the ledger.';
+end;
+$$;
+
+-- =============================================================================
+-- 6 — Bookings and their advances (spec §18)
+-- =============================================================================
+do $$
+declare
+  v_dealer uuid;
+  v_main uuid; v_north uuid;
+  v_exec_main uuid; v_exec_north uuid;
+  v_jup uuid; v_jup_v uuid; v_ntq uuid; v_ntq_v uuid; v_apa uuid; v_apa_v uuid;
+  v_b record;
+  v_ids uuid[];
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_main  from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_north from public.branches where dealer_id = v_dealer and code = 'NORTH';
+  select id into v_exec_main  from public.employees where dealer_id = v_dealer and employee_code = 'EMP0004';
+  select id into v_exec_north from public.employees where dealer_id = v_dealer and employee_code = 'EMP0007';
+  select id into v_jup   from public.vehicle_models   where dealer_id = v_dealer and model_code = 'JUPITER110';
+  select id into v_ntq   from public.vehicle_models   where dealer_id = v_dealer and model_code = 'NTORQ125';
+  select id into v_apa   from public.vehicle_models   where dealer_id = v_dealer and model_code = 'APACHE160';
+  select id into v_jup_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'JUPITER110-SM';
+  select id into v_ntq_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'NTORQ125-RXP';
+  select id into v_apa_v from public.vehicle_variants where dealer_id = v_dealer and variant_code = 'APACHE160-RE';
+
+  -- Matched on the demo mobile range rather than taken as "the first eight
+  -- customers": the sections below address these by position, and a dealer that
+  -- already had a customer on file would shift every index by one.
+  select array_agg(id order by customer_code) into v_ids
+    from public.customers where dealer_id = v_dealer and mobile like '98401100%';
+
+  -- Five bookings, deliberately mixed: two convert to sales below, one is
+  -- cancelled and refunded, two stay open. Raised from two branches, which is
+  -- the case that used to collide on document numbering before 0039.
+  for v_b in
+    select * from (values
+      (1, 1,  98000::numeric, 10000::numeric, 'CASH'),   -- Ramesh   → converts
+      (2, 2, 124000::numeric, 15000::numeric, 'UPI'),    -- Lakshmi  → converts
+      (3, 3,  82000::numeric,  5000::numeric, 'CASH'),   -- Anitha   → cancelled, then refunded
+      (4, 3,  82000::numeric,  7500::numeric, 'NEFT'),   -- Karthik  → stays open
+      (5, 1,  98000::numeric,  8000::numeric, 'CASH')    -- Vijay    → stays open
+    ) as t(cust_ix, model_ix, amount, advance, mode)
+  loop
+    perform public.create_booking_with_advance(
+      p_customer_id     => v_ids[v_b.cust_ix],
+      p_model_id        => case v_b.model_ix when 1 then v_ntq when 2 then v_apa else v_jup end,
+      p_branch_id       => case when v_b.cust_ix % 2 = 1 then v_main else v_north end,
+      p_booking_amount  => v_b.amount,
+      p_advance_amount  => v_b.advance,
+      p_payment_mode    => v_b.mode,
+      p_variant_id      => case v_b.model_ix when 1 then v_ntq_v when 2 then v_apa_v else v_jup_v end,
+      p_expected_delivery  => current_date + 10,
+      p_sales_executive_id => case when v_b.cust_ix % 2 = 1 then v_exec_main else v_exec_north end,
+      p_notes           => 'Demo booking'
+    );
+  end loop;
+
+  -- Cancel the third. Spec §18: cancelling does not refund — a retained advance
+  -- is a normal outcome, so the refund below is a separate, deliberate act.
+  update public.bookings
+     set status = 'CANCELLED',
+         cancelled_reason = 'Customer chose a different model'
+   where dealer_id = v_dealer
+     and customer_id = v_ids[3]
+     and status = 'OPEN';
+
+  raise notice 'Bookings: 5 raised with advances, 1 cancelled.';
+end;
+$$;
+
+-- =============================================================================
+-- 7 — Vehicle sales, through to delivery (spec §19)
+-- =============================================================================
+-- DRAFT → SUBMITTED → ACCOUNTS_VERIFICATION → APPROVED → POSTED → DELIVERED.
+-- The status transitions are plain updates because that is exactly what the
+-- service layer does; posting, payment and delivery run through their real
+-- functions, so stock, COGS, tax and the customer ledger all move.
+do $$
+declare
+  v_dealer uuid;
+  v_main uuid;
+  v_exec uuid;
+  v_fin_tvs uuid; v_fin_hdfc uuid;
+  v_mat uuid; v_guard uuid; v_cover uuid;
+  v_sale record;
+  v_veh uuid;
+  v_cust uuid;
+  v_booking uuid;
+  v_ids uuid[];
+  v_total numeric;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_main from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_exec from public.employees where dealer_id = v_dealer and employee_code = 'EMP0004';
+  select id into v_fin_tvs  from public.finance_companies where dealer_id = v_dealer and code = 'TVSCREDIT';
+  select id into v_fin_hdfc from public.finance_companies where dealer_id = v_dealer and code = 'HDFCBANK';
+  select id into v_mat   from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-MAT-01';
+  select id into v_guard from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-GRD-01';
+  select id into v_cover from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-SEAT-01';
+  select array_agg(id order by customer_code) into v_ids
+    from public.customers where dealer_id = v_dealer and mobile like '98401100%';
+
+  -- ── Sale 1: Ramesh, Ntorq, off his booking, part cash + part finance ─────
+  v_cust := v_ids[1];
+  select id into v_veh from public.vehicles
+   where dealer_id = v_dealer and chassis_no = 'MD625NT12P2B00001';
+  select id into v_booking from public.bookings
+   where dealer_id = v_dealer and customer_id = v_cust and status = 'OPEN' limit 1;
+
+  select * into v_sale from public.create_vehicle_sale_draft(
+    p_customer_id => v_cust, p_vehicle_id => v_veh,
+    p_invoice_date => current_date - 12, p_booking_id => v_booking,
+    p_sales_executive_id => v_exec, p_discount => 2000,
+    p_notes => 'Exchange of an older scooter agreed separately'
+  );
+
+  -- Extra fittings, allocated LOCAL before COMPANY (spec §31).
+  perform public.consume_fitting_stock(v_sale.sale_id, v_mat,   1,  580);
+  perform public.consume_fitting_stock(v_sale.sale_id, v_guard, 1, 1100);
+
+  update public.sales set status = 'SUBMITTED'             where id = v_sale.sale_id;
+  update public.sales set status = 'ACCOUNTS_VERIFICATION' where id = v_sale.sale_id;
+  update public.sales set status = 'APPROVED'              where id = v_sale.sale_id;
+  perform public.post_vehicle_sale(v_sale.sale_id);
+
+  select total_amount into v_total from public.sales where id = v_sale.sale_id;
+  perform public.record_sale_payment(v_sale.sale_id, 25000, 'CASH', 'Balance down payment');
+  perform public.record_sale_payment(v_sale.sale_id, v_total - 25000 - 10000, 'FINANCE',
+                                     'TVS Credit DD 774512', v_fin_tvs);
+  perform public.deliver_vehicle(v_sale.sale_id, 'Ramesh Kumar', 4,
+                                 'Delivered with both keys and the toolkit');
+  update public.vehicles set registration_no = 'TN09BX4471' where id = v_veh;
+
+  -- ── Sale 2: Lakshmi, Apache, off her booking, financed ──────────────────
+  v_cust := v_ids[2];
+  select id into v_veh from public.vehicles
+   where dealer_id = v_dealer and chassis_no = 'MD634AP16P3C00001';
+  select id into v_booking from public.bookings
+   where dealer_id = v_dealer and customer_id = v_cust and status = 'OPEN' limit 1;
+
+  select * into v_sale from public.create_vehicle_sale_draft(
+    p_customer_id => v_cust, p_vehicle_id => v_veh,
+    p_invoice_date => current_date - 8, p_booking_id => v_booking,
+    p_sales_executive_id => v_exec, p_discount => 0, p_notes => null
+  );
+  perform public.consume_fitting_stock(v_sale.sale_id, v_cover, 1, 720);
+
+  update public.sales set status = 'SUBMITTED'             where id = v_sale.sale_id;
+  update public.sales set status = 'ACCOUNTS_VERIFICATION' where id = v_sale.sale_id;
+  update public.sales set status = 'APPROVED'              where id = v_sale.sale_id;
+  perform public.post_vehicle_sale(v_sale.sale_id);
+
+  select total_amount into v_total from public.sales where id = v_sale.sale_id;
+  perform public.record_sale_payment(v_sale.sale_id, v_total - 15000, 'FINANCE',
+                                     'HDFC disbursement 88231', v_fin_hdfc);
+  perform public.deliver_vehicle(v_sale.sale_id, 'Lakshmi Narayanan', 6, null);
+  update public.vehicles set registration_no = 'TN09BX4488' where id = v_veh;
+
+  -- ── Sale 3: Deepa, Jupiter, cash, no booking behind it ──────────────────
+  v_cust := v_ids[6];
+  select id into v_veh from public.vehicles
+   where dealer_id = v_dealer and chassis_no = 'MD625JU10P1A00001';
+
+  select * into v_sale from public.create_vehicle_sale_draft(
+    p_customer_id => v_cust, p_vehicle_id => v_veh,
+    p_invoice_date => current_date - 5, p_sales_executive_id => v_exec,
+    p_discount => 1500, p_notes => 'Walk-in, cash sale'
+  );
+  perform public.consume_fitting_stock(v_sale.sale_id, v_mat, 1, 580);
+
+  update public.sales set status = 'SUBMITTED'             where id = v_sale.sale_id;
+  update public.sales set status = 'ACCOUNTS_VERIFICATION' where id = v_sale.sale_id;
+  update public.sales set status = 'APPROVED'              where id = v_sale.sale_id;
+  perform public.post_vehicle_sale(v_sale.sale_id);
+
+  select total_amount into v_total from public.sales where id = v_sale.sale_id;
+  perform public.record_sale_payment(v_sale.sale_id, v_total, 'UPI', 'UPI 428871003344');
+  perform public.deliver_vehicle(v_sale.sale_id, 'Deepa Ravi', 3, null);
+  update public.vehicles set registration_no = 'TN09BX4502' where id = v_veh;
+
+  -- ── Sale 4: Meena Traders, Jupiter at NORTH, part paid, not delivered ───
+  -- The delivery queue and the receivables report both need a live case.
+  v_cust := v_ids[8];
+  select id into v_veh from public.vehicles
+   where dealer_id = v_dealer and chassis_no = 'MD625JU10P1A00005';
+
+  select * into v_sale from public.create_vehicle_sale_draft(
+    p_customer_id => v_cust, p_vehicle_id => v_veh,
+    p_invoice_date => current_date - 2, p_sales_executive_id => v_exec,
+    p_discount => 0, p_notes => 'Fleet purchase — registration pending'
+  );
+  update public.sales set status = 'SUBMITTED'             where id = v_sale.sale_id;
+  update public.sales set status = 'ACCOUNTS_VERIFICATION' where id = v_sale.sale_id;
+  update public.sales set status = 'APPROVED'              where id = v_sale.sale_id;
+  perform public.post_vehicle_sale(v_sale.sale_id);
+  perform public.record_sale_payment(v_sale.sale_id, 40000, 'RTGS', 'RTGS HDFC 9928311');
+
+  -- ── Sale 5: Mohan, Ntorq, left awaiting accounts verification ───────────
+  -- Spec §53 describes a verification screen; it needs something in its queue.
+  v_cust := v_ids[7];
+  select id into v_veh from public.vehicles
+   where dealer_id = v_dealer and chassis_no = 'MD625NT12P2B00002';
+
+  select * into v_sale from public.create_vehicle_sale_draft(
+    p_customer_id => v_cust, p_vehicle_id => v_veh,
+    p_invoice_date => current_date, p_sales_executive_id => v_exec,
+    p_discount => 3000, p_notes => 'Discount above policy — needs a second look'
+  );
+  update public.sales set status = 'SUBMITTED'             where id = v_sale.sale_id;
+  update public.sales set status = 'ACCOUNTS_VERIFICATION' where id = v_sale.sale_id;
+
+  raise notice 'Sales: 3 delivered, 1 posted awaiting delivery, 1 in accounts verification.';
+end;
+$$;
+
+-- =============================================================================
+-- 8 — Booking refund (spec §18 — deliberate, never automatic on cancellation)
+-- =============================================================================
+do $$
+declare
+  v_dealer  uuid;
+  v_booking uuid;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_booking from public.bookings
+   where dealer_id = v_dealer and status = 'CANCELLED' limit 1;
+
+  if v_booking is not null then
+    -- Dated a week back, ahead of every other cash movement this script makes.
+    -- cash_transactions.balance_after is a running total fixed at insert time, so
+    -- rows must be written in date order or the cash book's running balance jumps
+    -- about. Real use enters cash as it happens; a seed has to be careful.
+    perform public.refund_booking_advance(
+      p_booking_id => v_booking, p_amount => 5000, p_mode => 'CASH',
+      p_reason => 'Customer chose a different model — advance returned in full',
+      p_date => current_date - 7
+    );
+    raise notice 'Bookings: 1 advance refunded.';
+  end if;
+end;
+$$;
+
+-- =============================================================================
+-- 9 — Service (spec §32)
+-- =============================================================================
+do $$
+declare
+  v_dealer uuid;
+  v_main uuid; v_north uuid;
+  v_advisor uuid; v_tech uuid;
+  v_oil uuid; v_brake uuid; v_filter uuid; v_plug uuid;
+  v_ids uuid[];
+  v_jc record;
+  v_inv record;
+  v_total numeric;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_main  from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_north from public.branches where dealer_id = v_dealer and code = 'NORTH';
+  select id into v_advisor from public.employees where dealer_id = v_dealer and employee_code = 'EMP0005';
+  select id into v_tech    from public.employees where dealer_id = v_dealer and employee_code = 'EMP0006';
+  select id into v_oil    from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-OIL-01';
+  select id into v_brake  from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-BRK-01';
+  select id into v_filter from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-FLT-01';
+  select id into v_plug   from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-PLG-01';
+  select array_agg(id order by customer_code) into v_ids
+    from public.customers where dealer_id = v_dealer and mobile like '98401100%';
+
+  -- ── Job 1: Ramesh, first free service on the unit he just bought ────────
+  -- The registration matches the vehicle delivered above, so this links to his
+  -- existing customer_vehicles row rather than creating a second one.
+  select * into v_jc from public.create_job_card(
+    p_branch_id => v_main, p_customer_id => v_ids[1], p_service_type => 'FREE',
+    p_registration_no => 'TN09BX4471', p_odometer => 512,
+    p_complaint => 'First free service', p_service_advisor_id => v_advisor,
+    p_technician_id => v_tech, p_job_date => current_date - 3
+  );
+  select * into v_inv from public.create_service_invoice(v_jc.job_card_id, current_date - 3);
+  perform public.add_service_line(v_inv.invoice_id, 'LABOUR', 'First free service labour', 1, 0, null, 'GST18L');
+  perform public.add_service_line(v_inv.invoice_id, 'SPARE',  'Engine oil 1L', 1, 480, v_oil, 'GST18');
+  perform public.post_service_invoice(v_inv.invoice_id);
+  select total_amount into v_total from public.service_invoices where id = v_inv.invoice_id;
+  perform public.record_service_payment(v_inv.invoice_id, v_total, 'CASH', null, current_date - 3);
+
+  -- ── Job 2: Lakshmi, paid service, labour and several spares ─────────────
+  select * into v_jc from public.create_job_card(
+    p_branch_id => v_main, p_customer_id => v_ids[2], p_service_type => 'PAID',
+    p_registration_no => 'TN09BX4488', p_odometer => 2140,
+    p_complaint => 'Brake noise and rough idling', p_service_advisor_id => v_advisor,
+    p_technician_id => v_tech, p_job_date => current_date - 1
+  );
+  select * into v_inv from public.create_service_invoice(v_jc.job_card_id, current_date - 1);
+  perform public.add_service_line(v_inv.invoice_id, 'LABOUR', 'General service labour', 1, 650, null,     'GST18L');
+  perform public.add_service_line(v_inv.invoice_id, 'LABOUR', 'Brake overhaul',         1, 350, null,     'GST18L');
+  perform public.add_service_line(v_inv.invoice_id, 'SPARE',  'Brake shoe set',         1, 420, v_brake,  'GST18');
+  perform public.add_service_line(v_inv.invoice_id, 'SPARE',  'Air filter',             1, 330, v_filter, 'GST18');
+  perform public.add_service_line(v_inv.invoice_id, 'SPARE',  'Spark plug',             1, 190, v_plug,   'GST18');
+  perform public.post_service_invoice(v_inv.invoice_id);
+  select total_amount into v_total from public.service_invoices where id = v_inv.invoice_id;
+  perform public.record_service_payment(v_inv.invoice_id, v_total, 'UPI', 'UPI 552310099881', current_date - 1);
+
+  -- ── Job 3: a walk-in the dealer never sold to ───────────────────────────
+  -- No customer_vehicles row exists for this registration, so the job card
+  -- creates one — the second of the two writers added in 0045.
+  select * into v_jc from public.create_job_card(
+    p_branch_id => v_north, p_customer_id => v_ids[4], p_service_type => 'PAID',
+    p_registration_no => 'TN10AC9021', p_odometer => 18450,
+    p_complaint => 'Oil change and general check', p_service_advisor_id => v_advisor,
+    p_job_date => current_date - 6
+  );
+  select * into v_inv from public.create_service_invoice(v_jc.job_card_id, current_date - 6);
+  perform public.add_service_line(v_inv.invoice_id, 'LABOUR', 'General service labour', 1, 550, null,  'GST18L');
+  perform public.add_service_line(v_inv.invoice_id, 'SPARE',  'Engine oil 1L',          1, 480, v_oil, 'GST18');
+  perform public.post_service_invoice(v_inv.invoice_id);
+  -- Part paid on the day, so service receivables are not uniformly nil.
+  perform public.record_service_payment(v_inv.invoice_id, 500, 'CASH', null, current_date - 6);
+
+  -- ── Job 4: still open on the floor, no invoice yet ──────────────────────
+  perform public.create_job_card(
+    p_branch_id => v_main, p_customer_id => v_ids[3], p_service_type => 'PAID',
+    p_registration_no => 'TN09AB1122', p_odometer => 7300,
+    p_complaint => 'Starting trouble in the morning', p_service_advisor_id => v_advisor,
+    p_technician_id => v_tech, p_promised_at => now() + interval '6 hours',
+    p_job_date => current_date
+  );
+
+  raise notice 'Service: 4 job cards, 3 invoices posted, 1 open on the floor.';
+end;
+$$;
+
+-- =============================================================================
+-- 10 — Counter sales (spec §33)
+-- =============================================================================
+-- A counter invoice is a service invoice with no job card behind it, so it uses
+-- the same line, posting and payment functions.
+do $$
+declare
+  v_dealer uuid;
+  v_main uuid; v_south uuid;
+  v_helmet uuid; v_oil uuid; v_plug uuid; v_mat uuid;
+  v_ids uuid[];
+  v_inv record;
+  v_total numeric;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_main  from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_south from public.branches where dealer_id = v_dealer and code = 'SOUTH';
+  select id into v_helmet from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-HELM-01';
+  select id into v_oil    from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-OIL-01';
+  select id into v_plug   from public.inventory_items where dealer_id = v_dealer and item_code = 'SP-PLG-01';
+  select id into v_mat    from public.inventory_items where dealer_id = v_dealer and item_code = 'AC-MAT-01';
+  select array_agg(id order by customer_code) into v_ids
+    from public.customers where dealer_id = v_dealer and mobile like '98401100%';
+
+  -- Named customer, accessories.
+  select * into v_inv from public.create_counter_invoice(v_main, v_ids[5], current_date - 4);
+  perform public.add_service_line(v_inv.invoice_id, 'ACCESSORY', 'Full face helmet', 2, 1450, v_helmet, 'GST18');
+  perform public.add_service_line(v_inv.invoice_id, 'ACCESSORY', 'Floor mat',        1,  580, v_mat,    'GST18');
+  perform public.post_service_invoice(v_inv.invoice_id);
+  select total_amount into v_total from public.service_invoices where id = v_inv.invoice_id;
+  perform public.record_service_payment(v_inv.invoice_id, v_total, 'CARD', 'Card 4411', current_date - 4);
+
+  -- Walk-in with nobody on file — allowed, because counter_sale.require_customer
+  -- is false for this dealer.
+  select * into v_inv from public.create_counter_invoice(v_main, null, current_date - 1);
+  perform public.add_service_line(v_inv.invoice_id, 'SPARE', 'Engine oil 1L', 2, 480, v_oil,  'GST18');
+  perform public.add_service_line(v_inv.invoice_id, 'SPARE', 'Spark plug',    2, 190, v_plug, 'GST18');
+  perform public.post_service_invoice(v_inv.invoice_id);
+  select total_amount into v_total from public.service_invoices where id = v_inv.invoice_id;
+  perform public.record_service_payment(v_inv.invoice_id, v_total, 'CASH', null, current_date - 1);
+
+  -- A third at another branch, so counter revenue is not all in one place.
+  select * into v_inv from public.create_counter_invoice(v_south, v_ids[3], current_date);
+  perform public.add_service_line(v_inv.invoice_id, 'ACCESSORY', 'Full face helmet', 1, 1450, v_helmet, 'GST18');
+  perform public.post_service_invoice(v_inv.invoice_id);
+  select total_amount into v_total from public.service_invoices where id = v_inv.invoice_id;
+  perform public.record_service_payment(v_inv.invoice_id, v_total, 'UPI', 'UPI 771120054412', current_date);
+
+  raise notice 'Counter sales: 3 invoices posted and paid.';
+end;
+$$;
+
+-- =============================================================================
+-- 11 — Finance: applications, trade advances, settlement (spec §25, §26, §27)
+-- =============================================================================
+do $$
+declare
+  v_dealer uuid;
+  v_main uuid; v_north uuid;
+  v_bank uuid;
+  v_tvs uuid; v_hdfc uuid; v_chola uuid;
+  v_ids uuid[];
+  v_app record;
+  v_set record;
+  v_veh uuid;
+  v_sale uuid;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_main  from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_north from public.branches where dealer_id = v_dealer and code = 'NORTH';
+  select id into v_bank from public.bank_accounts
+   where dealer_id = v_dealer and name like '%— Current A/c' limit 1;
+  select id into v_tvs   from public.finance_companies where dealer_id = v_dealer and code = 'TVSCREDIT';
+  select id into v_hdfc  from public.finance_companies where dealer_id = v_dealer and code = 'HDFCBANK';
+  select id into v_chola from public.finance_companies where dealer_id = v_dealer and code = 'CHOLA';
+  select array_agg(id order by customer_code) into v_ids
+    from public.customers where dealer_id = v_dealer and mobile like '98401100%';
+
+  -- ── Application 1: approved and fully disbursed, tied to Ramesh's sale ──
+  select v.id, v.sale_id into v_veh, v_sale from public.vehicles v
+   where v.dealer_id = v_dealer and v.chassis_no = 'MD625NT12P2B00001';
+
+  select * into v_app from public.create_finance_application(
+    p_branch_id => v_main, p_customer_id => v_ids[1], p_finance_company_id => v_tvs,
+    p_loan_amount => 85000, p_down_payment => 35000, p_vehicle_id => v_veh, p_sale_id => v_sale,
+    p_tenure_months => 24::smallint, p_interest_rate => 11.5, p_commission_amount => 2125,
+    p_application_date => current_date - 14, p_notes => 'Salaried, documents complete'
+  );
+  perform public.decide_finance_application(v_app.application_id, 'APPROVED', 85000);
+  perform public.disburse_finance_application(
+    v_app.application_id, 85000, v_bank, 'DD 774512', 'TVSCR/2026/44821', current_date - 10
+  );
+
+  -- ── Application 2: approved, only part disbursed → PARTIAL ─────────────
+  select v.id, v.sale_id into v_veh, v_sale from public.vehicles v
+   where v.dealer_id = v_dealer and v.chassis_no = 'MD634AP16P3C00001';
+
+  select * into v_app from public.create_finance_application(
+    p_branch_id => v_main, p_customer_id => v_ids[2], p_finance_company_id => v_hdfc,
+    p_loan_amount => 130000, p_down_payment => 15000, p_vehicle_id => v_veh, p_sale_id => v_sale,
+    p_tenure_months => 36::smallint, p_interest_rate => 10.75, p_commission_amount => 2600,
+    p_application_date => current_date - 11, p_notes => null
+  );
+  perform public.decide_finance_application(v_app.application_id, 'APPROVED', 128000);
+  perform public.disburse_finance_application(
+    v_app.application_id, 90000, v_bank, null, 'HDFC/DISB/88231', current_date - 7
+  );
+
+  -- ── Application 3: still awaiting a decision ───────────────────────────
+  perform public.create_finance_application(
+    p_branch_id => v_north, p_customer_id => v_ids[8], p_finance_company_id => v_chola,
+    p_loan_amount => 78000, p_down_payment => 12000,
+    p_tenure_months => 24::smallint, p_interest_rate => 12.25, p_commission_amount => 1950,
+    p_application_date => current_date - 1, p_notes => 'Awaiting income proof'
+  );
+
+  -- ── Application 4: rejected ────────────────────────────────────────────
+  select * into v_app from public.create_finance_application(
+    p_branch_id => v_main, p_customer_id => v_ids[7], p_finance_company_id => v_tvs,
+    p_loan_amount => 95000, p_down_payment => 5000,
+    p_tenure_months => 36::smallint, p_interest_rate => 11.9, p_commission_amount => 0,
+    p_application_date => current_date - 4, p_notes => null
+  );
+  perform public.decide_finance_application(
+    v_app.application_id, 'REJECTED', null, 'CIBIL score below the company threshold'
+  );
+
+  -- ── Trade advances (spec §26) ──────────────────────────────────────────
+  perform public.record_trade_advance(v_tvs,   v_main,  'ADVANCE_RECEIVED', 300000, v_bank,
+    current_date - 20, 'Monthly trade advance', 'TVSCR/ADV/0826');
+  perform public.record_trade_advance(v_hdfc,  v_main,  'ADVANCE_RECEIVED', 200000, v_bank,
+    current_date - 18, 'Trade advance', 'HDFC/ADV/0826');
+  perform public.record_trade_advance(v_chola, v_north, 'ADVANCE_RECEIVED', 150000, v_bank,
+    current_date - 15, 'Opening trade advance', 'CHOLA/ADV/0826');
+  perform public.record_trade_advance(v_tvs,   v_main,  'COMMISSION', 2125, null,
+    current_date - 9, 'Commission on TN09BX4471', null);
+  perform public.record_trade_advance(v_tvs,   v_main,  'REFUND', 50000, v_bank,
+    current_date - 3, 'Unutilised advance returned', 'TVSCR/REF/0926');
+
+  -- ── Settlement (spec §26) ──────────────────────────────────────────────
+  select * into v_set from public.create_finance_settlement(
+    p_finance_company_id => v_hdfc, p_branch_id => v_main,
+    p_from => (date_trunc('month', current_date) - interval '1 month')::date,
+    p_to   => (date_trunc('month', current_date) - interval '1 day')::date,
+    p_gross => 90000, p_commission => 2600, p_deductions => 1200,
+    p_settlement_date => current_date - 2, p_notes => 'Previous month disbursements settled'
+  );
+  perform public.post_finance_settlement(v_set.settlement_id, v_bank);
+
+  raise notice 'Finance: 4 applications (1 disbursed, 1 partial, 1 pending, 1 rejected), 5 trade advances, 1 settlement.';
+end;
+$$;
+
+-- =============================================================================
+-- 12 — Cash and bank movements (spec §36, §38)
+-- =============================================================================
+-- Everyday running costs, so the cash book, bank book and P&L carry expenses
+-- rather than only sales. Two supplier payments exercise the supplier ledger,
+-- which had no writer at all before 0041.
+do $$
+declare
+  v_dealer uuid;
+  v_main uuid; v_north uuid;
+  v_bank uuid;
+  v_rent uuid; v_util uuid; v_sal uuid; v_other uuid; v_charges uuid; v_payable uuid;
+  v_supp_lub uuid; v_supp_log uuid;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_main  from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_north from public.branches where dealer_id = v_dealer and code = 'NORTH';
+  select id into v_bank from public.bank_accounts
+   where dealer_id = v_dealer and name like '%— Current A/c' limit 1;
+
+  select id into v_rent    from public.chart_of_accounts where dealer_id = v_dealer and code = '5600';
+  select id into v_util    from public.chart_of_accounts where dealer_id = v_dealer and code = '5700';
+  select id into v_sal     from public.chart_of_accounts where dealer_id = v_dealer and code = '5500';
+  select id into v_charges from public.chart_of_accounts where dealer_id = v_dealer and code = '5800';
+  select id into v_other   from public.chart_of_accounts where dealer_id = v_dealer and code = '5900';
+  select id into v_payable from public.chart_of_accounts where dealer_id = v_dealer and code = '2200';
+
+  select id into v_supp_lub from public.suppliers where dealer_id = v_dealer and name = 'Chennai Lubricants';
+  select id into v_supp_log from public.suppliers where dealer_id = v_dealer and name = 'Southern Logistics';
+
+  -- Petty cash out of the branch tills. Most of it lands on yesterday, which is
+  -- the day closed in section 13 — a day-close over an empty day proves nothing.
+  perform public.record_cash_transaction(v_main,  'PAYMENT', 1200, 'Courier and stationery',        v_other, null, null, current_date - 6);
+  perform public.record_cash_transaction(v_main,  'PAYMENT', 3400, 'Electricity — August',          v_util,  null, 'TNEB 4471', current_date - 1);
+  perform public.record_cash_transaction(v_main,  'RECEIPT', 2500, 'Scrap sale — packing material', v_other, null, null, current_date - 1);
+  perform public.record_cash_transaction(v_north, 'PAYMENT',  850, 'Workshop consumables',          v_other, null, null, current_date - 1);
+  -- And one on today, so the open day is not empty either.
+  perform public.record_cash_transaction(v_main,  'PAYMENT',  600, 'Fuel for the demo vehicle',     v_other, null, null, current_date);
+
+  -- Suppliers settled from the bank: the payable side of the ledger.
+  perform public.record_bank_transaction(
+    p_bank_account_id => v_bank, p_direction => 'PAYMENT', p_amount => 48500,
+    p_particular => 'Lubricants purchase — invoice CL/2026/338', p_account_id => v_payable,
+    p_date => current_date - 5, p_reference => 'NEFT 88213', p_utr => 'HDFCN26240800113',
+    p_supplier_id => v_supp_lub
+  );
+  perform public.record_bank_transaction(
+    p_bank_account_id => v_bank, p_direction => 'PAYMENT', p_amount => 16750,
+    p_particular => 'Vehicle forwarding charges — August', p_account_id => v_payable,
+    p_date => current_date - 2, p_reference => 'NEFT 88402', p_utr => 'HDFCN26240800229',
+    p_supplier_id => v_supp_log
+  );
+
+  -- Standing costs.
+  perform public.record_bank_transaction(
+    p_bank_account_id => v_bank, p_direction => 'PAYMENT', p_amount => 42000,
+    p_particular => 'Showroom rent — September', p_account_id => v_rent,
+    p_date => current_date - 1, p_reference => 'NEFT 88455'
+  );
+  perform public.record_bank_transaction(
+    p_bank_account_id => v_bank, p_direction => 'PAYMENT', p_amount => 78000,
+    p_particular => 'Salaries — August', p_account_id => v_sal,
+    p_date => current_date - 1, p_reference => 'SAL/AUG/2026'
+  );
+  perform public.record_bank_transaction(
+    p_bank_account_id => v_bank, p_direction => 'PAYMENT', p_amount => 1180,
+    p_particular => 'Bank charges and GST', p_account_id => v_charges,
+    p_date => current_date - 1, p_reference => null
+  );
+
+  raise notice 'Cash and bank: 5 cash movements, 5 bank movements, 2 of them to suppliers.';
+end;
+$$;
+
+-- =============================================================================
+-- 13 — Close yesterday's cash day (spec §36)
+-- =============================================================================
+-- Yesterday is closed with a small counting difference on one branch, which is
+-- what actually happens and what the difference column exists to show. Today is
+-- left open, so the day-close screen has something to do.
+do $$
+declare
+  v_dealer uuid;
+  v_branch record;
+  v_expected numeric;
+  v_physical numeric;
+  v_left     bigint;
+  v_note     int;
+  v_notes    jsonb;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+
+  for v_branch in select id, code from public.branches where dealer_id = v_dealer order by code loop
+    perform public.ensure_cash_day(v_branch.id, current_date - 1);
+
+    select expected_closing into v_expected
+      from public.cash_day_closings
+     where branch_id = v_branch.id and business_date = current_date - 1;
+
+    -- MAIN counts fifty rupees short. A day that always tallies exactly teaches
+    -- nobody what the difference column is for.
+    v_physical := v_expected + case when v_branch.code = 'MAIN' then -50 else 0 end;
+
+    -- The denomination breakdown a cashier would actually record: largest note
+    -- first, down to the last rupee.
+    v_notes := '{}'::jsonb;
+    v_left  := floor(v_physical)::bigint;
+    foreach v_note in array array[500, 200, 100, 50, 20, 10, 5, 2, 1] loop
+      if v_left >= v_note then
+        v_notes := v_notes || jsonb_build_object(v_note::text, v_left / v_note);
+        v_left  := v_left % v_note;
+      end if;
+    end loop;
+
+    perform public.close_cash_day(
+      p_branch_id     => v_branch.id,
+      p_date          => current_date - 1,
+      p_physical_cash => v_physical,
+      p_denominations => v_notes,
+      p_remarks       => case when v_branch.code = 'MAIN'
+                              then 'Fifty rupees short — under review'
+                         end
+    );
+  end loop;
+
+  raise notice 'Cash book: yesterday counted and closed on all 3 branches.';
+end;
+$$;
+
+-- =============================================================================
+-- 14 — Prove the ledger balances
+-- =============================================================================
+-- The point of driving the real functions rather than inserting rows: if any of
+-- it were wrong, this would not come out even.
+do $$
+declare
+  v_dealer uuid;
+  v_dr numeric;
+  v_cr numeric;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+
+  select coalesce(sum(l.debit), 0), coalesce(sum(l.credit), 0)
+    into v_dr, v_cr
+    from public.journal_entry_lines l
+    join public.journal_entries e on e.id = l.journal_entry_id
+   where e.dealer_id = v_dealer and e.status = 'POSTED';
+
+  if v_dr <> v_cr then
+    raise exception 'Ledger does not balance: debits % vs credits %.', v_dr, v_cr;
+  end if;
+
+  raise notice '';
+  raise notice 'Demo data loaded for dealer SBM. Posted journals: % Dr = % Cr.',
+    to_char(v_dr, 'FM99,99,99,999.00'), to_char(v_cr, 'FM99,99,99,999.00');
+  raise notice 'Remove it with: psql "$DATABASE_URL" -f scripts/remove-demo-dealer.sql';
 end;
 $$;
 

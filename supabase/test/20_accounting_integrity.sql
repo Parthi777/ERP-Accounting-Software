@@ -30,8 +30,8 @@ begin
   select id into v_cgst  from public.chart_of_accounts where dealer_id = v_dealer and code = '2300';
 
   -- ── Document numbering is server-side and increments (spec §45) ───────────
-  -- Asserted relatively, since the demo ledger seed has already consumed a run
-  -- of numbers by the time this test executes.
+  -- Asserted relatively rather than against a fixed number: earlier blocks in
+  -- this file have already consumed a run of them.
   v_number  := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
   v_number2 := app.next_document_number(v_dealer, null, 'JOURNAL', '2026');
 
@@ -300,7 +300,30 @@ declare
   v_liab_eq numeric(18, 4);
   v_income  numeric(18, 4);
   v_expense numeric(18, 4);
+  v_dealer  uuid;
+  v_branch  uuid;
 begin
+  -- Revenue this block posts itself, so the assertions below stand on their own.
+  -- They used to lean on seed-demo-ledger.sql, which no longer exists: it painted
+  -- journals with no documents behind them, and scripts/seed-demo-data.sql now
+  -- produces the same figures by actually trading. That file is deliberately not
+  -- loaded here — it consumes document numbers these tests assert against.
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_branch from public.branches where dealer_id = v_dealer and code = 'MAIN';
+
+  perform app.post_journal(
+    v_dealer, v_branch, date '2026-08-01', 'SALES',
+    'Revenue for the reporting assertions below',
+    jsonb_build_array(
+      jsonb_build_object(
+        'account_id', (select id from public.chart_of_accounts where dealer_id = v_dealer and code = '1300'),
+        'debit', 50000, 'credit', 0, 'narration', 'Receivable'),
+      jsonb_build_object(
+        'account_id', (select id from public.chart_of_accounts where dealer_id = v_dealer and code = '4100'),
+        'debit', 0, 'credit', 50000, 'narration', 'Vehicle sales')
+    ),
+    'TEST', null, 'test:reporting-income');
+
   -- Every posted journal balances individually, so the whole ledger must too.
   select coalesce(sum(l.debit), 0), coalesce(sum(l.credit), 0)
     into v_debit, v_credit
