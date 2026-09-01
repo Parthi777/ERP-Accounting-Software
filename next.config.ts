@@ -23,6 +23,28 @@ const nextConfig: NextConfig = {
   // pdfkit and exceljs are CommonJS with dynamic requires; bundling them into
   // the server chunk breaks their internal resolution, so they stay external.
   serverExternalPackages: ['pdfkit', 'exceljs'],
+  experimental: {
+    /**
+     * Turbopack's persistent build cache, off on Railway only.
+     *
+     * Next 16.3 turned this on by default. It writes to `.next/cache`, which
+     * Railway mounts as a volume shared across builds — so the cache outlives
+     * the container that wrote it, and a single partial write poisons every
+     * later build:
+     *
+     *   Cache corruption detected: checksum mismatch in block 273 of 00000109.sst
+     *   TurbopackInternalError: Restore failures
+     *
+     * That is a hard build failure with nothing to do with the code being
+     * deployed, and nothing in the repository can clear a Railway cache volume.
+     * A warm cache is worth a minute of build time; it is not worth a deploy
+     * pipeline that fails on its own history.
+     *
+     * Left on locally, where `.next/cache` sits in a stable working directory
+     * that the same machine wrote, and where `npm run verify` builds often.
+     */
+    turbopackFileSystemCacheForBuild: !process.env.RAILWAY_ENVIRONMENT,
+  },
   async headers() {
     return [
       {
