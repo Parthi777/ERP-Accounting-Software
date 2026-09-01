@@ -90,7 +90,26 @@ bundle. Deploy without them and the app starts, passes its health check, and ser
 stylesheet and script 404s — which looks like a broken application rather than a missing copy step.
 
 `scripts/prepare-standalone.sh` copies both, and runs automatically as npm's `postbuild`, so it
-happens on Railway and locally without anyone remembering it. If you change the build command in
+happens on Railway and locally without anyone remembering it.
+
+**And the start command must pin the bind address.** Next's standalone server begins with:
+
+```js
+const hostname = process.env.HOSTNAME || '0.0.0.0'
+```
+
+Docker sets `HOSTNAME` to the container id, so on Railway that fallback never applies and the server
+tries to bind to a name that does not resolve:
+
+```
+Error: getaddrinfo ENOTFOUND a1b2c3d4e5f6
+⨯ Failed to start server
+```
+
+The process exits, Railway restarts it, and the domain answers **“Application failed to respond”** —
+with nothing obviously wrong in the build log, because the build succeeded. `railway.json` therefore
+starts the app as `HOSTNAME=0.0.0.0 node .next/standalone/server.js`. Keep that prefix if you change
+the start command. If you change the build command in
 `railway.json`, keep `npm run build` as the entry point rather than calling `next build` directly, or
 the postbuild step is skipped and the site deploys blank.
 
