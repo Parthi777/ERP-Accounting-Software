@@ -84,6 +84,16 @@ session, which is deliberate: a half-provisioned account should not reach the ap
 `next.config.ts` sets `output: 'standalone'`, so the container ships only the server bundle and the
 dependencies it actually uses.
 
+**The bundle needs one thing Next does not put in it.** `output: 'standalone'` deliberately leaves
+`.next/static` (the hashed CSS and JS chunks) and `public/` (the CSV import templates) outside the
+bundle. Deploy without them and the app starts, passes its health check, and serves HTML where every
+stylesheet and script 404s — which looks like a broken application rather than a missing copy step.
+
+`scripts/prepare-standalone.sh` copies both, and runs automatically as npm's `postbuild`, so it
+happens on Railway and locally without anyone remembering it. If you change the build command in
+`railway.json`, keep `npm run build` as the entry point rather than calling `next build` directly, or
+the postbuild step is skipped and the site deploys blank.
+
 ### Environment variables
 
 | Variable | Required | Notes |

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "bash scripts/prepare-standalone.sh",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
