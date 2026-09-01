@@ -1,0 +1,48 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# production
+build/
+dist/
+
+# environment — never commit secrets (spec §3)
+.env
+.env.local
+.env.*.local
+.env.production
+# …and any copy of one. A backup made before an edit holds the same live keys as
+# the original, and `.env.local` alone does not match `.env.local.bak`.
+.env*.bak
+.env*.backup
+.env*.orig
+*.env
+
+# testing
+coverage/
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# supabase local
+supabase/.branches/
+supabase/.temp/

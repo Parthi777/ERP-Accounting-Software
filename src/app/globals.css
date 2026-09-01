@@ -1,0 +1,200 @@
+@import 'tailwindcss';
+
+/* =============================================================================
+   TW ERP design system — spec §7, §8, §54
+   =============================================================================
+   Light glassmorphism, deliberately restrained. Glass is for KPI cards, the
+   header, filter panels and modals. Operational tables stay solid white and
+   dense, because an accountant reading four hundred rows needs contrast, not
+   translucency (spec §7, "Do not make tables excessively transparent").
+
+   Light-only by design: §7 rules out a dark-heavy admin dashboard, so there is
+   no dark palette to switch to.
+   ========================================================================== */
+
+@theme {
+  /* ── Brand blue ─────────────────────────────────────────────────────────── */
+  --color-brand-50:  #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+
+  /* ── Slate / navy text (spec §7: dark navy and slate) ───────────────────── */
+  --color-ink-50:  #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+
+  /* ── Status colours (spec §7) ───────────────────────────────────────────── */
+  --color-positive-50:  #ecfdf5;
+  --color-positive-200: #a7f3d0;
+  --color-positive-500: #10b981;
+  --color-positive-600: #059669;
+  --color-positive-700: #047857;
+
+  --color-warning-50:  #fffbeb;
+  --color-warning-200: #fde68a;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  --color-danger-50:  #fef2f2;
+  --color-danger-200: #fecaca;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  --color-accent-50:  #f5f3ff;
+  --color-accent-200: #ddd6fe;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+
+  /* Tabular figures for every financial column (spec §51). */
+  --font-numeric: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', monospace;
+
+  --radius-panel: 0.875rem;
+  --radius-card: 0.75rem;
+}
+
+:root {
+  /* Page ground: very light blue to white (spec §7). */
+  --page-gradient: linear-gradient(180deg, #f2f7ff 0%, #f8fbff 38%, #ffffff 100%);
+
+  /* Glass surface tokens. Changing these changes every glass surface at once,
+     which is the point — the effect cannot drift panel by panel. */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-strong: rgba(255, 255, 255, 0.86);
+  --glass-border: rgba(255, 255, 255, 0.9);
+  --glass-ring: rgba(37, 99, 235, 0.08);
+  --glass-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -12px rgba(15, 23, 42, 0.12);
+  --glass-shadow-lg: 0 2px 4px rgba(15, 23, 42, 0.04), 0 20px 40px -16px rgba(15, 23, 42, 0.18);
+  --glass-blur: 16px;
+
+  /* Solid surface for dense data (spec §7). */
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --border-subtle: #e8eef7;
+}
+
+* {
+  border-color: var(--border-subtle);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--page-gradient);
+  background-attachment: fixed;
+  color: var(--color-ink-800);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100dvh;
+}
+
+/* =============================================================================
+   Glass surfaces — spec §7
+   ========================================================================== */
+
+@utility glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 0 0 1px var(--glass-ring);
+}
+
+@utility glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(170%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(170%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-lg), inset 0 0 0 1px var(--glass-ring);
+}
+
+/* Dense data surfaces stay solid. */
+@utility surface-solid {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* Right-aligned tabular numerals for financial columns (spec §51). */
+@utility numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* =============================================================================
+   Interaction
+   ========================================================================== */
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Sticky table headers (spec §8). */
+.table-sticky thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface-muted);
+  box-shadow: inset 0 -1px 0 var(--border-subtle);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-200);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-300);
+  background-clip: content-box;
+}
+
+/* Spec §8 rules out excessive animation; honour the OS setting outright. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

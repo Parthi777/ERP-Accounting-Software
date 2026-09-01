@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(chmod +x scripts/verify-migrations.sh)",
+      "Bash(bash scripts/verify-migrations.sh)",
+      "Bash(npm run *)"
+    ]
+  }
+}

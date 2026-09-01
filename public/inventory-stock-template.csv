@@ -1,0 +1,4 @@
+item_code,branch_code,source,quantity,unit_cost
+AC-MAT-001,MAIN,LOCAL,12,380.00
+AC-MAT-001,MAIN,COMPANY,25,410.00
+SP-OIL-1L,MAIN,COMPANY,40,295.00
