@@ -122,6 +122,7 @@ the postbuild step is skipped and the site deploys blank.
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | **Server only.** Bypasses RLS |
 | `NEXT_PUBLIC_APP_URL` | yes | Public origin, for auth redirects |
 | `APP_SECRET` | yes | 32+ chars. `openssl rand -base64 32` |
+| `NODE_ENV` | **no — never set it** | Next sets it. Forcing `development` builds React's dev bundle and the build fails prerendering `/_global-error` with `Cannot read properties of null (reading 'useContext')` |
 | `DATABASE_URL` | optional | Migration tooling and future transactional paths |
 | `GST_API_*` | optional | E-invoice provider (spec §40) |
 | `SUPABASE_STORAGE_BUCKET` | optional | Defaults to `tw-erp-documents` |
