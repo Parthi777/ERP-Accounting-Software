@@ -72,31 +72,32 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
     return null;
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('user_profiles')
-    .select(
-      `
-      id,
-      email,
-      full_name,
-      is_platform_admin,
-      has_all_branch_access,
-      default_branch_id,
-      status,
-      dealer_id,
-      dealers ( id, code, trade_name, legal_name )
-    `,
-    )
-    .eq('id', user.id)
-    .maybeSingle();
-
-  // A user with no profile row is authenticated but not yet provisioned into a
-  // dealer. Treat that as no session rather than as a half-configured tenant.
-  if (profileError || !profile || profile.status !== 'ACTIVE') {
-    return null;
-  }
-
-  const [{ data: branchRows }, { data: roleRows }] = await Promise.all([
+  // All three run together. Neither the branch list nor the role list depends on
+  // the profile row — branches are limited by RLS from the JWT, and roles are
+  // keyed on the user id we already have — so awaiting the profile first cost a
+  // whole network round trip on every page render for nothing.
+  const [
+    { data: profile, error: profileError },
+    { data: branchRows },
+    { data: roleRows },
+  ] = await Promise.all([
+    supabase
+      .from('user_profiles')
+      .select(
+        `
+        id,
+        email,
+        full_name,
+        is_platform_admin,
+        has_all_branch_access,
+        default_branch_id,
+        status,
+        dealer_id,
+        dealers ( id, code, trade_name, legal_name )
+      `,
+      )
+      .eq('id', user.id)
+      .maybeSingle(),
     // RLS already limits this to branches the user may reach, so no extra filter
     // is needed here — and adding one from client input is exactly what §47 forbids.
     supabase
@@ -110,6 +111,14 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
       .select('roles ( code, role_permissions ( permission_code ) )')
       .eq('user_id', user.id),
   ]);
+
+  // A user with no profile row is authenticated but not yet provisioned into a
+  // dealer. Treat that as no session rather than as a half-configured tenant.
+  // Checked after the fetch rather than before: the other two queries were
+  // already in flight, and discarding their results costs nothing.
+  if (profileError || !profile || profile.status !== 'ACTIVE') {
+    return null;
+  }
 
   const accessibleBranches: BranchSummary[] = (branchRows ?? []).map((branch) => ({
     id: branch.id,

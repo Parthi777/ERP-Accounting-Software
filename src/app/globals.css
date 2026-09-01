@@ -10,6 +10,12 @@
 
    Light-only by design: §7 rules out a dark-heavy admin dashboard, so there is
    no dark palette to switch to.
+
+   On motion: spec §8 rules out *excessive* animation, not all of it. Everything
+   here is 120–260ms, moves a few pixels, and exists to show where something came
+   from — a panel arriving, a row highlighting under the cursor. Nothing loops,
+   nothing bounces, and nothing animates on a table of numbers. The whole system
+   collapses to zero under prefers-reduced-motion.
    ========================================================================== */
 
 @theme {
@@ -64,23 +70,39 @@
   /* Tabular figures for every financial column (spec §51). */
   --font-numeric: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', monospace;
 
-  --radius-panel: 0.875rem;
+  --radius-panel: 1rem;
   --radius-card: 0.75rem;
+
+  /* One curve for everything, so nothing feels like a different application.
+     Slightly eased out: motion decelerates into place rather than stopping. */
+  --ease-ui: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root {
-  /* Page ground: very light blue to white (spec §7). */
-  --page-gradient: linear-gradient(180deg, #f2f7ff 0%, #f8fbff 38%, #ffffff 100%);
+  /* ── Page ground ─────────────────────────────────────────────────────────
+     Three very low-saturation washes — blue, violet, teal — over near-white.
+     They give the glass something to refract, which is what makes a frosted
+     surface read as frosted rather than as flat grey. Kept under 6% alpha: at
+     any more, coloured light bleeds into the numbers on top of it. */
+  --tint-blue:   rgba(59, 130, 246, 0.055);
+  --tint-violet: rgba(139, 92, 246, 0.045);
+  --tint-teal:   rgba(20, 184, 166, 0.040);
+
+  --page-base: linear-gradient(180deg, #f4f8ff 0%, #f9fbff 42%, #ffffff 100%);
 
   /* Glass surface tokens. Changing these changes every glass surface at once,
      which is the point — the effect cannot drift panel by panel. */
-  --glass-bg: rgba(255, 255, 255, 0.72);
-  --glass-bg-strong: rgba(255, 255, 255, 0.86);
-  --glass-border: rgba(255, 255, 255, 0.9);
-  --glass-ring: rgba(37, 99, 235, 0.08);
-  --glass-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -12px rgba(15, 23, 42, 0.12);
-  --glass-shadow-lg: 0 2px 4px rgba(15, 23, 42, 0.04), 0 20px 40px -16px rgba(15, 23, 42, 0.18);
-  --glass-blur: 16px;
+  --glass-bg: rgba(255, 255, 255, 0.66);
+  --glass-bg-strong: rgba(255, 255, 255, 0.84);
+  --glass-border: rgba(255, 255, 255, 0.85);
+  --glass-ring: rgba(37, 99, 235, 0.07);
+  --glass-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 8px 24px -12px rgba(15, 23, 42, 0.13);
+  --glass-shadow-lg:
+    0 2px 4px rgba(15, 23, 42, 0.04),
+    0 24px 48px -20px rgba(15, 23, 42, 0.20);
+  --glass-blur: 18px;
 
   /* Solid surface for dense data (spec §7). */
   --surface: #ffffff;
@@ -97,7 +119,14 @@ html {
 }
 
 body {
-  background: var(--page-gradient);
+  /* The washes sit above the base gradient and below everything else. Fixed, so
+     they stay put while content scrolls over them — a background that scrolls
+     with the page reads as a texture rather than as depth. */
+  background:
+    radial-gradient(60rem 60rem at 12% -8%,  var(--tint-blue),   transparent 60%),
+    radial-gradient(52rem 52rem at 92% 4%,   var(--tint-violet), transparent 62%),
+    radial-gradient(44rem 44rem at 68% 96%,  var(--tint-teal),   transparent 60%),
+    var(--page-base);
   background-attachment: fixed;
   color: var(--color-ink-800);
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
@@ -112,18 +141,22 @@ body {
 
 @utility glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(165%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(165%);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow), inset 0 0 0 1px var(--glass-ring);
+  /* The top edge catches light, the way a real pane does. Without it a glass
+     panel reads as a flat translucent rectangle. */
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 40%);
 }
 
 @utility glass-strong {
   background: var(--glass-bg-strong);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(170%);
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(170%);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.3)) saturate(175%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.3)) saturate(175%);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-lg), inset 0 0 0 1px var(--glass-ring);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 42%);
 }
 
 /* Dense data surfaces stay solid. */
@@ -142,6 +175,67 @@ body {
 }
 
 /* =============================================================================
+   Motion
+   =============================================================================
+   Two entrances and a lift, used sparingly. `rise` is the default for panels
+   and cards; `fade` for anything that would look odd moving, such as a modal
+   scrim. Both are one-shot: `backwards` holds the start frame so nothing
+   flashes at full opacity before its delay elapses.
+   ========================================================================== */
+
+@keyframes rise {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: translate3d(0, 4px, 0) scale(0.985); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@utility animate-rise {
+  animation: rise 260ms var(--ease-ui) backwards;
+}
+
+@utility animate-fade {
+  animation: fade 180ms var(--ease-ui) backwards;
+}
+
+@utility animate-pop {
+  animation: pop 200ms var(--ease-ui) backwards;
+}
+
+/* A short stagger down a group of cards. Beyond about six the delay starts to
+   feel like waiting, so the ladder stops there and the rest arrive together. */
+@utility stagger {
+  & > *:nth-child(1) { animation-delay: 0ms; }
+  & > *:nth-child(2) { animation-delay: 40ms; }
+  & > *:nth-child(3) { animation-delay: 80ms; }
+  & > *:nth-child(4) { animation-delay: 120ms; }
+  & > *:nth-child(5) { animation-delay: 160ms; }
+  & > *:nth-child(6) { animation-delay: 200ms; }
+}
+
+/* Interactive surfaces lift very slightly. Transform and shadow only — both are
+   compositor properties, so this cannot cause layout work on a long table. */
+@utility lift {
+  transition:
+    transform 160ms var(--ease-ui),
+    box-shadow 160ms var(--ease-ui),
+    border-color 160ms var(--ease-ui);
+
+  &:hover {
+    transform: translate3d(0, -2px, 0);
+    box-shadow: var(--glass-shadow-lg), inset 0 0 0 1px var(--glass-ring);
+  }
+}
+
+/* =============================================================================
    Interaction
    ========================================================================== */
 
@@ -151,13 +245,40 @@ body {
   border-radius: 4px;
 }
 
+/* Controls settle rather than snap. Deliberately not `transition: all`, which
+   would animate width and height and make tables jump as content loads. */
+button,
+a,
+select,
+input,
+textarea,
+[role='button'] {
+  transition:
+    background-color 140ms var(--ease-ui),
+    border-color 140ms var(--ease-ui),
+    color 140ms var(--ease-ui),
+    box-shadow 140ms var(--ease-ui),
+    opacity 140ms var(--ease-ui);
+}
+
 /* Sticky table headers (spec §8). */
 .table-sticky thead th {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--surface-muted);
+  background: color-mix(in oklab, var(--surface-muted) 88%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   box-shadow: inset 0 -1px 0 var(--border-subtle);
+}
+
+/* Row highlight. Colour only — a row that moved under the cursor would make a
+   dense table feel unstable while reading down a column of figures. */
+.table-sticky tbody tr {
+  transition: background-color 120ms var(--ease-ui);
+}
+.table-sticky tbody tr:hover {
+  background: color-mix(in oklab, var(--color-brand-50) 55%, transparent);
 }
 
 ::-webkit-scrollbar {

@@ -11,18 +11,30 @@ import { cn } from '@/lib/utils';
  * Keeping both in one file makes the choice explicit at every call site, which is
  * how spec §7's "do not overuse glass effects" survives contact with a growing
  * codebase.
+ *
+ * Entrance motion lives here rather than at the call sites, so ninety-nine pages
+ * animate consistently and none of them has to remember to. The two surfaces
+ * differ on purpose: glass panels rise a few pixels, solid data surfaces only
+ * fade. A table of four hundred figures that slides into place is harder to
+ * start reading, not nicer to look at.
  */
 
 export function Panel({
   className,
   strong = false,
+  interactive = false,
   ...props
-}: React.HTMLAttributes<HTMLDivElement> & { strong?: boolean }) {
+}: React.HTMLAttributes<HTMLDivElement> & {
+  readonly strong?: boolean;
+  /** Adds a hover lift. For cards that are themselves clickable or summarise a drill-down. */
+  readonly interactive?: boolean;
+}) {
   return (
     <div
       className={cn(
         strong ? 'glass-strong' : 'glass',
-        'rounded-[--radius-panel]',
+        'animate-rise rounded-[--radius-panel]',
+        interactive && 'lift',
         className,
       )}
       {...props}
@@ -32,7 +44,12 @@ export function Panel({
 
 /** Opaque surface for tables and other dense, high-contrast content. */
 export function SolidPanel({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('surface-solid rounded-[--radius-panel]', className)} {...props} />;
+  return (
+    <div
+      className={cn('surface-solid animate-fade rounded-[--radius-panel]', className)}
+      {...props}
+    />
+  );
 }
 
 export function PanelHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

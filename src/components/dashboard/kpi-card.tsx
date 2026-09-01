@@ -31,6 +31,7 @@ export function KpiCard({
 
   return (
     <Panel
+      interactive={!pending}
       className={cn('flex flex-col gap-3 p-4', pending && 'opacity-75', className)}
       aria-busy={undefined}
     >

@@ -110,7 +110,7 @@ export default async function DashboardPage({
 
       {/* Row 2 — stock and finance */}
       <section aria-label="Stock and finance">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {data.secondary.map((kpi) => (
             <KpiCard key={kpi.key} kpi={kpi} icon={ICONS[kpi.key]} tone="accent" />
           ))}
@@ -146,7 +146,7 @@ export default async function DashboardPage({
 
       {/* Row 4 — cash, bank, working capital */}
       <section aria-label="Cash and bank">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {data.financial.map((kpi) => (
             <KpiCard
               key={kpi.key}
