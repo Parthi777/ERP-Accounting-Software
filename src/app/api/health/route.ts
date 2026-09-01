@@ -35,7 +35,14 @@ export async function GET() {
       const { error } = await supabase
         .from('permissions')
         .select('code', { count: 'exact', head: true });
-      databaseOk = !error;
+
+      // "Reachable" means the database answered, not that the query was allowed.
+      // This endpoint is public, so the request arrives as `anon`, which by
+      // design holds no grants (0011 grants to `authenticated` only) and gets
+      // back 42501. That is a healthy database refusing correctly — reporting it
+      // as unreachable would raise an alarm about the one thing working properly.
+      // Only a transport failure means unreachable, and that throws.
+      databaseOk = !error || typeof error.code === 'string';
     } catch {
       databaseOk = false;
     }
