@@ -22,37 +22,49 @@ export const dynamic = 'force-dynamic';
  * public.
  */
 export async function GET() {
-  let databaseMs: number | null = null;
+  let firstMs: number | null = null;
+  let warmMs: number | null = null;
   let databaseOk = false;
 
   if (isSupabaseConfigured) {
-    const started = performance.now();
     try {
       const supabase = await createSupabaseServerClient();
-      // The cheapest possible round trip: a head count against a tiny table,
-      // no rows returned. RLS applies, and an anonymous caller seeing nothing
-      // is fine — this measures the trip, not the contents.
-      const { error } = await supabase
-        .from('permissions')
-        .select('code', { count: 'exact', head: true });
+
+      // Two probes, because they measure different things. The first pays the
+      // TLS handshake, so it reflects what the very first query of a cold
+      // request costs. The second reuses the connection, which is what every
+      // subsequent query on a page actually pays — and that is the number to
+      // judge a region pairing by.
+      //
+      // `head: true` is deliberately NOT used: PostgREST returns no body for a
+      // head request, so the error arrives as `{ message: '' }` with no code and
+      // there is no way to tell a refusal from a dead socket.
+      const probe = async () => {
+        const started = performance.now();
+        const { error } = await supabase.from('permissions').select('code').limit(1);
+        return { ms: Math.round(performance.now() - started), error };
+      };
+
+      const first = await probe();
+      const warm = await probe();
+      firstMs = first.ms;
+      warmMs = warm.ms;
 
       // "Reachable" means the database answered, not that the query was allowed.
       // This endpoint is public, so the request arrives as `anon`, which by
-      // design holds no grants (0011 grants to `authenticated` only) and gets
-      // back 42501. That is a healthy database refusing correctly — reporting it
-      // as unreachable would raise an alarm about the one thing working properly.
+      // design holds no table grants (0011 grants to `authenticated` only) and
+      // is refused with 42501. That is a healthy database refusing correctly.
       // Only a transport failure means unreachable, and that throws.
-      databaseOk = !error || typeof error.code === 'string';
+      databaseOk = !first.error || typeof first.error.code === 'string';
     } catch {
       databaseOk = false;
     }
-    databaseMs = Math.round(performance.now() - started);
   }
 
   return NextResponse.json({
     status: 'ok',
     configured: isSupabaseConfigured,
-    database: { reachable: databaseOk, roundTripMs: databaseMs },
+    database: { reachable: databaseOk, firstQueryMs: firstMs, warmQueryMs: warmMs },
     version: '1.0.0',
     timestamp: new Date().toISOString(),
   });
