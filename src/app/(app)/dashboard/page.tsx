@@ -19,7 +19,7 @@ import { getDashboard } from '@/server/services/dashboard/dashboard-service';
 import { formatDateRange } from '@/lib/format';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
-import { KpiCard } from '@/components/dashboard/kpi-card';
+import { KpiCard, type KpiTone } from '@/components/dashboard/kpi-card';
 import { RevenueMixChart, RevenueTrendChart } from '@/components/dashboard/revenue-charts';
 import { DashboardFilters } from '@/app/(app)/dashboard/dashboard-filters';
 
@@ -47,6 +47,35 @@ const ICONS: Record<string, typeof Bike> = {
   bank_balance: Building2,
   receivables: TrendingUp,
   payables: Receipt,
+};
+
+/**
+ * The accent bar down each card, chosen by what the figure is about rather than
+ * which row it lands in. Money is indigo, things sold are green, stock is
+ * violet, and anything that is really a queue of work is red — so the tiles
+ * needing attention are findable without reading a label (spec §54).
+ */
+const TONES: Record<string, KpiTone> = {
+  vehicle_sales_units: 'positive',
+  vehicle_sales_value: 'warning',
+  bookings: 'info',
+  booking_advance: 'brand',
+  deliveries: 'info',
+  service_revenue: 'positive',
+
+  vehicle_stock_qty: 'accent',
+  vehicle_stock_value: 'accent',
+  accessory_stock_qty: 'accent',
+  accessory_stock_value: 'accent',
+  spare_stock_qty: 'accent',
+  spare_stock_value: 'accent',
+  finance_units: 'brand',
+  finance_amount: 'brand',
+
+  cash_balance: 'positive',
+  bank_balance: 'brand',
+  receivables: 'warning',
+  payables: 'danger',
 };
 
 export default async function DashboardPage({
@@ -101,18 +130,18 @@ export default async function DashboardPage({
 
       {/* Row 1 — headline KPIs (spec §54) */}
       <section aria-label="Key performance indicators">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {data.primary.map((kpi) => (
-            <KpiCard key={kpi.key} kpi={kpi} icon={ICONS[kpi.key]} />
+            <KpiCard key={kpi.key} kpi={kpi} icon={ICONS[kpi.key]} tone={TONES[kpi.key]} />
           ))}
         </div>
       </section>
 
       {/* Row 2 — stock and finance */}
       <section aria-label="Stock and finance">
-        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           {data.secondary.map((kpi) => (
-            <KpiCard key={kpi.key} kpi={kpi} icon={ICONS[kpi.key]} tone="accent" />
+            <KpiCard key={kpi.key} kpi={kpi} icon={ICONS[kpi.key]} tone={TONES[kpi.key]} />
           ))}
         </div>
       </section>
@@ -152,7 +181,7 @@ export default async function DashboardPage({
               key={kpi.key}
               kpi={kpi}
               icon={ICONS[kpi.key]}
-              tone={kpi.key === 'payables' ? 'danger' : 'positive'}
+              tone={TONES[kpi.key] ?? 'brand'}
             />
           ))}
         </div>

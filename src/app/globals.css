@@ -19,17 +19,22 @@
    ========================================================================== */
 
 @theme {
-  /* ── Brand blue ─────────────────────────────────────────────────────────── */
-  --color-brand-50:  #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
+  /* ── Brand ──────────────────────────────────────────────────────────────
+     Indigo rather than a pure blue: still the blue §7 asks for, but the violet
+     lean is what separates the chrome from the data. Every figure on a screen
+     is slate or a status colour, so the brand only ever appears on navigation,
+     primary actions and the active pill — and at that job indigo reads as
+     deliberate where a mid blue reads as a link. */
+  --color-brand-50:  #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
 
   /* ── Slate / navy text (spec §7: dark navy and slate) ───────────────────── */
   --color-ink-50:  #f8fafc;
@@ -85,33 +90,45 @@
      rather than as flat grey.
      Around 10%: enough to be seen as colour rather than as a dirty white, and
      still well under the point where it tints the figures on the panels above. */
-  --tint-blue:   rgba(59, 130, 246, 0.13);
-  --tint-violet: rgba(139, 92, 246, 0.10);
-  --tint-teal:   rgba(20, 184, 166, 0.09);
+  --tint-blue:   rgba(99, 102, 241, 0.10);
+  --tint-violet: rgba(139, 92, 246, 0.08);
+  --tint-teal:   rgba(56, 189, 248, 0.06);
 
-  /* The ground is tinted rather than white. Panels sit on top as near-white
-     glass, so the contrast a ledger needs comes from the panel against the
-     page — not from the page being blank. */
-  --page-base: linear-gradient(170deg, #e9f1ff 0%, #eef4fe 40%, #f6f9ff 72%, #fbfdff 100%);
+  /* The ground is a flat lavender wash rather than a white page. Cards read as
+     cards because the ground is tinted, not because they carry a heavy border —
+     which is what keeps a screen of twelve tiles from looking like a grid of
+     boxes. */
+  --page-base: linear-gradient(175deg, #eceefb 0%, #eff1fc 45%, #f4f6fd 100%);
 
-  /* Glass surface tokens. Changing these changes every glass surface at once,
-     which is the point — the effect cannot drift panel by panel. */
-  --glass-bg: rgba(255, 255, 255, 0.66);
-  --glass-bg-strong: rgba(255, 255, 255, 0.84);
-  --glass-border: rgba(255, 255, 255, 0.85);
-  --glass-ring: rgba(37, 99, 235, 0.07);
+  /* Card surface tokens. Changing these changes every panel at once, which is
+     the point — the treatment cannot drift panel by panel.
+
+     Near-opaque on purpose. §7 names KPI cards as a glass surface, and they
+     still are: the blur and the tint are live, and the lavender ground shows
+     through at the edges. But a card carrying a ₹2.2 crore figure wants a
+     white ground under the number, so the panel sits at 94% and the frosting
+     reads as depth rather than as translucency. */
+  --glass-bg: rgba(255, 255, 255, 0.94);
+  --glass-bg-strong: rgba(255, 255, 255, 0.97);
+  --glass-border: rgba(255, 255, 255, 0.9);
+  --glass-ring: rgba(79, 70, 229, 0.05);
   --glass-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 8px 24px -12px rgba(15, 23, 42, 0.13);
+    0 1px 2px rgba(30, 27, 75, 0.04),
+    0 10px 26px -14px rgba(30, 27, 75, 0.16);
   --glass-shadow-lg:
-    0 2px 4px rgba(15, 23, 42, 0.04),
-    0 24px 48px -20px rgba(15, 23, 42, 0.20);
-  --glass-blur: 18px;
+    0 2px 4px rgba(30, 27, 75, 0.05),
+    0 26px 50px -22px rgba(30, 27, 75, 0.22);
+  --glass-blur: 14px;
 
   /* Solid surface for dense data (spec §7). */
   --surface: #ffffff;
   --surface-muted: #f8fafc;
-  --border-subtle: #e8eef7;
+  --border-subtle: #e7e9f7;
+
+  /* Sidebar. Slightly off-white against the lavender ground so the rail reads as
+     a separate plane without needing a hard divider. */
+  --sidebar-bg: rgba(255, 255, 255, 0.86);
+  --sidebar-border: rgba(199, 210, 254, 0.5);
 }
 
 * {
@@ -161,6 +178,37 @@ body {
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-lg), inset 0 0 0 1px var(--glass-ring);
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 42%);
+}
+
+/* The navigation rail. Its own token pair so the sidebar can sit slightly
+   lighter than the ground without borrowing the card treatment. */
+@utility sidebar-surface {
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-right: 1px solid var(--sidebar-border);
+}
+
+/* A thin scrollbar for the nav, so a long list does not gain a heavy grey
+   gutter that competes with the active pill. */
+@utility nav-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-200) transparent;
+}
+
+/* A plain rule rather than part of the utility above: Tailwind v4 utility names
+   must be bare identifiers, so a pseudo-element cannot live in an @utility. */
+.nav-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nav-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-ink-200);
+  border-radius: 999px;
+}
+
+.nav-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Dense data surfaces stay solid. */
@@ -388,6 +436,14 @@ textarea,
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: rgba(255, 255, 255, 0.92);
+  }
+
+  /* The rail is a full-height blurred surface sliding in over the page, which is
+     the most expensive composite on the screen. Opaque while it moves. */
+  .sidebar-surface {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: #ffffff;
   }
 
   /* Entrance motion is charming once and tiring on a phone, where navigation is

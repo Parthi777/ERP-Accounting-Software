@@ -35,6 +35,7 @@ export function AppShell({
     <div className="min-h-dvh">
       <Sidebar
         sections={sections}
+        dealerName={dealerName}
         user={{ name: user.name, roleLabel: user.roleLabel }}
         branches={branches}
         activeBranchId={activeBranchId}
@@ -50,7 +51,7 @@ export function AppShell({
         />
       )}
 
-      <div className="lg:pl-64">
+      <div className="lg:pl-[264px]">
         <Header
           user={user}
           dealerName={dealerName}

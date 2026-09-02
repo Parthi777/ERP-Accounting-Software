@@ -3,17 +3,19 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronDown, Bike } from 'lucide-react';
+import { ChevronDown, Bike, Power } from 'lucide-react';
 
 import { NAV_ICONS } from '@/components/layout/nav-icons';
 
 import { cn } from '@/lib/utils';
 import { initials } from '@/lib/format';
-import type { NavSection } from '@/config/navigation';
+import { NAV_GROUPS, type NavSection } from '@/config/navigation';
+import { signOut } from '@/server/auth/actions';
 import { BranchSwitcher, type BranchOption } from '@/components/layout/branch-switcher';
 
 interface SidebarProps {
   readonly sections: readonly NavSection[];
+  readonly dealerName: string | null;
   readonly user: { readonly name: string; readonly roleLabel: string };
   readonly branches: readonly BranchOption[];
   readonly activeBranchId: string | null;
@@ -27,7 +29,7 @@ interface SidebarProps {
  * the server, so this component never decides what a user may see — it only
  * decides how it looks (spec §6).
  */
-export function Sidebar({ sections, user, branches, activeBranchId, open }: SidebarProps) {
+export function Sidebar({ sections, dealerName, user, branches, activeBranchId, open }: SidebarProps) {
   const pathname = usePathname();
 
   // A section starts expanded when the current route lives inside it.
@@ -40,6 +42,18 @@ export function Sidebar({ sections, user, branches, activeBranchId, open }: Side
     }
     return initial;
   });
+
+  // Grouped for rendering only. A group with nothing in it — every section
+  // filtered out by permission — is not rendered at all, so a cashier does not
+  // get a "Setup" heading with nothing under it.
+  const grouped = React.useMemo(
+    () =>
+      NAV_GROUPS.map((group) => ({
+        group,
+        sections: sections.filter((section) => section.group === group),
+      })).filter((entry) => entry.sections.length > 0),
+    [sections],
+  );
 
   const toggle = (label: string) =>
     setExpanded((current) => {
@@ -55,25 +69,32 @@ export function Sidebar({ sections, user, branches, activeBranchId, open }: Side
   return (
     <aside
       className={cn(
-        'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-ink-200/70 bg-white/80 backdrop-blur-xl transition-transform lg:translate-x-0',
+        'sidebar-surface fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col transition-transform lg:translate-x-0',
         open ? 'translate-x-0' : '-translate-x-full',
       )}
     >
       {/* Brand */}
-      <div className="flex items-center gap-3 px-5 py-5">
-        <div className="flex size-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-          <Bike className="size-6" aria-hidden />
+      <div className="flex items-center gap-3 px-4 py-5">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm">
+          <Bike className="size-[22px]" aria-hidden />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-base font-bold tracking-tight text-ink-900">TW ERP</p>
-          <p className="truncate text-xs text-ink-500">Two Wheeler ERP</p>
+          <p className="truncate text-[15px] font-bold leading-tight tracking-tight text-ink-900">
+            {dealerName ?? 'TW ERP'}
+          </p>
+          <p className="truncate text-[11.5px] leading-tight text-ink-500">One place for everything</p>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Main">
-        <ul className="space-y-0.5">
-          {sections.map((section) => {
+      <nav className="nav-scroll flex-1 overflow-y-auto px-3 pb-4" aria-label="Main">
+        {grouped.map(({ group, sections: groupSections }) => (
+        <div key={group} className="mb-1">
+        <p className="px-3 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.11em] text-ink-400">
+          {group}
+        </p>
+        <ul className="space-y-[3px]">
+          {groupSections.map((section) => {
             const Icon = NAV_ICONS[section.icon];
 
             if (!section.items) {
@@ -84,13 +105,16 @@ export function Sidebar({ sections, user, branches, activeBranchId, open }: Side
                     href={section.href ?? '#'}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      'flex items-center gap-3 rounded-xl px-3 py-[9px] text-[14px] transition-colors',
                       active
-                        ? 'bg-brand-600 text-white shadow-sm'
-                        : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900',
+                        ? 'bg-brand-50 font-semibold text-brand-700'
+                        : 'font-medium text-ink-600 hover:bg-ink-100/70 hover:text-ink-900',
                     )}
                   >
-                    <Icon className="size-[18px] shrink-0" aria-hidden />
+                    <Icon
+                      className={cn('size-[18px] shrink-0', active ? 'text-brand-600' : 'text-ink-400')}
+                      aria-hidden
+                    />
                     {section.label}
                   </Link>
                 </li>
@@ -107,22 +131,31 @@ export function Sidebar({ sections, user, branches, activeBranchId, open }: Side
                   onClick={() => toggle(section.label)}
                   aria-expanded={isOpen}
                   className={cn(
-                    'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex w-full items-center gap-3 rounded-xl px-3 py-[9px] text-[14px] transition-colors',
                     containsActive
-                      ? 'text-brand-700'
-                      : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900',
+                      ? 'font-semibold text-brand-700'
+                      : 'font-medium text-ink-600 hover:bg-ink-100/70 hover:text-ink-900',
                   )}
                 >
-                  <Icon className="size-[18px] shrink-0" aria-hidden />
+                  <Icon
+                    className={cn(
+                      'size-[18px] shrink-0',
+                      containsActive ? 'text-brand-600' : 'text-ink-400',
+                    )}
+                    aria-hidden
+                  />
                   <span className="flex-1 text-left">{section.label}</span>
                   <ChevronDown
-                    className={cn('size-4 text-ink-400 transition-transform', isOpen && 'rotate-180')}
+                    className={cn(
+                      'size-3.5 shrink-0 text-ink-300 transition-transform',
+                      isOpen && 'rotate-180',
+                    )}
                     aria-hidden
                   />
                 </button>
 
                 {isOpen && (
-                  <ul className="mt-0.5 space-y-0.5 border-l border-ink-200 pb-1 pl-3 ml-[22px]">
+                  <ul className="ml-[22px] mt-[3px] space-y-[2px] border-l border-brand-100 pb-1 pl-3">
                     {section.items.map((item) => {
                       const active = pathname === item.href;
                       return (
@@ -131,10 +164,10 @@ export function Sidebar({ sections, user, branches, activeBranchId, open }: Side
                             href={item.href}
                             aria-current={active ? 'page' : undefined}
                             className={cn(
-                              'flex items-center justify-between gap-2 rounded-md px-3 py-1.5 text-[13px] transition-colors',
+                              'flex items-center justify-between gap-2 rounded-lg px-3 py-[7px] text-[13px] transition-colors',
                               active
-                                ? 'bg-brand-50 font-medium text-brand-700'
-                                : 'text-ink-500 hover:bg-ink-100 hover:text-ink-800',
+                                ? 'bg-brand-50 font-semibold text-brand-700'
+                                : 'text-ink-500 hover:bg-ink-100/70 hover:text-ink-800',
                             )}
                           >
                             <span className="truncate">{item.label}</span>
@@ -156,20 +189,32 @@ export function Sidebar({ sections, user, branches, activeBranchId, open }: Side
             );
           })}
         </ul>
+        </div>
+        ))}
       </nav>
 
       {/* Branch context + user */}
       <div className="space-y-2 border-t border-ink-200/70 p-3">
         <BranchSwitcher branches={branches} activeBranchId={activeBranchId} />
 
-        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white">
+        <div className="flex items-center gap-3 rounded-xl px-2 py-1.5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-semibold text-white">
             {initials(user.name)}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-ink-800">{user.name}</p>
-            <p className="truncate text-xs text-ink-500">{user.roleLabel}</p>
+            <p className="truncate text-[13.5px] font-semibold leading-tight text-ink-800">{user.name}</p>
+            <p className="truncate text-[11.5px] leading-tight text-ink-500">{user.roleLabel}</p>
           </div>
+          <form action={signOut}>
+            <button
+              type="submit"
+              aria-label="Sign out"
+              title="Sign out"
+              className="flex size-8 items-center justify-center rounded-lg text-ink-400 transition-colors hover:bg-danger-50 hover:text-danger-600"
+            >
+              <Power className="size-[17px]" aria-hidden />
+            </button>
+          </form>
         </div>
       </div>
     </aside>

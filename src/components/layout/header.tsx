@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Bell, ChevronRight, CircleHelp, LogOut, Menu, Search } from 'lucide-react';
 
-import { cn } from '@/lib/utils';
 import { initials } from '@/lib/format';
 import { breadcrumbsFor } from '@/config/navigation';
 import { Button } from '@/components/ui/button';
@@ -40,7 +39,7 @@ export function Header({ user, dealerName, sections, onToggleSidebar }: HeaderPr
 
   return (
     <>
-      <header className="glass sticky top-0 z-30 rounded-none border-x-0 border-t-0 px-4 py-3">
+      <header className="glass-strong sticky top-0 z-30 rounded-none border-x-0 border-t-0 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -52,28 +51,30 @@ export function Header({ user, dealerName, sections, onToggleSidebar }: HeaderPr
             <Menu />
           </Button>
 
-          {/* Breadcrumbs (spec §8) */}
-          <nav aria-label="Breadcrumb" className="hidden min-w-0 md:block">
-            <ol className="flex items-center gap-1.5 text-sm">
-              <li>
-                <Link href="/dashboard" className="text-ink-500 hover:text-ink-800">
-                  {dealerName ?? 'TW ERP'}
-                </Link>
-              </li>
-              {crumbs.map((crumb, index) => (
-                <li key={crumb.label} className="flex items-center gap-1.5">
-                  <ChevronRight className="size-3.5 text-ink-300" aria-hidden />
-                  <span
-                    className={cn(
-                      index === crumbs.length - 1 ? 'font-medium text-ink-900' : 'text-ink-500',
-                    )}
-                  >
-                    {crumb.label}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </nav>
+          {/* The page title carries the heading; the trail sits under it, so a
+              deep route still says where it is without a second row of chrome. */}
+          <div className="min-w-0">
+            <h1 className="truncate text-[22px] font-bold leading-tight tracking-tight text-ink-900 sm:text-[25px]">
+              {crumbs.at(-1)?.label ?? 'Dashboard'}
+            </h1>
+            {crumbs.length > 1 && (
+              <nav aria-label="Breadcrumb" className="hidden md:block">
+                <ol className="flex items-center gap-1 text-[11.5px] leading-tight">
+                  <li>
+                    <Link href="/dashboard" className="text-ink-400 hover:text-ink-700">
+                      {dealerName ?? 'TW ERP'}
+                    </Link>
+                  </li>
+                  {crumbs.slice(0, -1).map((crumb) => (
+                    <li key={crumb.label} className="flex items-center gap-1">
+                      <ChevronRight className="size-3 text-ink-300" aria-hidden />
+                      <span className="text-ink-400">{crumb.label}</span>
+                    </li>
+                  ))}
+                </ol>
+              </nav>
+            )}
+          </div>
 
           <div className="flex-1" />
 
@@ -81,7 +82,7 @@ export function Header({ user, dealerName, sections, onToggleSidebar }: HeaderPr
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            className="flex h-9 items-center gap-2 rounded-lg border border-ink-200 bg-white/70 px-3 text-sm text-ink-400 shadow-sm transition-colors hover:bg-white sm:w-72"
+            className="flex h-9 items-center gap-2 rounded-xl border border-ink-200 bg-white px-3 text-sm text-ink-400 shadow-sm transition-colors hover:border-brand-200 hover:text-ink-600 sm:w-64"
           >
             <Search className="size-4 shrink-0" aria-hidden />
             <span className="hidden flex-1 text-left sm:block">Search anything…</span>
@@ -90,11 +91,16 @@ export function Header({ user, dealerName, sections, onToggleSidebar }: HeaderPr
             </kbd>
           </button>
 
-          <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
+          <Button
+            variant="secondary"
+            size="icon"
+            aria-label="Notifications"
+            className="relative rounded-xl"
+          >
             <Bell />
           </Button>
 
-          <Button variant="ghost" size="icon" aria-label="Help">
+          <Button variant="secondary" size="icon" aria-label="Help" className="hidden rounded-xl sm:inline-flex">
             <CircleHelp />
           </Button>
 
@@ -105,16 +111,10 @@ export function Header({ user, dealerName, sections, onToggleSidebar }: HeaderPr
               onClick={() => setMenuOpen((open) => !open)}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className="flex items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-ink-100"
+              className="flex items-center rounded-full transition-opacity hover:opacity-85"
             >
-              <span className="flex size-8 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white">
+              <span className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-semibold text-white">
                 {initials(user.name)}
-              </span>
-              <span className="hidden text-left sm:block">
-                <span className="block text-sm font-medium leading-tight text-ink-800">
-                  {user.name}
-                </span>
-                <span className="block text-xs leading-tight text-ink-500">{user.roleLabel}</span>
               </span>
             </button>
 

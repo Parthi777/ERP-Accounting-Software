@@ -55,8 +55,21 @@ export interface NavItem {
   readonly phase?: number;
 }
 
+/**
+ * Sidebar groupings.
+ *
+ * Fifteen top-level entries in one flat list is a list you read rather than
+ * scan. Grouping them by what someone is at the machine to do — take money,
+ * move stock, close the books — turns it back into navigation. Order here is
+ * the order they render.
+ */
+export const NAV_GROUPS = ['Overview', 'Daily operation', 'Stock control', 'Money', 'Insight', 'Setup'] as const;
+
+export type NavGroup = (typeof NAV_GROUPS)[number];
+
 export interface NavSection {
   readonly label: string;
+  readonly group: NavGroup;
   readonly icon: NavIconName;
   /** Sections without children link straight to `href`. */
   readonly href?: string;
@@ -69,6 +82,7 @@ export interface NavSection {
 export const NAVIGATION: readonly NavSection[] = [
   {
     label: 'Dashboard',
+    group: 'Overview',
     icon: 'dashboard',
     href: '/dashboard',
     permission: 'dashboard.view',
@@ -76,6 +90,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Sales',
+    group: 'Daily operation',
     icon: 'sales',
     permission: 'sales.view',
     status: 'ready',
@@ -87,6 +102,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Bookings',
+    group: 'Daily operation',
     icon: 'bookings',
     permission: 'bookings.view',
     status: 'ready',
@@ -98,6 +114,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Customers',
+    group: 'Daily operation',
     icon: 'customers',
     permission: 'customers.view',
     status: 'ready',
@@ -110,6 +127,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Vehicles',
+    group: 'Stock control',
     icon: 'vehicles',
     permission: 'vehicles.stock.view',
     status: 'ready',
@@ -124,6 +142,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Inventory',
+    group: 'Stock control',
     icon: 'inventory',
     permission: 'inventory.view',
     status: 'ready',
@@ -140,6 +159,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Service',
+    group: 'Daily operation',
     icon: 'service',
     permission: 'service.jobcards.view',
     status: 'ready',
@@ -152,6 +172,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Finance',
+    group: 'Money',
     icon: 'finance',
     permission: 'finance.companies.view',
     status: 'ready',
@@ -165,6 +186,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Accounting',
+    group: 'Money',
     icon: 'accounting',
     permission: 'accounting.coa.view',
     status: 'ready',
@@ -180,6 +202,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Cash Book',
+    group: 'Money',
     icon: 'cashbook',
     permission: 'cashbook.view',
     status: 'ready',
@@ -193,6 +216,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Bank',
+    group: 'Money',
     icon: 'bank',
     permission: 'bank.accounts.view',
     status: 'ready',
@@ -206,6 +230,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'GST',
+    group: 'Money',
     icon: 'gst',
     permission: 'gst.summary.view',
     status: 'ready',
@@ -219,6 +244,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Reports',
+    group: 'Insight',
     icon: 'reports',
     permission: 'reports.sales.view',
     status: 'ready',
@@ -234,6 +260,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Masters',
+    group: 'Setup',
     icon: 'masters',
     permission: 'masters.tax.view',
     status: 'ready',
@@ -251,6 +278,7 @@ export const NAVIGATION: readonly NavSection[] = [
   },
   {
     label: 'Administration',
+    group: 'Setup',
     icon: 'admin',
     permission: 'admin.branches.view',
     status: 'ready',
