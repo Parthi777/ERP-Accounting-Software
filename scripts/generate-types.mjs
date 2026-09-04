@@ -237,6 +237,8 @@ const RPC = new Set([
   'party_open_items', 'allocate_party_payment',
   // Purchases — spec §24, §41.
   'post_purchase_bill', 'cancel_purchase_bill', 'unbilled_vehicles',
+  // HR — spec §12, §15.
+  'employee_salary_on',
   // Finance operations — spec §25, §26, §27.
   'create_finance_application', 'decide_finance_application', 'disburse_finance_application',
   'record_trade_advance', 'create_finance_settlement', 'post_finance_settlement',

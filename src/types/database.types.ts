@@ -467,6 +467,73 @@ type EinvoicesRow = {
 
 type EinvoicesRowInsert = Insertable<EinvoicesRow, 'dealer_id' | 'document_type' | 'document_id' | 'document_number' | 'document_date'>;
 
+type EmployeeDocumentsRow = {
+  id: string;
+  dealer_id: string;
+  employee_id: string;
+  document_type: 'AADHAAR' | 'PAN' | 'PASSPORT' | 'DRIVING_LICENCE' | 'OFFER_LETTER' | 'CONTRACT' | 'EDUCATION' | 'EXPERIENCE' | 'BANK_PROOF' | 'ADDRESS_PROOF' | 'PHOTO' | 'OTHER';
+  document_name: string;
+  document_no: string | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  storage_path: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type EmployeeDocumentsRowInsert = Insertable<EmployeeDocumentsRow, 'dealer_id' | 'employee_id' | 'document_type' | 'document_name'>;
+
+type EmployeeLeaveBalancesRow = {
+  id: string;
+  dealer_id: string;
+  employee_id: string;
+  leave_type_id: string;
+  financial_year: string;
+  opening: string;
+  accrued: string;
+  used: string;
+  encashed: string;
+  balance: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type EmployeeLeaveBalancesRowInsert = Insertable<EmployeeLeaveBalancesRow, 'dealer_id' | 'employee_id' | 'leave_type_id' | 'financial_year'>;
+
+type EmployeeSalaryStructuresRow = {
+  id: string;
+  dealer_id: string;
+  employee_id: string;
+  effective_from: string;
+  effective_to: string | null;
+  basic: string;
+  hra: string;
+  conveyance: string;
+  medical_allowance: string;
+  special_allowance: string;
+  other_allowance: string;
+  pf_employee: string;
+  esi_employee: string;
+  professional_tax: string;
+  other_deduction: string;
+  pf_employer: string;
+  esi_employer: string;
+  gross_earnings: string | null;
+  total_deductions: string | null;
+  net_payable: string | null;
+  cost_to_company: string | null;
+  revision_note: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type EmployeeSalaryStructuresRowInsert = Insertable<EmployeeSalaryStructuresRow, 'dealer_id' | 'employee_id' | 'effective_from'>;
+
 type EmployeesRow = {
   id: string;
   dealer_id: string;
@@ -485,6 +552,31 @@ type EmployeesRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  date_of_birth: string | null;
+  gender: 'MALE' | 'FEMALE' | 'OTHER' | null;
+  blood_group: string | null;
+  personal_email: string | null;
+  emergency_contact: string | null;
+  emergency_mobile: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  pan: string | null;
+  aadhaar_last4: string | null;
+  uan: string | null;
+  esi_number: string | null;
+  bank_account_name: string | null;
+  bank_account_no: string | null;
+  bank_ifsc: string | null;
+  employment_type: 'PERMANENT' | 'PROBATION' | 'CONTRACT' | 'INTERN' | 'CONSULTANT';
+  probation_until: string | null;
+  confirmed_on: string | null;
+  exit_type: 'RESIGNATION' | 'TERMINATION' | 'RETIREMENT' | 'END_OF_CONTRACT' | 'ABSCONDED' | null;
+  exit_reason: string | null;
+  reports_to: string | null;
+  shift_id: string | null;
 };
 
 type EmployeesRowInsert = Insertable<EmployeesRow, 'dealer_id' | 'branch_id' | 'employee_code' | 'name'>;
@@ -761,6 +853,25 @@ type JournalEntryLinesRow = {
 
 type JournalEntryLinesRowInsert = Insertable<JournalEntryLinesRow, 'journal_entry_id' | 'dealer_id' | 'line_number' | 'account_id'>;
 
+type LeaveTypesRow = {
+  id: string;
+  dealer_id: string;
+  code: string;
+  name: string;
+  annual_quota: string;
+  is_paid: boolean;
+  carry_forward: boolean;
+  max_carry_forward: string;
+  counts_as_worked: boolean;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type LeaveTypesRowInsert = Insertable<LeaveTypesRow, 'dealer_id' | 'code' | 'name'>;
+
 type PartyAllocationsRow = {
   id: string;
   dealer_id: string;
@@ -1032,6 +1143,27 @@ type ServicePaymentsRow = {
 };
 
 type ServicePaymentsRowInsert = Insertable<ServicePaymentsRow, 'dealer_id' | 'invoice_id' | 'receipt_number' | 'amount' | 'payment_mode'>;
+
+type ShiftsRow = {
+  id: string;
+  dealer_id: string;
+  code: string;
+  name: string;
+  starts_at: string;
+  ends_at: string;
+  break_minutes: number;
+  grace_minutes: number;
+  week_off_days: unknown[];
+  half_day_minutes: number;
+  full_day_minutes: number;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type ShiftsRowInsert = Insertable<ShiftsRow, 'dealer_id' | 'code' | 'name' | 'starts_at' | 'ends_at'>;
 
 type SuppliersRow = {
   id: string;
@@ -1813,6 +1945,76 @@ export interface Database {
           },
         ];
       };
+      employee_documents: {
+        Row: EmployeeDocumentsRow;
+        Insert: EmployeeDocumentsRowInsert;
+        Update: Partial<EmployeeDocumentsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'ed_employee_tenant_fkey';
+            columns: ['employee_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'employees';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'employee_documents_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      employee_leave_balances: {
+        Row: EmployeeLeaveBalancesRow;
+        Insert: EmployeeLeaveBalancesRowInsert;
+        Update: Partial<EmployeeLeaveBalancesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'elb_employee_tenant_fkey';
+            columns: ['employee_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'employees';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'elb_type_tenant_fkey';
+            columns: ['leave_type_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'leave_types';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'employee_leave_balances_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      employee_salary_structures: {
+        Row: EmployeeSalaryStructuresRow;
+        Insert: EmployeeSalaryStructuresRowInsert;
+        Update: Partial<EmployeeSalaryStructuresRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'employee_salary_structures_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'ess_employee_tenant_fkey';
+            columns: ['employee_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'employees';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       employees: {
         Row: EmployeesRow;
         Insert: EmployeesRowInsert;
@@ -1831,6 +2033,20 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'dealers';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'employees_reports_to_tenant_fkey';
+            columns: ['reports_to', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'employees';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'employees_shift_tenant_fkey';
+            columns: ['shift_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'shifts';
+            referencedColumns: ['id', 'dealer_id'];
           },
           {
             foreignKeyName: 'employees_user_id_fkey';
@@ -2205,6 +2421,20 @@ export interface Database {
           },
         ];
       };
+      leave_types: {
+        Row: LeaveTypesRow;
+        Insert: LeaveTypesRowInsert;
+        Update: Partial<LeaveTypesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'leave_types_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       party_allocations: {
         Row: PartyAllocationsRow;
         Insert: PartyAllocationsRowInsert;
@@ -2530,6 +2760,20 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'journal_entries';
             referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      shifts: {
+        Row: ShiftsRow;
+        Insert: ShiftsRowInsert;
+        Update: Partial<ShiftsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'shifts_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
           },
         ];
       };
@@ -2981,6 +3225,10 @@ export interface Database {
       einvoice_queue: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { einvoice_id: string; document_type: string; document_id: string; document_number: string; document_date: string; customer_name: string; gstin: string; invoice_value: string; status: string; irn: string; ack_number: string; error_message: string; attempt_count: number }[];
+      };
+      employee_salary_on: {
+        Args: { p_employee_id: string; p_as_on?: string | null };
+        Returns: string;
       };
       ensure_cash_day: {
         Args: { p_branch_id: string; p_date?: string | null };

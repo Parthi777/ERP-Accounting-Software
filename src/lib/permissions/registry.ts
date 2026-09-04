@@ -18,6 +18,7 @@ export type PermissionModule =
   | 'vehicles'
   | 'inventory'
   | 'purchases'
+  | 'hr'
   | 'service'
   | 'finance'
   | 'accounting'
@@ -99,6 +100,15 @@ export const PERMISSIONS = [
   { code: 'purchases.create', module: 'purchases', description: 'Create and edit draft purchase bills' },
   { code: 'purchases.post', module: 'purchases', description: 'Post a purchase bill to the accounts' },
   { code: 'purchases.cancel', module: 'purchases', description: 'Cancel or reverse a purchase bill' },
+
+  // ── HR ────────────────────────────────────────────────────────────────────
+  { code: 'hr.settings.manage', module: 'hr', description: 'Manage shifts and leave types' },
+  { code: 'hr.salary.view', module: 'hr', description: 'View employee salary structures', sensitive: true },
+  { code: 'hr.salary.manage', module: 'hr', description: 'Set and revise employee salary structures', sensitive: true },
+  { code: 'hr.leave.view', module: 'hr', description: 'View employee leave balances' },
+  { code: 'hr.leave.manage', module: 'hr', description: 'Set and adjust leave balances' },
+  { code: 'hr.documents.view', module: 'hr', description: 'View employee documents' },
+  { code: 'hr.documents.manage', module: 'hr', description: 'Upload and manage employee documents' },
 
   // ── Service ───────────────────────────────────────────────────────────────
   { code: 'service.jobcards.view', module: 'service', description: 'View job cards' },

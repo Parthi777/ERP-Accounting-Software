@@ -35,6 +35,7 @@ export type NavIconName =
   | 'vehicles'
   | 'inventory'
   | 'purchases'
+  | 'hr'
   | 'service'
   | 'finance'
   | 'accounting'
@@ -267,6 +268,17 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Margin', href: '/reports/margin', permission: 'reports.margin.view', status: 'ready', phase: 8 },
       { label: 'Branch Performance', href: '/reports/branch-performance', permission: 'reports.branch_performance.view', status: 'ready', phase: 8 },
       { label: 'Consolidated MIS', href: '/reports/consolidated', permission: 'reports.consolidated.view', status: 'ready', phase: 8 },
+    ],
+  },
+  {
+    label: 'HR',
+    group: 'Setup',
+    icon: 'hr',
+    permission: 'masters.employees.view',
+    status: 'ready',
+    items: [
+      { label: 'Employees', href: '/hr', permission: 'masters.employees.view', status: 'ready' },
+      { label: 'Shifts & Leave', href: '/hr/settings', permission: 'masters.employees.view', status: 'ready' },
     ],
   },
   {

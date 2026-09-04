@@ -55,6 +55,21 @@ const RESTRICTED_FIELDS: Readonly<Record<string, Permission>> = {
   finance_commission: 'finance.commission.view',
   financeCommission: 'finance.commission.view',
   internal_commission: 'finance.commission.view',
+  // Pay is personal data about a colleague, so it is stripped on the way out
+  // exactly as margin is — hidden by the UI is not the same as absent from the
+  // response (spec §52).
+  basic: 'hr.salary.view',
+  hra: 'hr.salary.view',
+  gross_earnings: 'hr.salary.view',
+  grossEarnings: 'hr.salary.view',
+  net_payable: 'hr.salary.view',
+  netPayable: 'hr.salary.view',
+  cost_to_company: 'hr.salary.view',
+  costToCompany: 'hr.salary.view',
+  total_deductions: 'hr.salary.view',
+  totalDeductions: 'hr.salary.view',
+  special_allowance: 'hr.salary.view',
+  specialAllowance: 'hr.salary.view',
 };
 
 /**

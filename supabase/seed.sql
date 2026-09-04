@@ -97,6 +97,13 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('purchases.create',                'purchases',  'Create and edit draft purchase bills', false),
   ('purchases.post',                  'purchases',  'Post a purchase bill to the accounts', false),
   ('purchases.cancel',                'purchases',  'Cancel or reverse a purchase bill', false),
+  ('hr.settings.manage',              'hr',         'Manage shifts and leave types', false),
+  ('hr.salary.view',                  'hr',         'View employee salary structures', true),
+  ('hr.salary.manage',                'hr',         'Set and revise employee salary structures', true),
+  ('hr.leave.view',                   'hr',         'View employee leave balances', false),
+  ('hr.leave.manage',                 'hr',         'Set and adjust leave balances', false),
+  ('hr.documents.view',               'hr',         'View employee documents', false),
+  ('hr.documents.manage',             'hr',         'Upload and manage employee documents', false),
   ('accounting.reports.view',         'accounting', 'View trial balance, P&L and balance sheet', false),
 
   ('cashbook.view',                   'cashbook',   'View the daily cash book', false),
@@ -211,7 +218,11 @@ select r.id, p.code
           'customers.view', 'customers.view_ledger',
           'service.jobcards.view', 'service.history.view',
           'admin.audit.view', 'admin.settings.view', 'admin.settings.manage',
-          'admin.branches.view', 'admin.users.view'
+          'admin.branches.view', 'admin.users.view',
+          -- HR paperwork and the roster, but deliberately not the pay scale:
+          -- the accountant is usually an employee too (see migration 0053).
+          'hr.settings.manage', 'hr.leave.view', 'hr.leave.manage',
+          'hr.documents.view', 'hr.documents.manage'
         )
    );
 
