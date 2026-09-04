@@ -17,6 +17,7 @@ export type PermissionModule =
   | 'customers'
   | 'vehicles'
   | 'inventory'
+  | 'purchases'
   | 'service'
   | 'finance'
   | 'accounting'
@@ -92,6 +93,12 @@ export const PERMISSIONS = [
   { code: 'inventory.ledger.view', module: 'inventory', description: 'View the stock ledger' },
   { code: 'inventory.counter_sale.create', module: 'inventory', description: 'Create counter sales invoices' },
   { code: 'inventory.view_cost', module: 'inventory', description: 'View item purchase cost', sensitive: true },
+
+  // ── Purchases ─────────────────────────────────────────────────────────────
+  { code: 'purchases.view', module: 'purchases', description: 'View purchase bills' },
+  { code: 'purchases.create', module: 'purchases', description: 'Create and edit draft purchase bills' },
+  { code: 'purchases.post', module: 'purchases', description: 'Post a purchase bill to the accounts' },
+  { code: 'purchases.cancel', module: 'purchases', description: 'Cancel or reverse a purchase bill' },
 
   // ── Service ───────────────────────────────────────────────────────────────
   { code: 'service.jobcards.view', module: 'service', description: 'View job cards' },

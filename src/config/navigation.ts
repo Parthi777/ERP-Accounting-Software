@@ -34,6 +34,7 @@ export type NavIconName =
   | 'customers'
   | 'vehicles'
   | 'inventory'
+  | 'purchases'
   | 'service'
   | 'finance'
   | 'accounting'
@@ -137,6 +138,17 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Variants', href: '/vehicles/variants', permission: 'vehicles.models.view', status: 'ready' },
       { label: 'Price History', href: '/vehicles/pricing', permission: 'vehicles.pricing.view', status: 'ready' },
       { label: 'Vehicle Transfers', href: '/vehicles/transfers', permission: 'vehicles.transfers.view', status: 'ready', phase: 3 },
+    ],
+  },
+  {
+    label: 'Purchases',
+    group: 'Stock control',
+    icon: 'purchases',
+    permission: 'purchases.view',
+    status: 'ready',
+    items: [
+      { label: 'Purchase Bills', href: '/purchases', permission: 'purchases.view', status: 'ready' },
+      { label: 'New Purchase Bill', href: '/purchases/new', permission: 'purchases.create', status: 'ready' },
     ],
   },
   {

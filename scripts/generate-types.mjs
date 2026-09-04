@@ -146,6 +146,7 @@ type Insertable<T, R extends keyof T> = Partial<Omit<T, R>> & Pick<T, R>;
 // Populated by BEFORE INSERT triggers rather than column defaults.
 const TRIGGER_FILLED = {
   customers: ['customer_code'],
+  purchase_bills: ['bill_number'],
   inventory_transactions: ['balance_after'],
   cash_transactions: ['balance_after'],
   bank_transactions: ['balance_after'],
@@ -234,6 +235,8 @@ const RPC = new Set([
   'customer_ledger_opening', 'party_ledger', 'party_ledger_opening',
   // Bill-wise settlement — spec §41.
   'party_open_items', 'allocate_party_payment',
+  // Purchases — spec §24, §41.
+  'post_purchase_bill', 'cancel_purchase_bill', 'unbilled_vehicles',
   // Finance operations — spec §25, §26, §27.
   'create_finance_application', 'decide_finance_application', 'disburse_finance_application',
   'record_trade_advance', 'create_finance_settlement', 'post_finance_settlement',

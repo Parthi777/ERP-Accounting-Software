@@ -62,6 +62,7 @@ Forward-only, applied in numerical order. Each file opens with its purpose and r
 | `0049_cash_book_and_cogs_classification.sql` | Module receipts reach the cash and bank books; accessory cost is charged to the accessory accounts |
 | `0050_party_payment_allocation.sql` | `party_allocations` — bill-wise settlement; `party_open_items()` and `allocate_party_payment()` |
 | `0051_sale_return_refund.sql` | A sales return refunds what was received through the cash or bank book; the receipts are reversed and the stock comes back |
+| `0052_purchases.sql` | `purchase_bills` — stock and input GST onto the balance sheet, the payable onto the supplier ledger; Input CGST/SGST/IGST accounts |
 
 No extensions are required. `gen_random_uuid()` has been core since PostgreSQL 13, and
 case-insensitive email uses a `lower()` unique index rather than `citext` — which keeps the

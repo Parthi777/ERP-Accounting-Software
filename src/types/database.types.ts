@@ -786,6 +786,58 @@ type PermissionsRow = {
 
 type PermissionsRowInsert = Insertable<PermissionsRow, 'code' | 'module' | 'description'>;
 
+type PurchaseBillLinesRow = {
+  id: string;
+  purchase_bill_id: string;
+  dealer_id: string;
+  line_number: number;
+  line_type: 'VEHICLE' | 'ACCESSORY' | 'SPARE';
+  vehicle_id: string | null;
+  item_id: string | null;
+  source: 'LOCAL' | 'COMPANY' | null;
+  description: string;
+  quantity: string;
+  unit_rate: string;
+  taxable_value: string;
+  cgst_rate: string;
+  sgst_rate: string;
+  igst_rate: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  created_at: string;
+};
+
+type PurchaseBillLinesRowInsert = Insertable<PurchaseBillLinesRow, 'purchase_bill_id' | 'dealer_id' | 'line_number' | 'line_type' | 'description' | 'quantity' | 'unit_rate' | 'taxable_value' | 'total_amount'>;
+
+type PurchaseBillsRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  bill_number: string;
+  supplier_bill_number: string;
+  supplier_id: string;
+  bill_date: string;
+  due_date: string | null;
+  status: 'DRAFT' | 'POSTED' | 'CANCELLED';
+  taxable_value: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  notes: string | null;
+  journal_entry_id: string | null;
+  posted_at: string | null;
+  posted_by: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type PurchaseBillsRowInsert = Insertable<PurchaseBillsRow, 'dealer_id' | 'branch_id' | 'supplier_bill_number' | 'supplier_id'>;
+
 type RolePermissionsRow = {
   role_id: string;
   permission_code: string;
@@ -2187,6 +2239,69 @@ export interface Database {
         Update: Partial<PermissionsRow>;
         Relationships: [];
       };
+      purchase_bill_lines: {
+        Row: PurchaseBillLinesRow;
+        Insert: PurchaseBillLinesRowInsert;
+        Update: Partial<PurchaseBillLinesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'pbl_bill_tenant_fkey';
+            columns: ['purchase_bill_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_bills';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'pbl_item_tenant_fkey';
+            columns: ['item_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'inventory_items';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'pbl_vehicle_tenant_fkey';
+            columns: ['vehicle_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'vehicles';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      purchase_bills: {
+        Row: PurchaseBillsRow;
+        Insert: PurchaseBillsRowInsert;
+        Update: Partial<PurchaseBillsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'purchase_bills_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'purchase_bills_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'purchase_bills_journal_tenant_fkey';
+            columns: ['journal_entry_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'journal_entries';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'purchase_bills_supplier_tenant_fkey';
+            columns: ['supplier_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'suppliers';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       role_permissions: {
         Row: RolePermissionsRow;
         Insert: RolePermissionsRowInsert;
@@ -2775,6 +2890,10 @@ export interface Database {
         Args: { p_from: string; p_to: string };
         Returns: { branch_id: string; branch_code: string; branch_name: string; vehicle_units: number; vehicle_revenue: string; vehicle_cost: string; vehicle_margin: string; service_jobs: number; service_revenue: string; service_cost: string; bookings_open: number; booking_advances: string; cash_in_hand: string; receivables: string }[];
       };
+      cancel_purchase_bill: {
+        Args: { p_bill_id: string; p_reason: string };
+        Returns: string;
+      };
       cash_book: {
         Args: { p_branch_id: string; p_date?: string | null };
         Returns: { transaction_time: string; reference_number: string; particular: string; receipt: string; payment: string; running_balance: string; journal_entry_id: string }[];
@@ -2931,6 +3050,10 @@ export interface Database {
         Args: { p_settlement_id: string; p_bank_account_id: string };
         Returns: string;
       };
+      post_purchase_bill: {
+        Args: { p_bill_id: string; p_idempotency_key?: string | null };
+        Returns: string;
+      };
       post_service_invoice: {
         Args: { p_invoice_id: string; p_idempotency_key?: string | null };
         Returns: string;
@@ -3030,6 +3153,10 @@ export interface Database {
       trial_balance: {
         Args: { p_as_on?: string | null; p_branch_id?: string | null };
         Returns: { account_id: string; account_code: string; account_name: string; account_type: string; debit_balance: string; credit_balance: string }[];
+      };
+      unbilled_vehicles: {
+        Args: { p_branch_id?: string | null; p_search?: string | null };
+        Returns: { vehicle_id: string; chassis_no: string; engine_no: string; model_label: string; branch_name: string; purchase_cost: string; stock_date: string }[];
       };
       unmatch_bank_line: {
         Args: { p_statement_line_id: number };

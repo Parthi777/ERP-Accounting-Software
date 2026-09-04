@@ -93,6 +93,10 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('accounting.periods.manage',       'accounting', 'Open, close and lock accounting periods', false),
   ('accounting.ledgers.view',         'accounting', 'View customer, supplier and finance ledgers', false),
   ('accounting.allocations.manage',   'accounting', 'Split payments against bills and settle party ledgers', false),
+  ('purchases.view',                  'purchases',  'View purchase bills', false),
+  ('purchases.create',                'purchases',  'Create and edit draft purchase bills', false),
+  ('purchases.post',                  'purchases',  'Post a purchase bill to the accounts', false),
+  ('purchases.cancel',                'purchases',  'Cancel or reverse a purchase bill', false),
   ('accounting.reports.view',         'accounting', 'View trial balance, P&L and balance sheet', false),
 
   ('cashbook.view',                   'cashbook',   'View the daily cash book', false),
@@ -198,7 +202,7 @@ select r.id, p.code
   cross join public.permissions p
  where r.code = 'ACCOUNTS'
    and (
-        p.module in ('accounting', 'cashbook', 'bank', 'gst', 'reports', 'masters', 'inventory', 'vehicles', 'finance')
+        p.module in ('accounting', 'cashbook', 'bank', 'gst', 'reports', 'masters', 'inventory', 'vehicles', 'finance', 'purchases')
      or p.code in (
           'dashboard.view', 'dashboard.view_consolidated', 'dashboard.view_margin',
           'sales.view', 'sales.verify', 'sales.approve', 'sales.post', 'sales.cancel',
@@ -426,6 +430,9 @@ begin
       ('1600', 'Accessories Inventory',     'ASSET',     'DEBIT',  false, '1000', true),
       ('1700', 'Spare Inventory',           'ASSET',     'DEBIT',  false, '1000', true),
       ('1800', 'Other Receivables',         'ASSET',     'DEBIT',  false, '1000', false),
+      ('1900', 'Input CGST',                'ASSET',     'DEBIT',  false, '1000', false),
+      ('1910', 'Input SGST',                'ASSET',     'DEBIT',  false, '1000', false),
+      ('1920', 'Input IGST',                'ASSET',     'DEBIT',  false, '1000', false),
 
       ('2000', 'Liabilities',               'LIABILITY', 'CREDIT', true,  null,   false),
       ('2100', 'Customer Advances',         'LIABILITY', 'CREDIT', false, '2000', false),
@@ -486,6 +493,7 @@ begin
   perform app.seed_default_accounting_rules(v_dealer_id);
   perform app.seed_finance_accounting_rules(v_dealer_id);
   perform app.seed_cogs_accounting_rules(v_dealer_id);
+  perform app.seed_purchase_accounting_rules(v_dealer_id);
 
   -- ── One cash account per branch (spec §36) ────────────────────────────────
   -- Here rather than with the branches above, because a cash account needs a
@@ -521,6 +529,7 @@ begin
          (v_dealer_id, null, 'JOB_CARD',            v_fy, 'JC',  6),
          (v_dealer_id, null, 'SERVICE_INVOICE',     v_fy, 'SVC', 6),
          (v_dealer_id, null, 'COUNTER_INVOICE',     v_fy, 'CSI', 6),
+         (v_dealer_id, null, 'PURCHASE_BILL',       v_fy, 'PB',  6),
          (v_dealer_id, null, 'JOURNAL',             v_fy, 'JE',  6),
          (v_dealer_id, null, 'BANK_RECONCILIATION', v_fy, 'BRS', 6),
          (v_dealer_id, null, 'STOCK_TRANSFER',      v_fy, 'TRF', 6),
