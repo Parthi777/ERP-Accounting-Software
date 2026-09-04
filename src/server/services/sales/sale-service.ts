@@ -632,6 +632,16 @@ function describeReturn(refunded: Paise, creditLeft: Paise): string {
 }
 
 function describeReturnError(message: string): string {
+  // The application deploys on push while migrations are applied to Supabase by
+  // hand, so there is a window where this code is live and 0051 is not. PostgREST
+  // answers a call it cannot resolve with the raw signature it looked for, which
+  // tells whoever pressed Return nothing they can act on.
+  if (message.includes('Could not find the function') || message.includes('schema cache')) {
+    return (
+      'Returns are unavailable until the database update for refunds is applied ' +
+      '(migration 0051). Nothing was changed.'
+    );
+  }
   if (message.includes('Say how it is being refunded')) {
     return 'Money has been received against this invoice. Choose whether it goes back in cash or from a bank account.';
   }
