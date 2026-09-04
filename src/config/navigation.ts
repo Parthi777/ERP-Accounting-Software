@@ -96,7 +96,6 @@ export const NAVIGATION: readonly NavSection[] = [
     status: 'ready',
     items: [
       { label: 'Vehicle Sales', href: '/sales', permission: 'sales.view', status: 'ready' },
-      { label: 'Deliveries', href: '/sales/deliveries', permission: 'sales.deliver', status: 'ready', phase: 4 },
       { label: 'Sales Returns', href: '/sales/returns', permission: 'sales.return', status: 'ready', phase: 4 },
     ],
   },

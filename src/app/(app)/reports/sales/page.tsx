@@ -72,7 +72,22 @@ export default async function Page({
         title="Sales report"
         description={`Posted and delivered invoices, ${formatDate(range.from)} – ${formatDate(range.to)} (spec §41).`}
         count={rows.length}
-        action={<ExportButtons report="sales-summary" />}
+        action={
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">
+                Sales summary
+              </p>
+              <ExportButtons report="sales-summary" />
+            </div>
+            <div>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">
+                Delivery register
+              </p>
+              <ExportButtons report="deliveries" />
+            </div>
+          </div>
+        }
       />
 
       <Panel className="mb-4 p-4">

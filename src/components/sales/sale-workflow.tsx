@@ -44,6 +44,8 @@ export function SaleWorkflow({
   const [mode, setMode] = React.useState('CASH');
   const [reference, setReference] = React.useState('');
   const [receivedBy, setReceivedBy] = React.useState('');
+  const [odometer, setOdometer] = React.useState('');
+  const [remarks, setRemarks] = React.useState('');
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     setError(null);
@@ -57,6 +59,9 @@ export function SaleWorkflow({
       setReason('');
       setAmount('');
       setReference('');
+      setReceivedBy('');
+      setOdometer('');
+      setRemarks('');
       router.refresh();
     });
   };
@@ -223,13 +228,30 @@ export function SaleWorkflow({
               <>
                 <h2 className="text-sm font-semibold text-ink-900">Record delivery</h2>
                 <p className="mt-1 text-sm text-ink-600">
-                  The vehicle moves to DELIVERED. That is terminal — it cannot return to stock.
+                  This issues a delivery note and closes the sale. The vehicle moves to DELIVERED,
+                  which is terminal — it cannot return to stock afterwards.
                 </p>
                 <div className="mt-4 space-y-3">
                   <div>
                     <Label htmlFor="received-by" className="mb-1.5 block">Received by</Label>
                     <Input id="received-by" value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)}
                       placeholder="Name of the person taking delivery" />
+                    {/* Asked for rather than assumed: the delivery note is the document a
+                        dispute turns on months later, and "the customer" is not an answer
+                        when their driver collected the vehicle. */}
+                    <p className="mt-1 text-xs text-ink-400">
+                      The person actually collecting, if not the customer.
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="deliver-odometer" className="mb-1.5 block">Odometer</Label>
+                    <Input id="deliver-odometer" type="number" step="0.1" min="0" value={odometer}
+                      onChange={(e) => setOdometer(e.target.value)} placeholder="km at handover" />
+                  </div>
+                  <div>
+                    <Label htmlFor="deliver-remarks" className="mb-1.5 block">Remarks</Label>
+                    <Input id="deliver-remarks" value={remarks} onChange={(e) => setRemarks(e.target.value)}
+                      placeholder="e.g. Documents and both keys handed over" />
                   </div>
                 </div>
                 {balanceDue > 0 && (
@@ -241,7 +263,16 @@ export function SaleWorkflow({
                 <div className="mt-4 flex justify-end gap-2">
                   <Button variant="secondary" size="sm" onClick={() => setDialog(null)} disabled={pending}>Cancel</Button>
                   <Button size="sm" disabled={pending}
-                    onClick={() => run(() => deliverSaleAction(saleId, receivedBy || undefined))}>
+                    onClick={() =>
+                      run(() =>
+                        deliverSaleAction(
+                          saleId,
+                          receivedBy.trim() || undefined,
+                          odometer ? Number(odometer) : undefined,
+                          remarks.trim() || undefined,
+                        ),
+                      )
+                    }>
                     {pending && <Loader2 className="animate-spin" aria-hidden />}
                     Confirm delivery
                   </Button>
