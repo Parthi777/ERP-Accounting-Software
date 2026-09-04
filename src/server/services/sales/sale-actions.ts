@@ -79,14 +79,21 @@ export async function createSaleDraftAction(
 export async function returnSaleAction(
   saleId: string,
   reason: string,
+  refund?: service.SaleRefundInput,
 ): Promise<service.SaleResult> {
   try {
-    const result = await service.returnSale(saleId, reason);
+    const result = await service.returnSale(saleId, reason, refund);
     if (result.ok) {
       refresh(saleId);
       revalidatePath('/sales/returns');
       revalidatePath('/inventory/ledger');
       revalidatePath('/accounting/journals');
+      // A refund moves money and stock, so the books that itemise both have to
+      // be re-read, not just the sale.
+      revalidatePath('/vehicles');
+      revalidatePath('/cash-book');
+      revalidatePath('/bank/book');
+      revalidatePath('/accounting/customer-ledger');
     }
     return result;
   } catch (error) {

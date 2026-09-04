@@ -232,6 +232,8 @@ const RPC = new Set([
   'adjust_inventory_stock', 'return_vehicle_sale',
   // Subsidiary ledgers — spec §11, §41.
   'customer_ledger_opening', 'party_ledger', 'party_ledger_opening',
+  // Bill-wise settlement — spec §41.
+  'party_open_items', 'allocate_party_payment',
   // Finance operations — spec §25, §26, §27.
   'create_finance_application', 'decide_finance_application', 'disburse_finance_application',
   'record_trade_advance', 'create_finance_settlement', 'post_finance_settlement',

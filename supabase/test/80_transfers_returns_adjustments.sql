@@ -256,7 +256,9 @@ begin
     format('select public.return_vehicle_sale(%L, '''')', v_sale),
     'a return without a reason is refused (spec §21)');
 
-  v_reversal := public.return_vehicle_sale(v_sale, 'Customer rejected delivery — colour mismatch');
+  -- Nothing was received against this invoice, so no refund mode is needed.
+  select reversal_entry_id into v_reversal
+    from public.return_vehicle_sale(v_sale, 'Customer rejected delivery — colour mismatch');
 
   perform app_test.assert_equals(v_reversal is not null, true, 'the return posts a reversal entry');
   perform app_test.assert_equals(

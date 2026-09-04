@@ -119,6 +119,7 @@ export const PERMISSIONS = [
   { code: 'accounting.journals.reverse', module: 'accounting', description: 'Reverse a posted journal entry' },
   { code: 'accounting.periods.manage', module: 'accounting', description: 'Open, close and lock accounting periods' },
   { code: 'accounting.ledgers.view', module: 'accounting', description: 'View customer, supplier and finance ledgers' },
+  { code: 'accounting.allocations.manage', module: 'accounting', description: 'Split payments against bills and settle party ledgers' },
   { code: 'accounting.reports.view', module: 'accounting', description: 'View trial balance, P&L and balance sheet' },
 
   // ── Cash book ─────────────────────────────────────────────────────────────

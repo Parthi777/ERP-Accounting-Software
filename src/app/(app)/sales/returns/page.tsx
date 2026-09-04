@@ -1,7 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { getSales, type SaleListRow } from '@/server/services/sales/sale-service';
+import {
+  getSales,
+  getRefundBankAccounts,
+  type SaleListRow,
+} from '@/server/services/sales/sale-service';
 import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { SaleReturnAction } from '@/components/sales/return-action';
@@ -33,8 +37,13 @@ export default async function Page({
   const params = await searchParams;
   const view = params.view === 'RETURNED' ? 'RETURNED' : 'POSTED';
 
-  const rows = await getSales({ status: view, branchId: null, q: params.q });
   const canReturn = hasPermission(context, 'sales.return');
+  const [rows, bankAccounts] = await Promise.all([
+    getSales({ status: view, branchId: null, q: params.q }),
+    // Needed only for the refund half of the dialog, and only where a return is
+    // actually possible.
+    canReturn && view === 'POSTED' ? getRefundBankAccounts() : Promise.resolve([]),
+  ]);
 
   const columns: Column<SaleListRow>[] = [
     {
@@ -93,7 +102,9 @@ export default async function Page({
           <SaleReturnAction
             saleId={row.id}
             invoiceNumber={row.invoiceNumber}
-            hasPayment={row.paidAmount > 0}
+            paidAmount={row.paidAmount}
+            financeAmount={row.financeAmount}
+            bankAccounts={bankAccounts}
           />
         ) : null,
     },
@@ -103,7 +114,7 @@ export default async function Page({
     <>
       <PageHeader
         title="Sales returns"
-        description="A return posts a reversal against the original invoice. The invoice itself is never edited (spec §21, §23)."
+        description="A return reverses the invoice, refunds what was received through the cash or bank book, and puts the vehicle and its fitted accessories back into stock. The invoice itself is never edited (spec §21, §23)."
         count={rows.length}
       />
 

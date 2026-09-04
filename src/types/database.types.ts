@@ -761,6 +761,21 @@ type JournalEntryLinesRow = {
 
 type JournalEntryLinesRowInsert = Insertable<JournalEntryLinesRow, 'journal_entry_id' | 'dealer_id' | 'line_number' | 'account_id'>;
 
+type PartyAllocationsRow = {
+  id: string;
+  dealer_id: string;
+  party_type: 'CUSTOMER' | 'SUPPLIER' | 'FINANCE_COMPANY' | 'EMPLOYEE';
+  party_id: string;
+  debit_line_id: string;
+  credit_line_id: string;
+  amount: string;
+  note: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type PartyAllocationsRowInsert = Insertable<PartyAllocationsRow, 'dealer_id' | 'party_type' | 'party_id' | 'debit_line_id' | 'credit_line_id' | 'amount'>;
+
 type PermissionsRow = {
   code: string;
   module: string;
@@ -2138,6 +2153,34 @@ export interface Database {
           },
         ];
       };
+      party_allocations: {
+        Row: PartyAllocationsRow;
+        Insert: PartyAllocationsRowInsert;
+        Update: Partial<PartyAllocationsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'party_allocations_credit_tenant_fkey';
+            columns: ['credit_line_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'journal_entry_lines';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'party_allocations_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'party_allocations_debit_tenant_fkey';
+            columns: ['debit_line_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'journal_entry_lines';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       permissions: {
         Row: PermissionsRow;
         Insert: PermissionsRowInsert;
@@ -2712,6 +2755,10 @@ export interface Database {
         Args: { p_item_id: string; p_branch_id: string; p_source: string; p_quantity: number; p_reason: string };
         Returns: undefined;
       };
+      allocate_party_payment: {
+        Args: { p_credit_line_id: string; p_allocations?: Json | null; p_note?: string | null };
+        Returns: { allocated: string; unapplied: string; bills: number }[];
+      };
       allocate_stock: {
         Args: { p_item_id: string; p_branch_id: string; p_quantity: number };
         Returns: { source: string; quantity: string; unit_cost: string; available: string }[];
@@ -2876,6 +2923,10 @@ export interface Database {
         Args: { p_party_type: string; p_party_id: string; p_as_on: string };
         Returns: unknown;
       };
+      party_open_items: {
+        Args: { p_party_type: string; p_party_id: string; p_include_settled?: boolean | null };
+        Returns: { line_id: string; entry_id: string; entry_date: string; entry_number: string; document_type: string; document_ref: string; account_code: string; account_name: string; particulars: string; side: string; amount: string; allocated: string; outstanding: string; age_days: number }[];
+      };
       post_finance_settlement: {
         Args: { p_settlement_id: string; p_bank_account_id: string };
         Returns: string;
@@ -2957,8 +3008,8 @@ export interface Database {
         Returns: { price_version_id: string; version_number: number; ex_showroom: string; insurance: string; registration: string; mandatory_accessories: string; forwarding_charge: string; other_charges: string; total_on_road: string; max_discount: string; tax_code: string }[];
       };
       return_vehicle_sale: {
-        Args: { p_sale_id: string; p_reason: string };
-        Returns: string;
+        Args: { p_sale_id: string; p_reason: string; p_refund_mode?: string | null; p_refund_amount?: number | null; p_bank_account_id?: string | null; p_reference?: string | null; p_date?: string | null };
+        Returns: { reversal_entry_id: string; refund_entry_id: string; refunded: string; credit_left: string }[];
       };
       sales_summary: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null; p_group_by?: string | null };

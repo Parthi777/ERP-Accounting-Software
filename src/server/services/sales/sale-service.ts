@@ -2,7 +2,7 @@ import 'server-only';
 
 import { requirePermission, type TenantContext } from '@/server/auth/tenant-context';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { fromDb, type Paise } from '@/lib/money';
+import { formatINR, fromDb, toRupees, type Paise } from '@/lib/money';
 import { recordAudit } from '@/server/services/audit/record-audit';
 import type { Permission } from '@/lib/permissions';
 import type { Tables } from '@/types/database.types';
@@ -264,6 +264,8 @@ export interface SaleResult {
   readonly ok: boolean;
   readonly id?: string;
   readonly error?: string;
+  /** What happened, for an action whose effects are worth stating back. */
+  readonly message?: string;
 }
 
 /** Moves a sale one step along the workflow. */
@@ -536,7 +538,28 @@ export async function createSaleDraft(input: CreateSaleInput): Promise<SaleResul
  * back into stock and the fitted accessories return to the lot they were drawn
  * from. All of that happens inside `return_vehicle_sale` so it cannot half-apply.
  */
-export async function returnSale(saleId: string, reason: string): Promise<SaleResult> {
+/**
+ * How the money received against a returned invoice goes back to the customer —
+ * spec §21, §37, §38.
+ *
+ * `mode` is null only when nothing was received. Everything else the database
+ * validates: an amount larger than the receipt, a bank account belonging to
+ * another dealer, a closed cash day.
+ */
+export interface SaleRefundInput {
+  readonly mode: 'CASH' | 'BANK' | null;
+  /** Rupees. Defaults to everything received when omitted. */
+  readonly amount?: number | null;
+  readonly bankAccountId?: string | null;
+  /** Cheque number, UTR or cash voucher — written onto the cash/bank book row. */
+  readonly reference?: string | null;
+}
+
+export async function returnSale(
+  saleId: string,
+  reason: string,
+  refund?: SaleRefundInput,
+): Promise<SaleResult> {
   const context = await requirePermission('sales.return');
   const supabase = await createSupabaseServerClient();
 
@@ -547,33 +570,30 @@ export async function returnSale(saleId: string, reason: string): Promise<SaleRe
       error: 'A return needs a reason — it is recorded on the reversal, not just asked for here.',
     };
   }
+  if (refund?.mode === 'BANK' && !refund.bankAccountId) {
+    return { ok: false, error: 'Choose the bank account the refund is being paid from.' };
+  }
+  if (refund?.amount != null && !(refund.amount > 0)) {
+    return { ok: false, error: 'Enter a refund amount greater than zero, or refund nothing.' };
+  }
 
-  const { error } = await supabase.rpc('return_vehicle_sale', {
+  const { data, error } = await supabase.rpc('return_vehicle_sale', {
     p_sale_id: saleId,
     p_reason: trimmed,
+    p_refund_mode: refund?.mode ?? null,
+    p_refund_amount: refund?.amount ?? null,
+    p_bank_account_id: refund?.mode === 'BANK' ? (refund.bankAccountId ?? null) : null,
+    p_reference: refund?.reference?.trim() || null,
   });
 
   if (error) {
     console.error('[sales] return failed', error.message);
-    if (error.message.includes('received against it')) {
-      return {
-        ok: false,
-        error:
-          'Money has been received against this invoice. Refund it first — a return cannot ' +
-          'silently leave the customer in credit.',
-      };
-    }
-    if (error.message.includes('only a posted, undelivered sale')) {
-      return {
-        ok: false,
-        error: 'Only a posted sale that has not been delivered can be returned.',
-      };
-    }
-    if (error.message.includes('period covering')) {
-      return { ok: false, error: 'The accounting period for the reversal date is closed.' };
-    }
-    return { ok: false, error: `The sale could not be returned: ${error.message}` };
+    return { ok: false, error: describeReturnError(error.message) };
   }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const refunded = fromDb(row?.refunded ?? 0);
+  const creditLeft = fromDb(row?.credit_left ?? 0);
 
   await recordAudit({
     action: 'REVERSE',
@@ -584,9 +604,84 @@ export async function returnSale(saleId: string, reason: string): Promise<SaleRe
     userId: context.userId,
     userEmail: context.email,
     reason: trimmed,
+    newData: {
+      status: 'RETURNED',
+      refund_mode: refund?.mode ?? null,
+      refunded: toRupees(refunded),
+      credit_left: toRupees(creditLeft),
+      reference: refund?.reference ?? null,
+    },
   });
 
-  return { ok: true, id: saleId };
+  return { ok: true, id: saleId, message: describeReturn(refunded, creditLeft) };
+}
+
+/** What actually happened, in the terms the person who pressed the button cares about. */
+function describeReturn(refunded: Paise, creditLeft: Paise): string {
+  const stock = 'The vehicle is back in stock and any fitted accessories have returned to their lot.';
+  if (refunded === 0) {
+    return `Invoice reversed. ${stock}`;
+  }
+  if (creditLeft > 0) {
+    return (
+      `Invoice reversed and ${formatINR(refunded)} refunded. ` +
+      `${formatINR(creditLeft)} is still held to the customer's credit — post it to income if it is a retention. ${stock}`
+    );
+  }
+  return `Invoice reversed and ${formatINR(refunded)} refunded in full. ${stock}`;
+}
+
+function describeReturnError(message: string): string {
+  if (message.includes('Say how it is being refunded')) {
+    return 'Money has been received against this invoice. Choose whether it goes back in cash or from a bank account.';
+  }
+  if (message.includes('cannot be refunded')) {
+    return 'The refund is more than what was received against this invoice.';
+  }
+  if (message.includes('only a posted, undelivered sale')) {
+    return 'Only a posted sale that has not been delivered can be returned.';
+  }
+  if (message.includes('no cash account')) {
+    return 'This branch has no cash account, so a cash refund cannot be paid. Refund from a bank account instead.';
+  }
+  if (message.includes('is closed and cannot be changed')) {
+    return 'The cash book for today is closed, so a cash refund cannot be paid out. Reopen the day, or refund from a bank account.';
+  }
+  if (message.includes('bank account the refund')) {
+    return 'Choose the bank account the refund is being paid from.';
+  }
+  if (message.includes('period covering')) {
+    return 'The accounting period for the reversal date is closed.';
+  }
+  if (message.includes('No accounting rule')) {
+    return 'The receivable account is not configured, so the refund cannot be posted. Nothing was changed.';
+  }
+  return `The sale could not be returned: ${message}`;
+}
+
+/**
+ * Bank accounts a refund can be paid from.
+ *
+ * Gated on `sales.return` rather than reusing the finance picker, which needs
+ * `finance.companies.view` — a permission whoever handles returns need not hold.
+ */
+export async function getRefundBankAccounts(): Promise<readonly { id: string; label: string }[]> {
+  await requirePermission('sales.return');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase
+    .from('bank_accounts')
+    .select('id, name, account_number')
+    .eq('status', 'ACTIVE')
+    .order('name');
+
+  if (error) {
+    throw new Error(`Failed to load bank accounts: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    label: `${row.name} · ${row.account_number}`,
+  }));
 }
 
 export interface DeliveryRow {

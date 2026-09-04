@@ -92,6 +92,7 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('accounting.journals.reverse',     'accounting', 'Reverse a posted journal entry', false),
   ('accounting.periods.manage',       'accounting', 'Open, close and lock accounting periods', false),
   ('accounting.ledgers.view',         'accounting', 'View customer, supplier and finance ledgers', false),
+  ('accounting.allocations.manage',   'accounting', 'Split payments against bills and settle party ledgers', false),
   ('accounting.reports.view',         'accounting', 'View trial balance, P&L and balance sheet', false),
 
   ('cashbook.view',                   'cashbook',   'View the daily cash book', false),

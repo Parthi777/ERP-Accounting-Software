@@ -4,9 +4,14 @@ import {
   getCustomerLedger,
   getLedgerCustomerOptions,
 } from '@/server/services/accounting/ledger-service';
+import { getPartySettlement } from '@/server/services/accounting/settlement-service';
 import { requirePermission } from '@/server/auth/tenant-context';
 import { PageHeader } from '@/components/data-table/data-table';
 import { PartyLedgerView, CUSTOMER_LEDGER_LABELS } from '@/components/accounting/party-ledger-view';
+import {
+  PartySettlement,
+  CUSTOMER_SETTLEMENT_LABELS,
+} from '@/components/accounting/party-settlement';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { monthRange } from '@/lib/period';
 
@@ -23,9 +28,15 @@ export default async function Page({
   const { from, to } = monthRange(params.from, params.to);
   const customerId = params.customer ?? '';
 
-  const [customers, ledger] = await Promise.all([
+  const [customers, ledger, settlement] = await Promise.all([
     getLedgerCustomerOptions(),
     customerId ? getCustomerLedger({ customerId, from, to }) : Promise.resolve(null),
+    // Deliberately not bounded by the date filter: a receipt taken in August can
+    // settle a July invoice, and a settlement screen that only offered the
+    // month on screen would make that unrecordable.
+    customerId
+      ? getPartySettlement({ partyType: 'CUSTOMER', partyId: customerId })
+      : Promise.resolve(null),
   ]);
 
   return (
@@ -48,6 +59,10 @@ export default async function Page({
         labels={CUSTOMER_LEDGER_LABELS}
         detailHref={(l) => `/customers/${l.partyId}`}
       />
+
+      {ledger && settlement && (
+        <PartySettlement settlement={settlement} labels={CUSTOMER_SETTLEMENT_LABELS} />
+      )}
     </>
   );
 }
