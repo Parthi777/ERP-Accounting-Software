@@ -65,6 +65,17 @@ const serverSchema = z.object({
   /** The GSTIN documents are filed under, when it differs from the dealer's. */
   GST_API_GSTIN: z.string().optional(),
   SUPABASE_STORAGE_BUCKET: z.string().default('tw-erp-documents'),
+
+  // External attendance system — spec §40. Unconfigured is a state, not an
+  // error: a dealer without one sees "not connected", never a stack trace.
+  ATTENDANCE_API_BASE_URL: z.string().url().optional().or(z.literal('')),
+  ATTENDANCE_API_KEY: z.string().optional(),
+  /** 'bearer' sends Authorization: Bearer <key>; 'header' sends x-api-key. */
+  ATTENDANCE_API_AUTH: z.enum(['bearer', 'header', 'basic']).default('bearer'),
+  /** Header name when ATTENDANCE_API_AUTH is 'header'. */
+  ATTENDANCE_API_KEY_HEADER: z.string().default('x-api-key'),
+  /** Path appended to the base URL for the attendance query. */
+  ATTENDANCE_API_PATH: z.string().default('/attendance'),
 });
 
 type ServerEnv = z.infer<typeof serverSchema>;
@@ -96,6 +107,11 @@ export function serverEnv(): ServerEnv {
     GST_API_CLIENT_SECRET: process.env.GST_API_CLIENT_SECRET,
     GST_API_GSTIN: process.env.GST_API_GSTIN,
     SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET,
+    ATTENDANCE_API_BASE_URL: process.env.ATTENDANCE_API_BASE_URL,
+    ATTENDANCE_API_KEY: process.env.ATTENDANCE_API_KEY,
+    ATTENDANCE_API_AUTH: process.env.ATTENDANCE_API_AUTH,
+    ATTENDANCE_API_KEY_HEADER: process.env.ATTENDANCE_API_KEY_HEADER,
+    ATTENDANCE_API_PATH: process.env.ATTENDANCE_API_PATH,
   });
 
   if (!parsed.success) {

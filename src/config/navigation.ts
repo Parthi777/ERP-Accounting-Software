@@ -278,6 +278,7 @@ export const NAVIGATION: readonly NavSection[] = [
     status: 'ready',
     items: [
       { label: 'Employees', href: '/hr', permission: 'masters.employees.view', status: 'ready' },
+      { label: 'Attendance', href: '/hr/attendance', permission: 'hr.attendance.view', status: 'ready' },
       { label: 'Shifts & Leave', href: '/hr/settings', permission: 'masters.employees.view', status: 'ready' },
     ],
   },

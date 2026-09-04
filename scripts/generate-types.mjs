@@ -239,6 +239,9 @@ const RPC = new Set([
   'post_purchase_bill', 'cancel_purchase_bill', 'unbilled_vehicles',
   // HR — spec §12, §15.
   'employee_salary_on',
+  // Attendance integration — spec §12, §40.
+  'start_attendance_sync', 'import_attendance_days', 'finish_attendance_sync',
+  'attendance_summary',
   // Finance operations — spec §25, §26, §27.
   'create_finance_application', 'decide_finance_application', 'disburse_finance_application',
   'record_trade_advance', 'create_finance_settlement', 'post_finance_settlement',

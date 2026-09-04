@@ -109,6 +109,10 @@ export const PERMISSIONS = [
   { code: 'hr.leave.manage', module: 'hr', description: 'Set and adjust leave balances' },
   { code: 'hr.documents.view', module: 'hr', description: 'View employee documents' },
   { code: 'hr.documents.manage', module: 'hr', description: 'Upload and manage employee documents' },
+  { code: 'hr.attendance.view', module: 'hr', description: 'View the attendance register' },
+  { code: 'hr.attendance.sync', module: 'hr', description: 'Pull attendance from the external system' },
+  { code: 'hr.attendance.edit', module: 'hr', description: 'Correct an attendance day by hand' },
+  { code: 'hr.mapping.manage', module: 'hr', description: 'Map employees to the external attendance system' },
 
   // ── Service ───────────────────────────────────────────────────────────────
   { code: 'service.jobcards.view', module: 'service', description: 'View job cards' },

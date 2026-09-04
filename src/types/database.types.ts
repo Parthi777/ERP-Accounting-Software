@@ -64,6 +64,52 @@ type AccountingRulesRow = {
 
 type AccountingRulesRowInsert = Insertable<AccountingRulesRow, 'dealer_id' | 'module' | 'event' | 'component' | 'side' | 'account_id'>;
 
+type AttendanceDaysRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  employee_id: string;
+  attendance_date: string;
+  status: 'PRESENT' | 'HALF_DAY';
+  first_in: string | null;
+  last_out: string | null;
+  worked_minutes: number;
+  late_minutes: number;
+  early_exit_minutes: number;
+  overtime_minutes: number;
+  leave_type_id: string | null;
+  source: 'SYNC' | 'MANUAL';
+  external_ref: string | null;
+  sync_run_id: string | null;
+  remarks: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type AttendanceDaysRowInsert = Insertable<AttendanceDaysRow, 'dealer_id' | 'branch_id' | 'employee_id' | 'attendance_date' | 'status'>;
+
+type AttendanceSyncRunsRow = {
+  id: string;
+  dealer_id: string;
+  from_date: string;
+  to_date: string;
+  status: 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED';
+  fetched_count: number;
+  matched_count: number;
+  unmatched_count: number;
+  written_count: number;
+  skipped_manual_count: number;
+  last_error: string | null;
+  error_detail: Json | null;
+  started_at: string;
+  finished_at: string | null;
+  triggered_by: string | null;
+};
+
+type AttendanceSyncRunsRowInsert = Insertable<AttendanceSyncRunsRow, 'dealer_id' | 'from_date' | 'to_date'>;
+
 type AuditLogsRow = {
   id: number;
   dealer_id: string | null;
@@ -577,6 +623,7 @@ type EmployeesRow = {
   exit_reason: string | null;
   reports_to: string | null;
   shift_id: string | null;
+  external_ref: string | null;
 };
 
 type EmployeesRowInsert = Insertable<EmployeesRow, 'dealer_id' | 'branch_id' | 'employee_code' | 'name'>;
@@ -1496,6 +1543,62 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'branches';
             referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      attendance_days: {
+        Row: AttendanceDaysRow;
+        Insert: AttendanceDaysRowInsert;
+        Update: Partial<AttendanceDaysRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'ad_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'ad_employee_tenant_fkey';
+            columns: ['employee_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'employees';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'ad_leave_type_tenant_fkey';
+            columns: ['leave_type_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'leave_types';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'ad_sync_run_tenant_fkey';
+            columns: ['sync_run_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'attendance_sync_runs';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'attendance_days_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      attendance_sync_runs: {
+        Row: AttendanceSyncRunsRow;
+        Insert: AttendanceSyncRunsRowInsert;
+        Update: Partial<AttendanceSyncRunsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'attendance_sync_runs_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
           },
         ];
       };
@@ -3122,6 +3225,10 @@ export interface Database {
         Args: { p_item_id: string; p_branch_id: string; p_quantity: number };
         Returns: { source: string; quantity: string; unit_cost: string; available: string }[];
       };
+      attendance_summary: {
+        Args: { p_from: string; p_to: string; p_branch_id?: string | null };
+        Returns: { employee_id: string; employee_code: string; employee_name: string; branch_name: string; present_days: string; leave_days: string; paid_leave_days: string; absent_days: number; week_off_days: number; holiday_days: number; payable_days: string; late_count: number; overtime_minutes: number; recorded_days: number }[];
+      };
       balance_sheet: {
         Args: { p_as_on?: string | null; p_branch_id?: string | null };
         Returns: { section: string; account_code: string; account_name: string; amount: string }[];
@@ -3242,6 +3349,10 @@ export interface Database {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { finance_company_id: string; finance_company_name: string; application_count: number; approved_count: number; rejected_count: number; pending_count: number; loan_amount: string; disbursed_amount: string; pending_disbursement: string; commission_amount: string }[];
       };
+      finish_attendance_sync: {
+        Args: { p_run_id: string; p_status: string; p_error?: string | null; p_detail?: Json | null };
+        Returns: undefined;
+      };
       gst_document_register: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null; p_section?: string | null };
         Returns: { document_type: string; document_id: string; document_number: string; document_date: string; customer_name: string; gstin: string; place_of_supply: string; section: string; taxable_value: string; cgst_amount: string; sgst_amount: string; igst_amount: string; invoice_value: string; einvoice_status: string; irn: string }[];
@@ -3257,6 +3368,10 @@ export interface Database {
       ignore_bank_line: {
         Args: { p_statement_line_id: number };
         Returns: undefined;
+      };
+      import_attendance_days: {
+        Args: { p_run_id: string; p_rows: Json };
+        Returns: { matched: number; unmatched: number; written: number; skipped_manual: number }[];
       };
       import_bank_statement: {
         Args: { p_bank_account_id: string; p_rows: Json };
@@ -3389,6 +3504,10 @@ export interface Database {
       service_history: {
         Args: { p_customer_id?: string | null; p_registration_no?: string | null };
         Returns: { job_card_id: string; job_card_number: string; job_date: string; customer_name: string; registration_no: string; odometer: string; service_type: string; complaint: string; status: string; invoice_number: string; invoice_total: string; paid_amount: string }[];
+      };
+      start_attendance_sync: {
+        Args: { p_from: string; p_to: string };
+        Returns: string;
       };
       suggest_bank_matches: {
         Args: { p_bank_account_id: string; p_date_window?: number | null };

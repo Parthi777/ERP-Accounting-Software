@@ -104,6 +104,10 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('hr.leave.manage',                 'hr',         'Set and adjust leave balances', false),
   ('hr.documents.view',               'hr',         'View employee documents', false),
   ('hr.documents.manage',             'hr',         'Upload and manage employee documents', false),
+  ('hr.attendance.view',              'hr',         'View the attendance register', false),
+  ('hr.attendance.sync',              'hr',         'Pull attendance from the external system', false),
+  ('hr.attendance.edit',              'hr',         'Correct an attendance day by hand', false),
+  ('hr.mapping.manage',               'hr',         'Map employees to the external attendance system', false),
   ('accounting.reports.view',         'accounting', 'View trial balance, P&L and balance sheet', false),
 
   ('cashbook.view',                   'cashbook',   'View the daily cash book', false),
@@ -222,7 +226,8 @@ select r.id, p.code
           -- HR paperwork and the roster, but deliberately not the pay scale:
           -- the accountant is usually an employee too (see migration 0053).
           'hr.settings.manage', 'hr.leave.view', 'hr.leave.manage',
-          'hr.documents.view', 'hr.documents.manage'
+          'hr.documents.view', 'hr.documents.manage',
+          'hr.attendance.view', 'hr.attendance.sync', 'hr.attendance.edit', 'hr.mapping.manage'
         )
    );
 
