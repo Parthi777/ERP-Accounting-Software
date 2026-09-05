@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, Mail, Plus, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Building2, Check, Loader2, Mail, Pencil, Plus, Trash2, TriangleAlert, X } from 'lucide-react';
 
 import type { TenantRow, ReadinessCheck } from '@/server/services/org/provisioning-service';
 import {
@@ -10,6 +10,11 @@ import {
   purgeDealerAction,
   resendOwnerInviteAction,
 } from '@/server/services/org/provisioning-actions';
+import {
+  getDealerBranchesAction,
+  saveBranchAction,
+  setBranchStatusAction,
+} from '@/server/services/org/admin-actions';
 import { Panel, SolidPanel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +37,7 @@ export function TenantConsole({ tenants }: { readonly tenants: readonly TenantRo
   const router = useRouter();
   const [creating, setCreating] = React.useState(false);
   const [purging, setPurging] = React.useState<TenantRow | null>(null);
+  const [branchesFor, setBranchesFor] = React.useState<TenantRow | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [warning, setWarning] = React.useState<string | null>(null);
   const [readiness, setReadiness] = React.useState<readonly ReadinessCheck[] | null>(null);
@@ -143,6 +149,10 @@ export function TenantConsole({ tenants }: { readonly tenants: readonly TenantRo
                     </td>
                     <td className="px-4 py-2">
                       <span className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm"
+                          onClick={() => setBranchesFor(t)} title="Branches">
+                          <Building2 aria-hidden />
+                        </Button>
                         <Button variant="ghost" size="sm" disabled={pending}
                           onClick={() => resend(t)} title="Resend the owner's invite">
                           <Mail aria-hidden />
@@ -182,6 +192,14 @@ export function TenantConsole({ tenants }: { readonly tenants: readonly TenantRo
             else setNotice(message);
             router.refresh();
           }}
+        />
+      )}
+
+      {branchesFor && (
+        <BranchesDialog
+          key={branchesFor.id}
+          tenant={branchesFor}
+          onClose={() => { setBranchesFor(null); router.refresh(); }}
         />
       )}
 
@@ -374,6 +392,208 @@ function Field({
       </Label>
       <Input id={id} type={type} value={value} onChange={onChange} placeholder={placeholder} />
       {hint && <p className="mt-1 text-xs text-ink-400">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * One tenant's branches, managed from the console.
+ *
+ * Here rather than only on the dealer's own Administration screen, because a
+ * dealership arriving with three showrooms needs all three before its staff can
+ * be given branch access — and at that point the dealer has nobody logged in to
+ * add them.
+ */
+function BranchesDialog({
+  tenant,
+  onClose,
+}: {
+  readonly tenant: TenantRow;
+  readonly onClose: () => void;
+}) {
+  const [branches, setBranches] = React.useState<
+    readonly {
+      id: string; code: string; name: string; city: string | null;
+      state: string | null; gstin: string | null; is_head_office: boolean;
+      status: string; hasActivity: boolean;
+    }[]
+  >([]);
+  const [loading, setLoading] = React.useState(true);
+  const [adding, setAdding] = React.useState(false);
+  const [editing, setEditing] = React.useState<string | null>(null);
+  const [pending, startTransition] = React.useTransition();
+  const [error, setError] = React.useState<string | null>(null);
+  const [form, setForm] = React.useState({
+    code: '', name: '', city: tenant.city ?? '', state: tenant.state ?? '',
+    stateCode: '', gstin: '', phone: '', isHeadOffice: false,
+  });
+
+  const load = React.useCallback(() => {
+    void getDealerBranchesAction(tenant.id).then((rows) => {
+      setBranches(rows);
+      setLoading(false);
+    });
+  }, [tenant.id]);
+
+  React.useEffect(load, [load]);
+
+  const reset = () => {
+    setForm({
+      code: '', name: '', city: tenant.city ?? '', state: tenant.state ?? '',
+      stateCode: '', gstin: '', phone: '', isHeadOffice: false,
+    });
+    setAdding(false);
+    setEditing(null);
+  };
+
+  const save = () => {
+    setError(null);
+    if (!form.code.trim() || !form.name.trim()) {
+      return setError('A branch needs a code and a name.');
+    }
+    startTransition(async () => {
+      const result = await saveBranchAction({ id: editing, dealerId: tenant.id, ...form });
+      if (!result.ok) {
+        setError(result.error ?? 'That could not be saved.');
+        return;
+      }
+      reset();
+      load();
+    });
+  };
+
+  const toggle = (id: string, status: string) => {
+    setError(null);
+    startTransition(async () => {
+      const result = await setBranchStatusAction(id, status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE');
+      if (!result.ok) setError(result.error ?? 'That could not be changed.');
+      load();
+    });
+  };
+
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/25 p-4 backdrop-blur-sm"
+      role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="glass-strong flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-2xl p-6"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-ink-900">
+              Branches — {tenant.tradeName ?? tenant.legalName}
+            </h2>
+            <p className="mt-0.5 text-xs text-ink-500">
+              Every sale, receipt and journal is scoped to a branch. A new one gets its cash account
+              straight away.
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+            <X aria-hidden />
+          </Button>
+        </div>
+
+        {error && (
+          <div role="alert" className="mt-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-4">
+          {loading ? (
+            <p className="py-6 text-center text-sm text-ink-400">
+              <Loader2 className="mr-2 inline animate-spin" aria-hidden />Loading…
+            </p>
+          ) : branches.length === 0 ? (
+            <p className="py-4 text-sm text-ink-400">No branches yet.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {branches.map((b) => (
+                <li key={b.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-ink-200 px-3 py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm text-ink-800">{b.name}</span>
+                      {b.is_head_office && <Badge variant="info">Head office</Badge>}
+                      <Badge variant={b.status === 'ACTIVE' ? 'positive' : 'warning'}>{b.status}</Badge>
+                    </span>
+                    <span className="block font-mono text-[11px] text-ink-400">
+                      {b.code}{b.city ? ` · ${b.city}` : ''}{b.gstin ? ` · ${b.gstin}` : ''}
+                    </span>
+                  </span>
+                  <Button variant="ghost" size="sm" disabled={pending}
+                    onClick={() => {
+                      setEditing(b.id);
+                      setAdding(true);
+                      setForm({
+                        code: b.code, name: b.name, city: b.city ?? '', state: b.state ?? '',
+                        stateCode: '', gstin: b.gstin ?? '', phone: '', isHeadOffice: b.is_head_office,
+                      });
+                    }}>
+                    <Pencil aria-hidden />
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={pending}
+                    onClick={() => toggle(b.id, b.status)}
+                    title={b.status === 'ACTIVE' ? 'Suspend' : 'Reactivate'}>
+                    {b.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {adding ? (
+          <div className="mt-4 rounded-xl border border-ink-200 bg-white/60 p-4">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-ink-500">
+              {editing ? 'Edit branch' : 'Add a branch'}
+            </h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="tb-code" className="mb-1.5 block">Code</Label>
+                <Input id="tb-code" value={form.code} disabled={editing !== null}
+                  onChange={set('code')} placeholder="NORTH" />
+              </div>
+              <div>
+                <Label htmlFor="tb-name" className="mb-1.5 block">Name</Label>
+                <Input id="tb-name" value={form.name} onChange={set('name')} placeholder="North Showroom" />
+              </div>
+              <div>
+                <Label htmlFor="tb-city" className="mb-1.5 block">City</Label>
+                <Input id="tb-city" value={form.city} onChange={set('city')} />
+              </div>
+              <div>
+                <Label htmlFor="tb-statecode" className="mb-1.5 block">GST state code</Label>
+                <Input id="tb-statecode" value={form.stateCode} onChange={set('stateCode')} placeholder="33" />
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="tb-gstin" className="mb-1.5 block">GSTIN</Label>
+                <Input id="tb-gstin" value={form.gstin} onChange={set('gstin')} />
+                <p className="mt-1 text-xs text-ink-400">A branch in another state files under its own.</p>
+              </div>
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-sm text-ink-700">
+              <input type="checkbox" checked={form.isHeadOffice}
+                onChange={(e) => setForm((f) => ({ ...f, isHeadOffice: e.target.checked }))} />
+              Head office
+            </label>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={reset} disabled={pending}>Cancel</Button>
+              <Button size="sm" onClick={save} disabled={pending}>
+                {pending && <Loader2 className="animate-spin" aria-hidden />}
+                {editing ? 'Save branch' : 'Add branch'}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 flex justify-end">
+            <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
+              <Plus aria-hidden />
+              Add branch
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
