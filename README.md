@@ -56,6 +56,26 @@ ids cannot be predicted by a seed file. `link-auth-users.sql` matches the accoun
 up the profile, role, branch access and employee link. It prints who was linked and what each of them
 can now do.
 
+### The first platform administrator
+
+Onboarding dealers is done by a **platform administrator**, and there is no platform administrator
+until you make one. `seed.sql` creates one only against the local test database — on a real Supabase
+project it is skipped, because Supabase Auth owns account creation.
+
+Add the login in **Authentication → Users**, then edit the one marked line in
+`scripts/create-platform-admin.sql` and run it:
+
+```bash
+psql "$DATABASE_URL" -f scripts/create-platform-admin.sql
+```
+
+Use an address that is not one of your dealer logins. A platform admin has no tenant of its own on
+purpose: `app.is_platform_admin()` bypasses every RLS policy, so an account that is both a platform
+admin *and* attached to a dealer would see every tenant's data mixed into its own screens.
+
+Sign in as that account and **Administration → Dealers** becomes the tenant console, with
+**New tenant** on it.
+
 `seed.sql` also creates a demo dealer with three branches and eight employees. Remove it before going
 live with `psql "$DATABASE_URL" -f scripts/remove-demo-dealer.sql`, which keeps the permission
 catalogue, the system roles and the audit trail.
@@ -75,6 +95,7 @@ catalogue, the system roles and the audit trail.
 | `npm run types:generate` | Regenerates `src/types/database.types.ts` from the migrations |
 | `npm run db:verify` | Applies migrations, seeds and integrity tests to a throwaway local database |
 | `scripts/apply-to-supabase.sh` | Applies migrations and seeds to a live database via `DATABASE_URL` |
+| `scripts/create-platform-admin.sql` | Grants an existing login platform administration, so it can onboard dealers |
 | `scripts/link-auth-users.sql` | Links Supabase Auth accounts to profiles, roles and branch access |
 | `npm run verify` | All of the above, in order |
 
