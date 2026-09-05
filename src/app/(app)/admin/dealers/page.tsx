@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 
 import { getDealerProfile } from '@/server/services/org/org-service';
+import { getTenants } from '@/server/services/org/provisioning-service';
+import { requireTenantContext } from '@/server/auth/tenant-context';
+import { TenantConsole } from '@/components/admin/tenant-console';
 import { PageHeader } from '@/components/data-table/data-table';
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +13,24 @@ export const metadata: Metadata = { title: 'Dealer' };
 export const dynamic = 'force-dynamic';
 
 export default async function DealerPage() {
+  const context = await requireTenantContext();
+
+  // Two audiences, one route. A platform admin has no dealer of their own and
+  // needs the console; a dealer's own staff need their tenant's configuration.
+  if (context.isPlatformAdmin) {
+    const tenants = await getTenants();
+    return (
+      <div>
+        <PageHeader
+          title="Tenants"
+          description="Every dealer on the platform. Onboarding creates the tenant, its chart of accounts, accounting rules, document sequences, cash account and owner login in one transaction (spec §48)."
+          count={tenants.length}
+        />
+        <TenantConsole tenants={tenants} />
+      </div>
+    );
+  }
+
   const dealer = await getDealerProfile();
 
   if (!dealer) {
@@ -17,7 +38,7 @@ export default async function DealerPage() {
       <div>
         <PageHeader title="Dealer" />
         <Panel className="p-6 text-sm text-ink-600">
-          No dealer is visible to your account. Platform administrators provision dealers.
+          No dealer is visible to your account. Ask a platform administrator to check your access.
         </Panel>
       </div>
     );

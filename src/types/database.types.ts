@@ -3305,6 +3305,10 @@ export interface Database {
         Args: { p_customer_id?: string | null; p_branch_id?: string | null };
         Returns: { customer_id: string; customer_code: string; customer_name: string; mobile: string; vehicle_count: number; visit_count: number; first_visit: string; last_visit: string; days_since_last: number; lifetime_value: string; open_jobs: number }[];
       };
+      dealer_readiness: {
+        Args: { p_dealer_id: string };
+        Returns: { check_name: string; ok: boolean; detail: string }[];
+      };
       decide_finance_application: {
         Args: { p_application_id: string; p_decision: string; p_approved_amount?: number | null; p_rejection_reason?: string | null };
         Returns: undefined;
@@ -3428,6 +3432,14 @@ export interface Database {
       profit_and_loss: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { section: string; account_code: string; account_name: string; amount: string }[];
+      };
+      provision_dealer: {
+        Args: { p_code: string; p_legal_name: string; p_trade_name: string; p_state: string; p_state_code: string; p_owner_email: string; p_owner_name: string; p_owner_user_id: string; p_branch_name?: string | null; p_gstin?: string | null; p_pan?: string | null; p_city?: string | null; p_phone?: string | null; p_fy_start_month?: number | null };
+        Returns: { new_dealer_id: string; new_branch_id: string; accounts_created: number; rules_created: number }[];
+      };
+      purge_dealer: {
+        Args: { p_dealer_id: string; p_reason: string };
+        Returns: undefined;
       };
       queue_einvoice: {
         Args: { p_document_type: string; p_document_id: string };

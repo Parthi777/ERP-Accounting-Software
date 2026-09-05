@@ -65,6 +65,8 @@ Forward-only, applied in numerical order. Each file opens with its purpose and r
 | `0052_purchases.sql` | `purchase_bills` — stock and input GST onto the balance sheet, the payable onto the supplier ledger; Input CGST/SGST/IGST accounts |
 | `0053_hr_foundations.sql` | `shifts`, `leave_types`, `employee_salary_structures` (effective-dated), `employee_leave_balances`, `employee_documents`; employees gains its HR fields |
 | `0054_attendance_integration.sql` | `attendance_days` mirror and `attendance_sync_runs`; `employees.external_ref` maps to the external attendance system |
+| `0055_dealer_status_gate.sql` | `app.current_dealer_id()` also requires `dealers.status = 'ACTIVE'` — suspending a tenant finally ends access |
+| `0056_dealer_provisioning.sql` | `provision_dealer()`, `dealer_readiness()`, `purge_dealer()` — onboarding a tenant in one transaction |
 
 No extensions are required. `gen_random_uuid()` has been core since PostgreSQL 13, and
 case-insensitive email uses a `lower()` unique index rather than `citext` — which keeps the
