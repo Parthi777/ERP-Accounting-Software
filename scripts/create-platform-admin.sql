@@ -35,7 +35,7 @@
 do $$
 declare
   -- ─────────────────────────────────────────────────────────────────────────
-  v_email text := 'platform@example.com';   -- ← CHANGE THIS, then Run
+  v_email text := 'parthi@dharani.in';       -- ← CHANGE THIS, then Run
   -- ─────────────────────────────────────────────────────────────────────────
   v_uid   uuid;
   v_role  uuid;

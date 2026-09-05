@@ -14,6 +14,8 @@ import {
   Wrench,
 } from 'lucide-react';
 
+import { redirect } from 'next/navigation';
+
 import { requireTenantContext } from '@/server/auth/tenant-context';
 import { getDashboard } from '@/server/services/dashboard/dashboard-service';
 import { formatDateRange } from '@/lib/format';
@@ -84,6 +86,19 @@ export default async function DashboardPage({
   searchParams: Promise<{ from?: string; to?: string; branch?: string }>;
 }) {
   const context = await requireTenantContext();
+
+  // The dashboard is one dealer's KPIs. A platform administrator has no dealer,
+  // and PLATFORM_ADMIN deliberately carries only admin.* permissions — so the
+  // post-login redirect landed them here, getDashboard() raised ForbiddenError
+  // on dashboard.view, and they saw a crash page instead of the product.
+  //
+  // Their home is the tenant console. Redirecting rather than granting them
+  // dashboard.view is deliberate: with no dealer of their own, the figures would
+  // be every tenant's added together, which is not a number anyone should read.
+  if (context.isPlatformAdmin) {
+    redirect('/admin/dealers');
+  }
+
   const params = await searchParams;
 
   const { from, to } = resolvePeriod(params.from, params.to);
