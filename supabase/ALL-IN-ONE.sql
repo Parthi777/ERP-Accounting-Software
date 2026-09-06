@@ -13799,6 +13799,4483 @@ $$;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0050_party_payment_allocation.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0050 — Bill-wise settlement: splitting a receipt across the bills it pays
+-- =============================================================================
+-- Spec §11, §21, §22, §23, §41, §49, §50, §60.24.
+--
+-- What is missing today. A cashier takes ₹50,000 from a customer and records it
+-- through the cash book. That posts one credit to the customer's account, and
+-- the customer ledger then shows a column of invoices on the debit side and a
+-- column of receipts on the credit side with nothing connecting them. The
+-- closing balance is right — it has always been right, it comes from the general
+-- ledger — but the balance is the only thing the ledger can answer. It cannot say
+-- WHICH invoices are still unpaid, which is the question a dealer actually asks
+-- when they ring a customer.
+--
+-- That connection is the accountant's job, and it is a real step in the day's
+-- procedure: the cashier records the money as it arrives, and Accounts then
+-- allocates it against the bills it settles. This migration gives that step a
+-- place to be recorded.
+--
+-- ── The design ──────────────────────────────────────────────────────────────
+--
+-- An allocation joins two JOURNAL LINES, not two business documents:
+--
+--     debit line (a bill)  ←── amount ──→  credit line (a receipt)
+--
+-- Everything that can ever reach a party ledger is already a party-tagged
+-- journal line — a vehicle invoice, a service bill, a counter sale, a booking
+-- advance, a cash receipt, a bank receipt, an opening balance, a hand-written
+-- journal. Settling at line level therefore covers all of them without this
+-- table ever learning what a sale or a job card is, and — the property that
+-- matters — it settles against the exact rows the ledger is drawn from. So:
+--
+--     Σ unpaid bills  −  Σ unapplied receipts  =  the ledger closing balance
+--
+-- holds by construction rather than by reconciliation. That identity is what
+-- "tallying the ledger" means here, and public.party_open_items() below returns
+-- the two sides of it.
+--
+-- A credit may be knocked off against a debit in a different control account on
+-- purpose: a booking advance sits in 2100 (Customer Advances) and the invoice it
+-- pays for sits in 1200 (Customer Receivable). Refusing that would make the
+-- commonest case in the business unrecordable.
+--
+-- ── What this does NOT do ───────────────────────────────────────────────────
+--
+-- It posts nothing. No journal is written, amended or reversed; posted entries
+-- stay immutable (spec §23, §60.12, §60.23). An allocation is a statement about
+-- entries that already exist, so getting one wrong costs nothing but re-doing
+-- it, and no accounting figure anywhere moves when it changes.
+--
+-- Rollback: drop function public.allocate_party_payment(uuid, jsonb, text);
+--           drop function public.party_open_items(text, uuid, boolean);
+--           drop table public.party_allocations;
+--           drop function app.party_allocations_guard();
+--           alter table public.journal_entry_lines drop constraint jel_id_dealer_key;
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- A journal line becomes addressable by a composite tenant key
+-- -----------------------------------------------------------------------------
+-- Every table in this schema that points at another carries (id, dealer_id)
+-- rather than id alone, so a foreign key cannot cross a tenant boundary even if
+-- the application asks it to. journal_entry_lines had never been the target of
+-- one and so never needed the key; it is one now.
+-- -----------------------------------------------------------------------------
+alter table public.journal_entry_lines
+  add constraint jel_id_dealer_key unique (id, dealer_id);
+
+-- -----------------------------------------------------------------------------
+-- party_allocations — which receipt paid which bill, and how much of it
+-- -----------------------------------------------------------------------------
+create table public.party_allocations (
+  id             uuid primary key default gen_random_uuid(),
+  dealer_id      uuid not null references public.dealers (id) on delete restrict,
+
+  -- Denormalised from the two lines so the common query — "everything for this
+  -- customer" — is one index lookup rather than a join through the journal. The
+  -- guard below refuses any row where these disagree with the lines.
+  party_type     text not null,
+  party_id       uuid not null,
+
+  -- The bill being settled, and the money settling it.
+  debit_line_id  uuid not null,
+  credit_line_id uuid not null,
+
+  amount         numeric(18, 4) not null,
+
+  note           text,
+
+  created_at     timestamptz not null default now(),
+  created_by     uuid,
+
+  -- One link per pair. A second allocation between the same bill and the same
+  -- receipt is not a second fact, it is the first one written twice (spec §50).
+  constraint party_allocations_pair_key unique (debit_line_id, credit_line_id),
+
+  constraint party_allocations_debit_tenant_fkey
+    foreign key (debit_line_id, dealer_id)
+    references public.journal_entry_lines (id, dealer_id) on delete cascade,
+  constraint party_allocations_credit_tenant_fkey
+    foreign key (credit_line_id, dealer_id)
+    references public.journal_entry_lines (id, dealer_id) on delete cascade,
+
+  constraint party_allocations_amount_check check (amount > 0),
+  constraint party_allocations_distinct_lines_check check (debit_line_id <> credit_line_id),
+  constraint party_allocations_party_type_check check (
+    party_type in ('CUSTOMER', 'SUPPLIER', 'FINANCE_COMPANY', 'EMPLOYEE')
+  )
+);
+
+comment on table public.party_allocations is
+  'Bill-wise settlement (spec §41): links a credit journal line to the debit '
+  'lines it pays. Posts nothing — journals stay immutable (spec §23) — so the '
+  'subsidiary ledger keeps its balance and gains the detail behind it.';
+comment on column public.party_allocations.party_type is
+  'Copied from both lines and verified against them by app.party_allocations_guard().';
+
+create index party_allocations_party_idx
+  on public.party_allocations (dealer_id, party_type, party_id);
+create index party_allocations_debit_idx  on public.party_allocations (debit_line_id);
+create index party_allocations_credit_idx on public.party_allocations (credit_line_id);
+
+-- The cash and bank books have always been reachable from a transaction to its
+-- journal and never the other way round. party_open_items() below needs the
+-- reverse, to put the cashier's own slip number on the row.
+create index if not exists cash_transactions_journal_idx
+  on public.cash_transactions (journal_entry_id) where journal_entry_id is not null;
+create index if not exists bank_transactions_journal_idx
+  on public.bank_transactions (journal_entry_id) where journal_entry_id is not null;
+
+-- -----------------------------------------------------------------------------
+-- app.party_allocations_guard() — the rules an allocation has to obey
+-- -----------------------------------------------------------------------------
+-- Five of them, and every one is a way an allocation could otherwise make the
+-- ledger lie:
+--
+--   1. the bill side is a debit line and the payment side is a credit line;
+--   2. both belong to the same party as the allocation claims;
+--   3. both belong to entries that are actually in the ledger;
+--   4. a bill cannot be settled for more than it is worth;
+--   5. a receipt cannot be spread over more than it was.
+--
+-- SECURITY DEFINER so it can lock the two lines regardless of the caller's RLS
+-- view of them; because it therefore bypasses RLS, it verifies the tenant of
+-- every row it reads rather than assuming a policy already did.
+-- -----------------------------------------------------------------------------
+create or replace function app.party_allocations_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_debit    record;
+  v_credit   record;
+  v_taken    numeric(18, 4);
+  v_headroom numeric(18, 4);
+begin
+  -- FOR UPDATE, not a plain read. Two accountants splitting two different
+  -- receipts against the same invoice would otherwise both see the same
+  -- headroom and both pass check 4, leaving the bill over-settled (spec §49).
+  -- The lock is taken on the bill first and the receipt second, in that order,
+  -- by every path into this table — so two concurrent splits queue rather than
+  -- deadlock.
+  select l.dealer_id, l.debit, l.credit, l.party_type, l.party_id,
+         je.status, je.entry_number
+    into v_debit
+    from public.journal_entry_lines l
+    join public.journal_entries je on je.id = l.journal_entry_id
+   where l.id = new.debit_line_id
+     for no key update of l;
+
+  if not found then
+    raise exception 'The bill being settled no longer exists.'
+      using errcode = 'no_data_found';
+  end if;
+
+  select l.dealer_id, l.debit, l.credit, l.party_type, l.party_id,
+         je.status, je.entry_number
+    into v_credit
+    from public.journal_entry_lines l
+    join public.journal_entries je on je.id = l.journal_entry_id
+   where l.id = new.credit_line_id
+     for no key update of l;
+
+  if not found then
+    raise exception 'The receipt being split no longer exists.'
+      using errcode = 'no_data_found';
+  end if;
+
+  -- 1. Sides. A journal line is one-sided by constraint, so this also rules out
+  --    settling a bill with a bill or a receipt with a receipt.
+  if v_debit.debit <= 0 then
+    raise exception 'Entry % is not a bill: only a debit can be settled.', v_debit.entry_number
+      using errcode = 'check_violation';
+  end if;
+  if v_credit.credit <= 0 then
+    raise exception 'Entry % is not a payment: only a credit can settle a bill.', v_credit.entry_number
+      using errcode = 'check_violation';
+  end if;
+
+  -- 2. Party, and with it the tenant. A split that reached across two customers
+  --    would settle one person's bill with another person's money and leave
+  --    both ledgers wrong.
+  if v_debit.dealer_id <> new.dealer_id or v_credit.dealer_id <> new.dealer_id then
+    raise exception 'A settlement cannot cross dealers.'
+      using errcode = 'insufficient_privilege';
+  end if;
+  if v_debit.party_type is distinct from new.party_type
+     or v_debit.party_id is distinct from new.party_id
+     or v_credit.party_type is distinct from new.party_type
+     or v_credit.party_id is distinct from new.party_id then
+    raise exception 'A payment can only be set against the same party''s own bills.'
+      using errcode = 'check_violation';
+  end if;
+
+  -- 3. In the ledger. Both statuses are accepted because both are what
+  --    public.party_ledger() reads: a reversed entry and its reversal are
+  --    still on the statement, netting to nothing.
+  if v_debit.status not in ('POSTED', 'REVERSED')
+     or v_credit.status not in ('POSTED', 'REVERSED') then
+    raise exception 'Only posted entries can be settled against each other.'
+      using errcode = 'check_violation';
+  end if;
+
+  -- 4. The bill's remaining headroom.
+  select coalesce(sum(a.amount), 0) into v_taken
+    from public.party_allocations a
+   where a.debit_line_id = new.debit_line_id
+     and a.id <> new.id;
+
+  v_headroom := round(v_debit.debit - v_taken, 4);
+  if round(new.amount, 4) > v_headroom then
+    raise exception 'Bill % has only % left to settle; % was allocated to it.',
+      v_debit.entry_number, v_headroom, new.amount
+      using errcode = 'check_violation';
+  end if;
+
+  -- 5. The receipt's remaining headroom.
+  select coalesce(sum(a.amount), 0) into v_taken
+    from public.party_allocations a
+   where a.credit_line_id = new.credit_line_id
+     and a.id <> new.id;
+
+  v_headroom := round(v_credit.credit - v_taken, 4);
+  if round(new.amount, 4) > v_headroom then
+    raise exception 'Payment % has only % left to allocate; % was set against a bill.',
+      v_credit.entry_number, v_headroom, new.amount
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function app.party_allocations_guard() is
+  'Refuses any settlement that would make a party ledger disagree with itself: '
+  'wrong side, wrong party, unposted entry, over-settled bill, over-spread payment.';
+
+create trigger party_allocations_guard
+  before insert or update on public.party_allocations
+  for each row execute function app.party_allocations_guard();
+
+create trigger party_allocations_audit
+  after insert or update or delete on public.party_allocations
+  for each row execute function app.audit_trigger();
+
+-- -----------------------------------------------------------------------------
+-- Row Level Security
+-- -----------------------------------------------------------------------------
+-- Reading a settlement is part of reading the ledger, so it follows the same
+-- permissions the two ledgers do. Writing one is an accounting act and has a
+-- permission of its own: a cashier records the money, Accounts decides what it
+-- pays for (spec §6).
+-- -----------------------------------------------------------------------------
+alter table public.party_allocations enable row level security;
+
+create policy party_allocations_select on public.party_allocations
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and (app.has_permission('accounting.ledgers.view')
+             or app.has_permission('customers.view_ledger')
+             or app.has_permission('masters.suppliers.view')))
+  );
+
+create policy party_allocations_insert on public.party_allocations
+  for insert to authenticated
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.has_permission('accounting.allocations.manage'))
+  );
+
+-- Deletable, unlike almost everything else in this schema. An allocation is not
+-- an accounting entry — nothing was posted and nothing is reversed by removing
+-- one — so the correction mechanism for a wrong split is to unpick it, and the
+-- audit trigger above records that it happened.
+create policy party_allocations_delete on public.party_allocations
+  for delete to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.has_permission('accounting.allocations.manage'))
+  );
+
+-- No UPDATE policy: public.allocate_party_payment() rewrites a receipt's split
+-- wholesale, which keeps "what is this receipt against" a single decision rather
+-- than a set of rows edited one at a time.
+
+-- -----------------------------------------------------------------------------
+-- public.party_open_items() — the two sides of the tally
+-- -----------------------------------------------------------------------------
+-- Every party-tagged line, with how much of it has been settled. Invoker-rights,
+-- exactly like public.party_ledger(), so this view and the statement can never
+-- show a user two different sets of rows.
+-- -----------------------------------------------------------------------------
+create or replace function public.party_open_items(
+  p_party_type      text,
+  p_party_id        uuid,
+  p_include_settled boolean default false
+)
+returns table (
+  line_id       uuid,
+  entry_id      uuid,
+  entry_date    date,
+  entry_number  text,
+  document_type text,
+  document_ref  text,
+  account_code  text,
+  account_name  text,
+  particulars   text,
+  side          text,
+  amount        numeric(18, 4),
+  allocated     numeric(18, 4),
+  outstanding   numeric(18, 4),
+  age_days      integer
+)
+language sql
+stable
+as $$
+  select l.id,
+         je.id,
+         je.entry_date,
+         je.entry_number,
+         je.source_document_type,
+         -- The dealer knows this bill as "INV-2026-000042", not as the journal
+         -- number the posting engine gave it. The cash and bank cases look the
+         -- document up by journal rather than by id, because those two modules
+         -- record the movement in their own book and leave source_document_id
+         -- null — and a receipt the cashier can find by its slip number is the
+         -- whole point of this screen. Falls back to the entry number for
+         -- anything with no business document behind it — an opening balance, a
+         -- manual journal — and for documents this user may not read.
+         coalesce(
+           case je.source_document_type
+             when 'SALE' then
+               (select s.invoice_number from public.sales s where s.id = je.source_document_id)
+             when 'SERVICE_INVOICE' then
+               (select si.invoice_number from public.service_invoices si where si.id = je.source_document_id)
+             when 'BOOKING' then
+               (select b.booking_number from public.bookings b where b.id = je.source_document_id)
+             when 'CASH_BOOK' then
+               (select ct.reference_number from public.cash_transactions ct
+                 where ct.journal_entry_id = je.id and ct.reference_number is not null limit 1)
+             when 'BANK_BOOK' then
+               (select bt.reference_number from public.bank_transactions bt
+                 where bt.journal_entry_id = je.id and bt.reference_number is not null limit 1)
+           end,
+           je.entry_number
+         ),
+         coa.code,
+         coa.name,
+         coalesce(l.narration, je.narration),
+         case when l.debit > 0 then 'DEBIT' else 'CREDIT' end,
+         greatest(l.debit, l.credit),
+         coalesce(a.allocated, 0),
+         round(greatest(l.debit, l.credit) - coalesce(a.allocated, 0), 4),
+         (current_date - je.entry_date)::integer
+    from public.journal_entry_lines l
+    join public.journal_entries je on je.id = l.journal_entry_id
+    join public.chart_of_accounts coa on coa.id = l.account_id
+    left join lateral (
+      -- A line is one-sided, so at most one of the two columns can match it.
+      select sum(pa.amount) as allocated
+        from public.party_allocations pa
+       where pa.debit_line_id = l.id or pa.credit_line_id = l.id
+    ) a on true
+   where l.party_type = p_party_type
+     and l.party_id = p_party_id
+     and je.status in ('POSTED', 'REVERSED')
+     and (p_include_settled
+          or round(greatest(l.debit, l.credit) - coalesce(a.allocated, 0), 4) <> 0)
+   order by je.entry_date, je.entry_number, l.line_number;
+$$;
+
+comment on function public.party_open_items(text, uuid, boolean) is
+  'Bills and payments with their settled and unsettled portions (spec §41). '
+  'Unpaid bills less unapplied payments equals the ledger closing balance.';
+
+-- -----------------------------------------------------------------------------
+-- public.allocate_party_payment() — record how one payment was split
+-- -----------------------------------------------------------------------------
+-- Takes the whole split for one payment, not one line of it:
+--
+--   [{"debit_line_id": "…", "amount": 12000}, {"debit_line_id": "…", "amount": 8000}]
+--
+-- Replacing the set rather than appending to it makes the call idempotent — the
+-- same submission twice leaves the same rows (spec §50) — and makes "what is
+-- this receipt against" one decision the accountant can revise as a whole. An
+-- empty array clears the split and returns the money to unapplied.
+-- -----------------------------------------------------------------------------
+create or replace function public.allocate_party_payment(
+  p_credit_line_id uuid,
+  p_allocations    jsonb default '[]'::jsonb,
+  p_note           text default null
+)
+returns table (allocated numeric(18, 4), unapplied numeric(18, 4), bills integer)
+language plpgsql
+as $$
+declare
+  v_line  record;
+  v_alloc record;
+  v_count integer := 0;
+  v_total numeric(18, 4) := 0;
+begin
+  if jsonb_typeof(p_allocations) <> 'array' then
+    raise exception 'The split must be a list of bills and amounts.'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  select l.dealer_id, l.credit, l.party_type, l.party_id, je.status, je.entry_number
+    into v_line
+    from public.journal_entry_lines l
+    join public.journal_entries je on je.id = l.journal_entry_id
+   where l.id = p_credit_line_id;
+
+  -- Not found also covers "exists but this user may not read it": RLS makes the
+  -- two indistinguishable here, which is the intent.
+  if not found then
+    raise exception 'That payment could not be found.' using errcode = 'no_data_found';
+  end if;
+  if v_line.credit <= 0 then
+    raise exception 'Entry % is not a payment; only money received can be split.', v_line.entry_number
+      using errcode = 'check_violation';
+  end if;
+  if v_line.party_type is null then
+    raise exception 'Entry % is not attributed to a customer or supplier, so there is nothing to settle.',
+      v_line.entry_number using errcode = 'check_violation';
+  end if;
+
+  -- The previous split goes first, so the headroom checks in the guard see the
+  -- world as it will be and a re-submission of the same split is not read as a
+  -- doubling of it.
+  delete from public.party_allocations where credit_line_id = p_credit_line_id;
+
+  for v_alloc in
+    select (e ->> 'debit_line_id')::uuid as debit_line_id,
+           round(sum((e ->> 'amount')::numeric), 4) as amount
+      from jsonb_array_elements(p_allocations) e
+     where nullif(e ->> 'debit_line_id', '') is not null
+     group by 1
+    having round(sum((e ->> 'amount')::numeric), 4) > 0
+  loop
+    insert into public.party_allocations
+      (dealer_id, party_type, party_id, debit_line_id, credit_line_id, amount, note, created_by)
+    values
+      (v_line.dealer_id, v_line.party_type, v_line.party_id,
+       v_alloc.debit_line_id, p_credit_line_id, v_alloc.amount,
+       nullif(btrim(p_note), ''), auth.uid());
+
+    v_count := v_count + 1;
+    v_total := v_total + v_alloc.amount;
+  end loop;
+
+  allocated := v_total;
+  unapplied := round(v_line.credit - v_total, 4);
+  bills     := v_count;
+  return next;
+end;
+$$;
+
+comment on function public.allocate_party_payment(uuid, jsonb, text) is
+  'Records the whole of one payment''s bill-wise split, replacing any earlier '
+  'one (spec §41, §50). Writes no journal: posted entries are immutable (spec §23).';
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant select, insert, delete on public.party_allocations to authenticated';
+    execute 'grant all on public.party_allocations to service_role';
+    execute 'grant execute on function public.party_open_items(text, uuid, boolean) to authenticated';
+    execute 'grant execute on function public.allocate_party_payment(uuid, jsonb, text) to authenticated';
+  end if;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- The permission that gates the split
+-- -----------------------------------------------------------------------------
+-- Inserted here as well as in seed.sql so a database that is upgraded rather
+-- than re-seeded gains it, and so the ACCOUNTS and DEALER_OWNER roles — which
+-- are granted the accounting module wholesale — pick it up.
+-- -----------------------------------------------------------------------------
+insert into public.permissions (code, module, description, is_sensitive) values
+  ('accounting.allocations.manage', 'accounting',
+   'Split payments against bills and settle party ledgers', false)
+on conflict (code) do update
+  set module      = excluded.module,
+      description = excluded.description;
+
+insert into public.role_permissions (role_id, permission_code)
+select r.id, 'accounting.allocations.manage'
+  from public.roles r
+ where r.is_system and r.code in ('DEALER_OWNER', 'ACCOUNTS')
+on conflict do nothing;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0051_sale_return_refund.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0051 — A sales return can refund the money it takes back
+-- =============================================================================
+-- Spec §19, §21, §23, §34, §36, §37, §38, §48, §59.
+--
+-- public.return_vehicle_sale() from 0036 refuses outright when anything has been
+-- received against the invoice:
+--
+--     Invoice INV-… has 50000.0000 received against it. Refund it before
+--     returning the sale.
+--
+-- Sound advice, except that there has never been anywhere in the product to do
+-- it. A cash refund against a sale is not a cash-book payment (that would credit
+-- cash and debit nothing meaningful), it is not a booking refund (0046 handles
+-- only bookings), and the sale screens offer no such action. So every sale a
+-- customer had paid for was unreturnable — which is most of them, and exactly
+-- the ones a dealer actually needs to return.
+--
+-- The stock half already worked and is unchanged below: the vehicle goes back to
+-- IN_STOCK through app.vehicles_log_movement(), and fitted accessories return to
+-- the lot — LOCAL or COMPANY — that they were consumed from (spec §28, §31, §34).
+--
+-- ── The accounting ──────────────────────────────────────────────────────────
+--
+-- Three postings, one transaction (spec §48). Taking a ₹65,000 invoice with
+-- ₹50,000 received:
+--
+--   1. the sale journal is reversed          Dr Revenue/Tax  Cr Receivable  65,000
+--      leaving the customer ₹50,000 in credit — the dealer is holding money for
+--      a sale that no longer exists;
+--   2. the refund pays it back               Dr Receivable   Cr Cash/Bank   50,000
+--      clearing the customer to nil and taking the notes out of the drawer;
+--   3. the receipts are marked REVERSED, so sales.paid_amount falls to zero
+--      through the trigger in 0020 rather than being written directly.
+--
+-- Refunding less than was received is allowed and does something specific: the
+-- difference stays as a credit on the customer's ledger, visible as an
+-- unallocated receipt in the bill-wise settlement view (0050). It is NOT quietly
+-- turned into income — a retained cancellation charge is a decision someone has
+-- to make and post, not a rounding of a refund.
+--
+-- The refund reaches the cash book or the bank book by writing the subsidiary
+-- row alongside the journal, which is the rule 0049 established: money that
+-- moves and is absent from the book that itemises it makes the day-close
+-- meaningless (spec §36, §37, §38).
+--
+-- DROPped and recreated rather than replaced: the function gains parameters and
+-- returns a row instead of a uuid, and `create or replace` can do neither.
+-- Leaving both signatures in place would make supabase.rpc() ambiguous at
+-- runtime and emit a duplicate key from scripts/generate-types.mjs.
+--
+-- Rollback: restore public.return_vehicle_sale(uuid, text) from 0036 and its grant.
+-- =============================================================================
+
+drop function if exists public.return_vehicle_sale(uuid, text);
+
+create function public.return_vehicle_sale(
+  p_sale_id         uuid,
+  p_reason          text,
+  -- 'CASH', 'BANK', or null when nothing was received and nothing is going back.
+  p_refund_mode     text    default null,
+  -- Defaults to everything received. Less is allowed; more is not.
+  p_refund_amount   numeric default null,
+  p_bank_account_id uuid    default null,
+  -- The cheque number, UTR or voucher the money went out on.
+  p_reference       text    default null,
+  p_date            date    default current_date
+)
+returns table (
+  reversal_entry_id uuid,
+  refund_entry_id   uuid,
+  refunded          numeric(18, 4),
+  credit_left       numeric(18, 4)
+)
+language plpgsql
+as $$
+declare
+  v_sale     public.sales;
+  v_entry    uuid;
+  v_refund   uuid;
+  v_alloc    record;
+  v_received numeric(18, 4);
+  v_amount   numeric(18, 4);
+  v_debit    uuid;
+  v_credit   uuid;
+  v_cash     public.cash_accounts;
+  v_bank     public.bank_accounts;
+  v_branch   uuid;
+begin
+  if p_reason is null or btrim(p_reason) = '' then
+    raise exception 'A sales return requires a reason.'
+      using errcode = 'check_violation',
+            hint = 'Spec §21: the reason is part of the record, not optional.';
+  end if;
+
+  select * into v_sale from public.sales where id = p_sale_id for update;
+
+  if v_sale.id is null then
+    raise exception 'Sale not found.' using errcode = 'no_data_found';
+  end if;
+  if v_sale.status <> 'POSTED' then
+    raise exception 'Invoice % is % — only a posted, undelivered sale can be returned.',
+      v_sale.invoice_number, v_sale.status using errcode = 'check_violation';
+  end if;
+
+  -- What the customer actually paid. sales.paid_amount excludes FINANCE by
+  -- construction (the trigger in 0020 splits the two), so money disbursed by a
+  -- finance company is not refunded in cash here — that is a settlement with the
+  -- financier, not a refund to the customer.
+  v_received := coalesce(v_sale.paid_amount, 0);
+  v_amount   := round(coalesce(p_refund_amount, v_received), 4);
+
+  if v_received > 0 and coalesce(p_refund_mode, '') = '' then
+    raise exception
+      'Invoice % has % received against it. Say how it is being refunded — cash or bank.',
+      v_sale.invoice_number, v_received
+      using errcode = 'check_violation';
+  end if;
+  if v_amount > v_received then
+    raise exception 'Only % was received against %; % cannot be refunded.',
+      v_received, v_sale.invoice_number, v_amount
+      using errcode = 'check_violation';
+  end if;
+  if v_amount < 0 then
+    raise exception 'A refund cannot be negative.' using errcode = 'check_violation';
+  end if;
+  if p_refund_mode is not null and p_refund_mode not in ('CASH', 'BANK') then
+    raise exception 'A refund is paid in cash or from a bank account; got %.', p_refund_mode
+      using errcode = 'check_violation';
+  end if;
+
+  -- ── 1. Reverse the invoice ─────────────────────────────────────────────────
+  -- The original is never edited or deleted; a second entry undoes it and
+  -- carries the reason (spec §23, §60.12, §60.13).
+  v_entry := app.reverse_journal(v_sale.journal_entry_id, btrim(p_reason), p_date);
+
+  -- ── 2. Pay the money back ──────────────────────────────────────────────────
+  if v_amount > 0 then
+    -- The same receivable the invoice and its receipts used, so the customer's
+    -- subsidiary ledger closes to nil rather than to two offsetting balances in
+    -- different accounts.
+    v_debit := app.require_account(v_sale.dealer_id, 'SALES', 'INVOICE', 'RECEIVABLE', v_sale.branch_id);
+
+    if p_refund_mode = 'CASH' then
+      select * into v_cash from public.cash_accounts where branch_id = v_sale.branch_id;
+      if v_cash.id is null then
+        raise exception 'This branch has no cash account, so a cash refund cannot be paid.'
+          using errcode = 'no_data_found';
+      end if;
+      v_branch := v_sale.branch_id;
+      v_credit := v_cash.ledger_account_id;
+      -- A closed day cannot take a movement, in or out (spec §36).
+      perform public.ensure_cash_day(v_branch, p_date);
+    else
+      select * into v_bank from public.bank_accounts where id = p_bank_account_id;
+      if v_bank.id is null then
+        raise exception 'Choose the bank account the refund is being paid from.'
+          using errcode = 'no_data_found';
+      end if;
+      if v_bank.dealer_id <> v_sale.dealer_id then
+        raise exception 'That bank account belongs to another dealer.'
+          using errcode = 'insufficient_privilege';
+      end if;
+      v_branch := coalesce(v_bank.branch_id, v_sale.branch_id);
+      v_credit := v_bank.ledger_account_id;
+    end if;
+
+    v_refund := app.post_journal(
+      v_sale.dealer_id, v_branch, p_date, 'SALES',
+      'Refund on return of ' || v_sale.invoice_number,
+      jsonb_build_array(
+        jsonb_build_object('account_id', v_debit, 'debit', v_amount, 'credit', 0,
+                           'narration', btrim(p_reason),
+                           'party_type', 'CUSTOMER', 'party_id', v_sale.customer_id),
+        jsonb_build_object('account_id', v_credit, 'debit', 0, 'credit', v_amount,
+                           'narration', 'Refund ' || v_sale.invoice_number)
+      ),
+      'SALE_RETURN', p_sale_id,
+      -- One refund per return, however many times the button is pressed (spec §50).
+      'sale-return-refund:' || p_sale_id::text
+    );
+
+    -- The book that itemises the movement, not just the ledger that totals it.
+    if p_refund_mode = 'CASH' then
+      insert into public.cash_transactions
+        (dealer_id, branch_id, cash_account_id, business_date, direction, amount,
+         particular, reference_number, customer_id, journal_entry_id, created_by)
+      values
+        (v_sale.dealer_id, v_branch, v_cash.id, p_date, 'PAYMENT', v_amount,
+         'Sales return refund ' || v_sale.invoice_number, nullif(btrim(p_reference), ''),
+         v_sale.customer_id, v_refund, auth.uid());
+    else
+      insert into public.bank_transactions
+        (dealer_id, bank_account_id, transaction_date, direction, amount, particular,
+         reference_number, customer_id, journal_entry_id, created_by)
+      values
+        (v_sale.dealer_id, p_bank_account_id, p_date, 'PAYMENT', v_amount,
+         'Sales return refund ' || v_sale.invoice_number, nullif(btrim(p_reference), ''),
+         v_sale.customer_id, v_refund, auth.uid());
+    end if;
+  end if;
+
+  -- ── 3. The receipts are no longer live ─────────────────────────────────────
+  -- Marked, not deleted. sales.paid_amount falls out of the trigger in 0020
+  -- rather than being written here, so the figure and its evidence cannot
+  -- disagree. FINANCE rows are left alone: that money came from the financier.
+  update public.sale_payments
+     set status = 'REVERSED'
+   where sale_id = p_sale_id and status = 'RECEIVED' and payment_mode <> 'FINANCE';
+
+  -- ── 4. The stock comes back ────────────────────────────────────────────────
+  -- Each accessory returns to the lot it was consumed from, so the LOCAL and
+  -- COMPANY split stays true (spec §28, §31, §60.16).
+  for v_alloc in
+    select t.item_id, t.source, -t.quantity as qty, t.unit_cost
+      from public.inventory_transactions t
+     where t.reference_type = 'SALE' and t.reference_id = p_sale_id and t.quantity < 0
+  loop
+    insert into public.inventory_transactions
+      (dealer_id, branch_id, item_id, source, transaction_type, quantity, unit_cost,
+       reference_type, reference_id, narration, reason, created_by)
+    values
+      (v_sale.dealer_id, v_sale.branch_id, v_alloc.item_id, v_alloc.source, 'RETURN',
+       v_alloc.qty, v_alloc.unit_cost, 'SALE_RETURN', p_sale_id,
+       'Returned from ' || v_sale.invoice_number, btrim(p_reason), auth.uid());
+  end loop;
+
+  update public.sales
+     set status = 'RETURNED', updated_by = auth.uid(), notes =
+           coalesce(notes || E'\n', '') || 'Returned: ' || btrim(p_reason)
+   where id = p_sale_id;
+
+  -- The RETURN ledger row is written by app.vehicles_log_movement(), which reads
+  -- this setting to record what the movement was for.
+  perform set_config('app.vehicle_movement_ref', 'SALE_RETURN:' || p_sale_id, true);
+
+  update public.vehicles
+     set status = 'IN_STOCK', updated_by = auth.uid()
+   where id = v_sale.vehicle_id;
+
+  perform set_config('app.vehicle_movement_ref', '', true);
+
+  reversal_entry_id := v_entry;
+  refund_entry_id   := v_refund;
+  refunded          := v_amount;
+  -- What the dealer still holds for this customer: received, less refunded. Not
+  -- income until someone posts it as income.
+  credit_left       := round(v_received - v_amount, 4);
+  return next;
+end;
+$$;
+
+comment on function public.return_vehicle_sale(uuid, text, text, numeric, uuid, text, date) is
+  'Returns a posted sale (spec §21): reverses the invoice, refunds what was '
+  'received through the cash or bank book, reverses the receipts and puts the '
+  'vehicle and its fitted accessories back into stock. One transaction (spec §48).';
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant execute on function public.return_vehicle_sale(uuid, text, text, numeric, uuid, text, date) to authenticated';
+  end if;
+end;
+$$;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0052_purchases.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0052 — Purchase bills: how stock and the payable get onto the books
+-- =============================================================================
+-- Spec §21, §22, §24, §28, §29, §34, §41, §44, §45, §48, §50, §59, §60.22.
+--
+-- The hole this fills. Migration 0027 seeded accounting rules for
+-- INVENTORY/PURCHASE — inventory debit, payable credit — and in the two years of
+-- migrations since, nothing has ever posted them. There is no purchase document
+-- in the product at all. So:
+--
+--   * stock arrives through the CSV uploads (spec §14) which create the chassis
+--     and the quantity but write no journal, so 1500/1600/1700 are never
+--     debited — only credited, by COGS when the thing is sold;
+--   * account 2200 Supplier Payables is only ever debited, by cash and bank
+--     payments tagged to a supplier (0041). A supplier's subsidiary ledger has
+--     the payments and none of the bills they pay;
+--   * there is nowhere to record input GST, so no ITC is tracked. The chart of
+--     accounts has Output CGST/SGST/IGST and no input counterpart.
+--
+-- A dealer running this today has a balance sheet where inventory drifts
+-- negative with every sale and a supplier ledger that reads as though every
+-- supplier owes the dealer money.
+--
+-- ── The document ────────────────────────────────────────────────────────────
+--
+-- One bill, three kinds of line, matching the three stock accounts:
+--
+--     VEHICLE   → 1500 Vehicle Inventory      (chassis-level, spec §13)
+--     ACCESSORY → 1600 Accessories Inventory  (quantity, LOCAL/COMPANY lot §28)
+--     SPARE     → 1700 Spare Inventory        (quantity, §29)
+--     input GST → 1900/1910/1920              (added below)
+--     total     → 2200 Supplier Payables, tagged with the supplier
+--
+-- Vehicle lines POINT AT a chassis the CSV upload already created rather than
+-- creating one. Spec §14 makes the upload the way vehicle stock is registered,
+-- and a second door into the same table is how the same chassis ends up in stock
+-- twice. A unique index makes a vehicle billable exactly once, so the "not yet
+-- billed" list is a fact rather than a convention.
+--
+-- Accessory and spare lines are the opposite: those items are counted, not
+-- identified, so the bill CREATES the PURCHASE movement (spec §34 — quantity is
+-- never written directly, it follows from movements).
+--
+-- ── Draft, then posted ──────────────────────────────────────────────────────
+--
+-- A bill is built as a DRAFT and edited freely. Posting is the moment it becomes
+-- accounting: one transaction writes the journal, capitalises the vehicles,
+-- moves the stock and freezes the bill (spec §48). After that it is immutable
+-- and corrected only by reversal (spec §23).
+--
+-- Rollback: drop function public.post_purchase_bill(uuid, text);
+--           drop function public.cancel_purchase_bill(uuid, text);
+--           drop table public.purchase_bill_lines, public.purchase_bills;
+--           drop function app.purchase_bills_assign_number(), app.purchase_bills_guard(),
+--                         app.purchase_bill_lines_sync_totals(), app.seed_purchase_accounting_rules(uuid);
+--           delete from public.chart_of_accounts where code in ('1900','1910','1920');
+--           delete from public.document_sequences where doc_type = 'PURCHASE_BILL';
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- Input GST — the asset side of the tax the dealer pays on a purchase
+-- -----------------------------------------------------------------------------
+-- Input tax credit is money the government owes back, so these are assets, and
+-- they are deliberately NOT branch-scoped: a GST registration is per state, not
+-- per showroom, and the return is filed on the registration.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  d      record;
+  a      record;
+  v_parent uuid;
+begin
+  for d in select id from public.dealers loop
+    select id into v_parent from public.chart_of_accounts
+     where dealer_id = d.id and code = '1000';
+
+    for a in
+      select * from (values
+        ('1900', 'Input CGST'),
+        ('1910', 'Input SGST'),
+        ('1920', 'Input IGST')
+      ) as t(code, name)
+    loop
+      insert into public.chart_of_accounts
+        (dealer_id, code, name, account_type, normal_balance, is_group, parent_id,
+         is_system, is_branch_scoped)
+      values
+        (d.id, a.code, a.name, 'ASSET', 'DEBIT', false, v_parent, true, false)
+      on conflict on constraint coa_dealer_code_key do nothing;
+    end loop;
+  end loop;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- The accounting rules a purchase resolves through
+-- -----------------------------------------------------------------------------
+-- Accounts are never hard-coded (spec §22); the posting function asks for a
+-- component and the rule says which account that is for this dealer. 0027
+-- already mapped INVENTORY / PURCHASE / INVENTORY, PAYABLE and VEHICLE_INVENTORY;
+-- these are the ones it was missing.
+-- -----------------------------------------------------------------------------
+create or replace function app.seed_purchase_accounting_rules(p_dealer_id uuid)
+returns integer
+language plpgsql
+as $$
+declare
+  v_added   integer := 0;
+  v_rule    record;
+  v_account uuid;
+begin
+  for v_rule in
+    select * from (values
+      ('INVENTORY', 'PURCHASE', 'ACCESSORY_INVENTORY', 'DEBIT', '1600'),
+      ('INVENTORY', 'PURCHASE', 'SPARE_INVENTORY',     'DEBIT', '1700'),
+      ('INVENTORY', 'PURCHASE', 'INPUT_CGST',          'DEBIT', '1900'),
+      ('INVENTORY', 'PURCHASE', 'INPUT_SGST',          'DEBIT', '1910'),
+      ('INVENTORY', 'PURCHASE', 'INPUT_IGST',          'DEBIT', '1920')
+    ) as t(module, event, component, side, account_code)
+  loop
+    select id into v_account from public.chart_of_accounts
+     where dealer_id = p_dealer_id and code = v_rule.account_code;
+    continue when v_account is null;
+
+    insert into public.accounting_rules
+      (dealer_id, module, event, component, side, account_id, description)
+    values
+      (p_dealer_id, v_rule.module, v_rule.event, v_rule.component, v_rule.side,
+       v_account, 'Purchase bills (0052)')
+    on conflict do nothing;
+
+    if found then v_added := v_added + 1; end if;
+  end loop;
+
+  return v_added;
+end;
+$$;
+
+do $$
+declare d record;
+begin
+  for d in select id from public.dealers loop
+    perform app.seed_purchase_accounting_rules(d.id);
+  end loop;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- purchase_bills
+-- -----------------------------------------------------------------------------
+create table public.purchase_bills (
+  id                  uuid primary key default gen_random_uuid(),
+  dealer_id           uuid not null references public.dealers (id) on delete restrict,
+  branch_id           uuid not null,
+
+  -- Ours, for the audit trail and the document register (spec §45).
+  bill_number         text not null,
+  -- Theirs. Two suppliers may legitimately use the same number, so this is
+  -- unique per supplier rather than per dealer.
+  supplier_bill_number text not null,
+
+  supplier_id         uuid not null,
+  bill_date           date not null default current_date,
+  due_date            date,
+
+  status              text not null default 'DRAFT',
+
+  -- Maintained from the lines by trigger; never written by the client.
+  taxable_value       numeric(18, 4) not null default 0,
+  cgst_amount         numeric(18, 4) not null default 0,
+  sgst_amount         numeric(18, 4) not null default 0,
+  igst_amount         numeric(18, 4) not null default 0,
+  total_amount        numeric(18, 4) not null default 0,
+
+  notes               text,
+  journal_entry_id    uuid,
+
+  posted_at           timestamptz,
+  posted_by           uuid,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  created_by          uuid,
+  updated_by          uuid,
+
+  constraint purchase_bills_number_key    unique (dealer_id, bill_number),
+  constraint purchase_bills_id_dealer_key unique (id, dealer_id),
+  -- The same bill keyed twice against one supplier is a duplicate, not a second
+  -- purchase (spec §50).
+  constraint purchase_bills_supplier_ref_key unique (supplier_id, supplier_bill_number),
+
+  constraint purchase_bills_branch_tenant_fkey
+    foreign key (branch_id, dealer_id) references public.branches (id, dealer_id),
+  constraint purchase_bills_supplier_tenant_fkey
+    foreign key (supplier_id, dealer_id) references public.suppliers (id, dealer_id),
+  constraint purchase_bills_journal_tenant_fkey
+    foreign key (journal_entry_id, dealer_id) references public.journal_entries (id, dealer_id),
+
+  constraint purchase_bills_status_check check (status in ('DRAFT', 'POSTED', 'CANCELLED')),
+  constraint purchase_bills_amounts_check check (
+    taxable_value >= 0 and cgst_amount >= 0 and sgst_amount >= 0
+    and igst_amount >= 0 and total_amount >= 0
+  ),
+  constraint purchase_bills_supplier_ref_shape_check check (
+    length(btrim(supplier_bill_number)) between 1 and 50
+  ),
+  constraint purchase_bills_due_check check (due_date is null or due_date >= bill_date),
+  constraint purchase_bills_posted_stamp_check check (
+    status <> 'POSTED' or (posted_at is not null and journal_entry_id is not null)
+  )
+);
+
+comment on table public.purchase_bills is
+  'Supplier bill (spec §24, §41). Brings stock onto the balance sheet and the '
+  'payable onto the supplier ledger — the entry point 0027''s INVENTORY/PURCHASE '
+  'rules were written for and never had.';
+
+create index purchase_bills_supplier_idx on public.purchase_bills (supplier_id, bill_date desc);
+create index purchase_bills_dealer_date_idx on public.purchase_bills (dealer_id, bill_date desc);
+create index purchase_bills_branch_idx on public.purchase_bills (branch_id, bill_date desc);
+create index purchase_bills_status_idx on public.purchase_bills (dealer_id, status);
+
+-- -----------------------------------------------------------------------------
+-- purchase_bill_lines
+-- -----------------------------------------------------------------------------
+create table public.purchase_bill_lines (
+  id             uuid primary key default gen_random_uuid(),
+  purchase_bill_id uuid not null,
+  dealer_id      uuid not null,
+
+  line_number    smallint not null,
+  line_type      text not null,
+
+  -- Exactly one of these, according to line_type. A vehicle is identified; an
+  -- accessory or spare is counted.
+  vehicle_id     uuid,
+  item_id        uuid,
+  -- Which lot a counted item joins (spec §28, §31). Meaningless for a vehicle.
+  source         text,
+
+  description    text not null,
+  quantity       numeric(18, 3) not null,
+  unit_rate      numeric(18, 4) not null,
+
+  taxable_value  numeric(18, 4) not null,
+  cgst_rate      numeric(6, 3) not null default 0,
+  sgst_rate      numeric(6, 3) not null default 0,
+  igst_rate      numeric(6, 3) not null default 0,
+  cgst_amount    numeric(18, 4) not null default 0,
+  sgst_amount    numeric(18, 4) not null default 0,
+  igst_amount    numeric(18, 4) not null default 0,
+  total_amount   numeric(18, 4) not null,
+
+  created_at     timestamptz not null default now(),
+
+  constraint pbl_bill_line_key unique (purchase_bill_id, line_number),
+  constraint pbl_bill_tenant_fkey
+    foreign key (purchase_bill_id, dealer_id)
+    references public.purchase_bills (id, dealer_id) on delete cascade,
+  constraint pbl_vehicle_tenant_fkey
+    foreign key (vehicle_id, dealer_id) references public.vehicles (id, dealer_id),
+  constraint pbl_item_tenant_fkey
+    foreign key (item_id, dealer_id) references public.inventory_items (id, dealer_id),
+
+  constraint pbl_type_check check (line_type in ('VEHICLE', 'ACCESSORY', 'SPARE')),
+  constraint pbl_source_check check (source is null or source in ('LOCAL', 'COMPANY')),
+  -- A vehicle line names a chassis and one of it; a counted line names an item,
+  -- a lot and a quantity. Neither shape can borrow the other's columns.
+  constraint pbl_shape_check check (
+    (line_type = 'VEHICLE'
+       and vehicle_id is not null and item_id is null and source is null and quantity = 1)
+    or (line_type <> 'VEHICLE'
+       and item_id is not null and vehicle_id is null and source is not null and quantity > 0)
+  ),
+  constraint pbl_amounts_check check (
+    unit_rate >= 0 and taxable_value >= 0 and total_amount >= 0
+    and cgst_amount >= 0 and sgst_amount >= 0 and igst_amount >= 0
+  ),
+  -- Intra-state is CGST+SGST, inter-state is IGST. Never both (spec §16).
+  constraint pbl_tax_split_check check (
+    (igst_amount = 0) or (cgst_amount = 0 and sgst_amount = 0)
+  ),
+  constraint pbl_line_number_check check (line_number > 0)
+);
+
+comment on table public.purchase_bill_lines is
+  'What was bought. VEHICLE lines point at a chassis the upload already created '
+  '(spec §14); ACCESSORY and SPARE lines create the stock movement (spec §34).';
+
+-- Load-bearing: this is what makes "not yet billed" a fact rather than a habit.
+-- One chassis, one purchase line, ever — so no vehicle can be capitalised twice
+-- however many drafts are open at once (spec §49, §60.24).
+create unique index purchase_bill_lines_vehicle_key
+  on public.purchase_bill_lines (vehicle_id) where vehicle_id is not null;
+
+create index purchase_bill_lines_bill_idx on public.purchase_bill_lines (purchase_bill_id);
+create index purchase_bill_lines_item_idx on public.purchase_bill_lines (item_id) where item_id is not null;
+
+-- -----------------------------------------------------------------------------
+-- The bill's number, issued by the database
+-- -----------------------------------------------------------------------------
+-- Self-provisioning like the supplier code (0040): a purchase bill must not be
+-- unrecordable because nobody configured a sequence first.
+-- -----------------------------------------------------------------------------
+create or replace function app.purchase_bills_assign_number()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_year text;
+begin
+  if new.bill_number is not null and btrim(new.bill_number) <> '' then
+    return new;
+  end if;
+
+  v_year := app.financial_year_token(new.dealer_id, coalesce(new.bill_date, current_date));
+
+  insert into public.document_sequences (dealer_id, branch_id, doc_type, financial_year, prefix, padding)
+  values (new.dealer_id, null, 'PURCHASE_BILL', v_year, 'PB', 6)
+  on conflict on constraint document_sequences_scope_key do nothing;
+
+  new.bill_number := app.next_document_number(new.dealer_id, null, 'PURCHASE_BILL', v_year);
+  return new;
+end;
+$$;
+
+create trigger purchase_bills_assign_number
+  before insert on public.purchase_bills
+  for each row execute function app.purchase_bills_assign_number();
+
+-- -----------------------------------------------------------------------------
+-- A posted bill is immutable, and lines only move while it is a draft
+-- -----------------------------------------------------------------------------
+create or replace function app.purchase_bills_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'DELETE' then
+    if old.status <> 'DRAFT' then
+      raise exception 'Purchase bill % is % and cannot be deleted.', old.bill_number, old.status
+        using errcode = 'insufficient_privilege',
+              hint = 'Spec §23: corrections use reversal, not deletion.';
+    end if;
+    return old;
+  end if;
+
+  if tg_op = 'UPDATE' and old.status = 'POSTED' then
+    -- Only the reversal linkage the cancel path writes may change.
+    if not (new.status = 'CANCELLED'
+            and (to_jsonb(new) - 'status' - 'notes' - 'updated_at' - 'updated_by')
+                = (to_jsonb(old) - 'status' - 'notes' - 'updated_at' - 'updated_by')) then
+      raise exception 'Purchase bill % is POSTED and immutable.', old.bill_number
+        using errcode = 'insufficient_privilege',
+              hint = 'Spec §23: post a reversal instead of editing.';
+    end if;
+  end if;
+
+  if tg_op = 'UPDATE' and old.status = 'CANCELLED' and new.status <> 'CANCELLED' then
+    raise exception 'Purchase bill % is cancelled and cannot be reopened.', old.bill_number
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger purchase_bills_guard
+  before update or delete on public.purchase_bills
+  for each row execute function app.purchase_bills_guard();
+
+create or replace function app.purchase_bill_lines_sync_totals()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_bill   uuid := coalesce(new.purchase_bill_id, old.purchase_bill_id);
+  v_status text;
+  v_number text;
+begin
+  select status, bill_number into v_status, v_number
+    from public.purchase_bills where id = v_bill;
+
+  -- Header already gone (ON DELETE CASCADE): let the cascade proceed.
+  if v_status is null then
+    return coalesce(new, old);
+  end if;
+
+  if v_status <> 'DRAFT' then
+    raise exception 'Cannot % lines of purchase bill %: it is %.',
+      lower(tg_op), v_number, v_status
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  -- The header's figures follow the lines rather than being sent alongside
+  -- them, so a total can never disagree with what it totals.
+  update public.purchase_bills b
+     set taxable_value = coalesce(t.taxable, 0),
+         cgst_amount   = coalesce(t.cgst, 0),
+         sgst_amount   = coalesce(t.sgst, 0),
+         igst_amount   = coalesce(t.igst, 0),
+         total_amount  = coalesce(t.total, 0)
+    from (
+      select sum(l.taxable_value) as taxable, sum(l.cgst_amount) as cgst,
+             sum(l.sgst_amount) as sgst, sum(l.igst_amount) as igst,
+             sum(l.total_amount) as total
+        from public.purchase_bill_lines l
+       where l.purchase_bill_id = v_bill
+    ) t
+   where b.id = v_bill;
+
+  return coalesce(new, old);
+end;
+$$;
+
+create trigger purchase_bill_lines_sync
+  after insert or update or delete on public.purchase_bill_lines
+  for each row execute function app.purchase_bill_lines_sync_totals();
+
+create trigger purchase_bills_set_updated_at
+  before update on public.purchase_bills
+  for each row execute function app.set_updated_at();
+
+create trigger purchase_bills_audit
+  after insert or update or delete on public.purchase_bills
+  for each row execute function app.audit_trigger();
+
+-- -----------------------------------------------------------------------------
+-- Row Level Security
+-- -----------------------------------------------------------------------------
+alter table public.purchase_bills      enable row level security;
+alter table public.purchase_bill_lines enable row level security;
+
+create policy purchase_bills_select on public.purchase_bills
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and app.has_permission('purchases.view'))
+  );
+
+create policy purchase_bills_insert on public.purchase_bills
+  for insert to authenticated
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and app.has_permission('purchases.create'))
+  );
+
+create policy purchase_bills_update on public.purchase_bills
+  for update to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and (app.has_permission('purchases.create') or app.has_permission('purchases.post')))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and (app.has_permission('purchases.create') or app.has_permission('purchases.post')))
+  );
+
+-- A draft may be abandoned; the trigger above refuses anything further along.
+create policy purchase_bills_delete on public.purchase_bills
+  for delete to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and app.has_permission('purchases.create'))
+  );
+
+create policy purchase_bill_lines_select on public.purchase_bill_lines
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and exists (
+          select 1 from public.purchase_bills b
+           where b.id = purchase_bill_lines.purchase_bill_id
+             and app.can_access_branch(b.branch_id)
+        )
+        and app.has_permission('purchases.view'))
+  );
+
+create policy purchase_bill_lines_write on public.purchase_bill_lines
+  for all to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('purchases.create'))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('purchases.create'))
+  );
+
+-- -----------------------------------------------------------------------------
+-- public.post_purchase_bill() — the moment a bill becomes accounting
+-- -----------------------------------------------------------------------------
+-- One transaction (spec §48): journal, vehicle capitalisation, stock movement,
+-- status. Any failure leaves the draft exactly as it was.
+-- -----------------------------------------------------------------------------
+create or replace function public.post_purchase_bill(
+  p_bill_id         uuid,
+  p_idempotency_key text default null
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_bill    public.purchase_bills;
+  v_line    record;
+  v_lines   jsonb := '[]'::jsonb;
+  v_entry   uuid;
+  v_count   integer;
+  v_account uuid;
+  v_veh     record;
+  v_total   numeric(18, 4);
+begin
+  select * into v_bill from public.purchase_bills where id = p_bill_id for update;
+
+  if v_bill.id is null then
+    raise exception 'Purchase bill not found.' using errcode = 'no_data_found';
+  end if;
+  -- A repeated submission returns what the first one posted rather than posting
+  -- a second time (spec §50), matching post_vehicle_sale and create_counter_invoice.
+  -- The check has to be here as well as inside app.post_journal, because the
+  -- stock movements below are not idempotent on their own.
+  if v_bill.status = 'POSTED' then
+    return v_bill.journal_entry_id;
+  end if;
+  if v_bill.status <> 'DRAFT' then
+    raise exception 'Purchase bill % is % and cannot be posted.',
+      v_bill.bill_number, v_bill.status using errcode = 'check_violation';
+  end if;
+
+  select count(*)::integer into v_count
+    from public.purchase_bill_lines where purchase_bill_id = p_bill_id;
+  if v_count = 0 then
+    raise exception 'Purchase bill % has no lines.', v_bill.bill_number
+      using errcode = 'check_violation';
+  end if;
+  if v_bill.total_amount <= 0 then
+    raise exception 'Purchase bill % comes to nothing.', v_bill.bill_number
+      using errcode = 'check_violation';
+  end if;
+
+  -- ── The stock side of every line, and the debits that mirror it ───────────
+  for v_line in
+    select * from public.purchase_bill_lines
+     where purchase_bill_id = p_bill_id
+     order by line_number
+  loop
+    if v_line.line_type = 'VEHICLE' then
+      -- Locked, because two bills racing for the same chassis must not both
+      -- believe they have it. The unique index would catch it at insert; this
+      -- makes the failure happen before anything is posted (spec §49).
+      select id, status, chassis_no into v_veh
+        from public.vehicles where id = v_line.vehicle_id for update;
+
+      if v_veh.id is null then
+        raise exception 'The vehicle on line % no longer exists.', v_line.line_number
+          using errcode = 'no_data_found';
+      end if;
+      -- A chassis that has been sold, transferred or cancelled since the draft
+      -- was built is not stock this bill can capitalise.
+      if v_veh.status <> 'IN_STOCK' then
+        raise exception 'Chassis % is % and cannot be put on a purchase bill.',
+          v_veh.chassis_no, v_veh.status using errcode = 'check_violation';
+      end if;
+
+      -- The cost the bill actually charges becomes the vehicle's cost, which is
+      -- what COGS will later relieve. Recording the invoice and leaving the
+      -- uploaded estimate in place would make the margin wrong for ever.
+      update public.vehicles
+         set purchase_cost    = v_line.taxable_value,
+             purchase_invoice = coalesce(purchase_invoice, v_bill.supplier_bill_number),
+             purchase_date    = coalesce(purchase_date, v_bill.bill_date),
+             updated_by       = auth.uid()
+       where id = v_line.vehicle_id;
+
+      v_account := app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE',
+                                       'VEHICLE_INVENTORY', v_bill.branch_id);
+    else
+      -- Counted stock arrives as a movement; the quantity follows from it
+      -- (spec §34, §60.22). The lot identity is preserved (spec §28, §60.16).
+      insert into public.inventory_transactions
+        (dealer_id, branch_id, item_id, source, transaction_type, quantity, unit_cost,
+         reference_type, reference_id, reference_number, narration, created_by)
+      values
+        (v_bill.dealer_id, v_bill.branch_id, v_line.item_id, v_line.source, 'PURCHASE',
+         v_line.quantity, round(v_line.taxable_value / v_line.quantity, 4),
+         'PURCHASE_BILL', p_bill_id, v_bill.bill_number,
+         'Purchased on ' || v_bill.bill_number, auth.uid());
+
+      v_account := app.require_account(
+        v_bill.dealer_id, 'INVENTORY', 'PURCHASE',
+        case when v_line.line_type = 'ACCESSORY' then 'ACCESSORY_INVENTORY'
+             else 'SPARE_INVENTORY' end,
+        v_bill.branch_id);
+    end if;
+
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', v_account, 'debit', v_line.taxable_value, 'credit', 0,
+      'narration', v_line.description);
+  end loop;
+
+  -- ── Input GST: an asset, because the government owes it back ──────────────
+  if v_bill.cgst_amount > 0 then
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE', 'INPUT_CGST', v_bill.branch_id),
+      'debit', v_bill.cgst_amount, 'credit', 0, 'narration', 'Input CGST ' || v_bill.bill_number);
+  end if;
+  if v_bill.sgst_amount > 0 then
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE', 'INPUT_SGST', v_bill.branch_id),
+      'debit', v_bill.sgst_amount, 'credit', 0, 'narration', 'Input SGST ' || v_bill.bill_number);
+  end if;
+  if v_bill.igst_amount > 0 then
+    v_lines := v_lines || jsonb_build_object(
+      'account_id', app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE', 'INPUT_IGST', v_bill.branch_id),
+      'debit', v_bill.igst_amount, 'credit', 0, 'narration', 'Input IGST ' || v_bill.bill_number);
+  end if;
+
+  -- ── And the one credit: what the dealer now owes this supplier ────────────
+  -- Party-tagged, which is what puts the bill on the supplier's subsidiary
+  -- ledger instead of leaving 2200 an undifferentiated lump (spec §41).
+  select total_amount into v_total from public.purchase_bills where id = p_bill_id;
+
+  v_lines := v_lines || jsonb_build_object(
+    'account_id', app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE', 'PAYABLE', v_bill.branch_id),
+    'debit', 0, 'credit', v_total,
+    'narration', 'Bill ' || v_bill.supplier_bill_number,
+    'party_type', 'SUPPLIER', 'party_id', v_bill.supplier_id);
+
+  v_entry := app.post_journal(
+    v_bill.dealer_id, v_bill.branch_id, v_bill.bill_date, 'INVENTORY',
+    'Purchase ' || v_bill.bill_number || ' — ' || v_bill.supplier_bill_number,
+    v_lines,
+    'PURCHASE_BILL', p_bill_id,
+    coalesce(p_idempotency_key, 'purchase-bill:' || p_bill_id::text)
+  );
+
+  update public.purchase_bills
+     set status = 'POSTED', journal_entry_id = v_entry,
+         posted_at = now(), posted_by = auth.uid(), updated_by = auth.uid()
+   where id = p_bill_id;
+
+  return v_entry;
+end;
+$$;
+
+comment on function public.post_purchase_bill(uuid, text) is
+  'Posts a purchase bill (spec §21, §48): stock onto the balance sheet, input '
+  'GST to ITC, and the payable onto the supplier''s ledger. Idempotent (spec §50).';
+
+-- -----------------------------------------------------------------------------
+-- public.cancel_purchase_bill() — a draft is dropped, a posted bill is reversed
+-- -----------------------------------------------------------------------------
+create or replace function public.cancel_purchase_bill(
+  p_bill_id uuid,
+  p_reason  text
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_bill  public.purchase_bills;
+  v_line  record;
+  v_entry uuid;
+begin
+  if p_reason is null or btrim(p_reason) = '' then
+    raise exception 'Cancelling a purchase bill requires a reason.'
+      using errcode = 'check_violation',
+            hint = 'Spec §23: the reason is part of the record, not optional.';
+  end if;
+
+  select * into v_bill from public.purchase_bills where id = p_bill_id for update;
+  if v_bill.id is null then
+    raise exception 'Purchase bill not found.' using errcode = 'no_data_found';
+  end if;
+  if v_bill.status = 'CANCELLED' then
+    raise exception 'Purchase bill % is already cancelled.', v_bill.bill_number
+      using errcode = 'check_violation';
+  end if;
+
+  -- A draft never reached the ledger, so there is nothing to reverse. Deleting
+  -- it releases its chassis back to the unbilled list.
+  if v_bill.status = 'DRAFT' then
+    delete from public.purchase_bills where id = p_bill_id;
+    return null;
+  end if;
+
+  -- Posted: reverse the journal and take the stock back out again.
+  v_entry := app.reverse_journal(v_bill.journal_entry_id, btrim(p_reason), current_date);
+
+  for v_line in
+    select * from public.purchase_bill_lines
+     where purchase_bill_id = p_bill_id and line_type in ('ACCESSORY', 'SPARE')
+  loop
+    insert into public.inventory_transactions
+      (dealer_id, branch_id, item_id, source, transaction_type, quantity, unit_cost,
+       reference_type, reference_id, reference_number, narration, reason, created_by)
+    values
+      (v_bill.dealer_id, v_bill.branch_id, v_line.item_id, v_line.source, 'REVERSAL',
+       -v_line.quantity, round(v_line.taxable_value / v_line.quantity, 4),
+       'PURCHASE_BILL', p_bill_id, v_bill.bill_number,
+       'Cancelled ' || v_bill.bill_number, btrim(p_reason), auth.uid());
+  end loop;
+
+  update public.purchase_bills
+     set status = 'CANCELLED', updated_by = auth.uid(),
+         notes = coalesce(notes || E'\n', '') || 'Cancelled: ' || btrim(p_reason)
+   where id = p_bill_id;
+
+  return v_entry;
+end;
+$$;
+
+comment on function public.cancel_purchase_bill(uuid, text) is
+  'Drops a draft, or reverses a posted bill and takes its stock back out '
+  '(spec §23, §34). The vehicles it capitalised stay billed: their cost is real.';
+
+-- -----------------------------------------------------------------------------
+-- public.unbilled_vehicles() — the chassis a bill may still claim
+-- -----------------------------------------------------------------------------
+-- In stock, and on no purchase bill. Invoker-rights, so it shows only what the
+-- caller's branches and permissions already allow them to see.
+-- -----------------------------------------------------------------------------
+create or replace function public.unbilled_vehicles(
+  p_branch_id uuid default null,
+  p_search    text default null
+)
+returns table (
+  vehicle_id    uuid,
+  chassis_no    text,
+  engine_no     text,
+  model_label   text,
+  branch_name   text,
+  purchase_cost numeric(18, 4),
+  stock_date    date
+)
+language sql
+stable
+as $$
+  select v.id, v.chassis_no, v.engine_no,
+         m.name || coalesce(' ' || vr.name, ''),
+         b.name, v.purchase_cost, v.stock_date
+    from public.vehicles v
+    join public.branches b on b.id = v.branch_id
+    join public.vehicle_models m on m.id = v.model_id
+    left join public.vehicle_variants vr on vr.id = v.variant_id
+   where v.status = 'IN_STOCK'
+     and (p_branch_id is null or v.branch_id = p_branch_id)
+     and not exists (
+       select 1 from public.purchase_bill_lines l where l.vehicle_id = v.id
+     )
+     and (
+       p_search is null or btrim(p_search) = ''
+       or v.chassis_no ilike '%' || btrim(p_search) || '%'
+       or v.engine_no  ilike '%' || btrim(p_search) || '%'
+       or m.name       ilike '%' || btrim(p_search) || '%'
+     )
+   order by v.stock_date desc nulls last, v.chassis_no
+   limit 200;
+$$;
+
+comment on function public.unbilled_vehicles(uuid, text) is
+  'Chassis in stock that no purchase bill has claimed (spec §13, §14).';
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant select, insert, update, delete on public.purchase_bills to authenticated';
+    execute 'grant select, insert, update, delete on public.purchase_bill_lines to authenticated';
+    execute 'grant all on public.purchase_bills to service_role';
+    execute 'grant all on public.purchase_bill_lines to service_role';
+    execute 'grant execute on function public.post_purchase_bill(uuid, text) to authenticated';
+    execute 'grant execute on function public.cancel_purchase_bill(uuid, text) to authenticated';
+    execute 'grant execute on function public.unbilled_vehicles(uuid, text) to authenticated';
+  end if;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Permissions
+-- -----------------------------------------------------------------------------
+-- Inserted here as well as in seed.sql so an upgraded database gains them, and
+-- granted to the roles that buy stock and account for it (spec §6).
+-- -----------------------------------------------------------------------------
+insert into public.permissions (code, module, description, is_sensitive) values
+  ('purchases.view',   'purchases', 'View purchase bills',                    false),
+  ('purchases.create', 'purchases', 'Create and edit draft purchase bills',   false),
+  ('purchases.post',   'purchases', 'Post a purchase bill to the accounts',   false),
+  ('purchases.cancel', 'purchases', 'Cancel or reverse a purchase bill',      false)
+on conflict (code) do update
+  set module      = excluded.module,
+      description = excluded.description;
+
+insert into public.role_permissions (role_id, permission_code)
+select r.id, p.code
+  from public.roles r
+  cross join (values ('purchases.view'), ('purchases.create'), ('purchases.post'), ('purchases.cancel')) as p(code)
+ where r.is_system and r.code in ('DEALER_OWNER', 'ACCOUNTS')
+on conflict do nothing;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0053_hr_foundations.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0053 — HR foundations: the employee record an ERP actually needs
+-- =============================================================================
+-- Spec §4, §5, §12, §15, §46, §47, §52, §60.7, §60.19.
+--
+-- public.employees (0003) is an identity and little else: a code, a name, a
+-- department, a designation, a mobile and two dates. That is enough to attribute
+-- a sale to a salesman, which is all it has ever been asked to do.
+--
+-- It is not enough to run HR. There is nowhere to record what someone is paid,
+-- which shift they work, what leave they are entitled to, or which documents the
+-- dealer holds for them — so Attendance has nothing to measure against and
+-- Payroll has nothing to compute from. This migration is the record those two
+-- modules will stand on, and it is deliberately built first for that reason.
+--
+-- ── What is added ───────────────────────────────────────────────────────────
+--
+--   employees                     gains the personal, statutory and employment
+--                                 fields an HR record needs
+--   shifts                        working patterns, dealer-scoped
+--   leave_types                   CL / SL / EL / LOP, with quotas
+--   employee_salary_structures    effective-dated pay, never overwritten
+--   employee_leave_balances       entitlement and what is left of it
+--   employee_documents            what the dealer holds, and when it expires
+--
+-- ── Pay is effective-dated, not edited ──────────────────────────────────────
+--
+-- Salary follows the pattern vehicle prices use (spec §15, §60.9): a revision is
+-- a new row with its own effective_from, and the old one stays exactly as it
+-- was. A payslip run for March next year must reproduce March's figures, which
+-- is impossible if a July increment overwrote them. The same reason invoices do
+-- not change when a price list does.
+--
+-- ── Pay is confidential ─────────────────────────────────────────────────────
+--
+-- Spec §52 requires restricted financial fields to be absent from the API
+-- response, not merely hidden by the UI. Salary is exactly that kind of field —
+-- more so than margin, because it is personal data about a colleague. It gets
+-- its own permission, its own RLS policy, and an entry in the redaction map on
+-- the way out (src/lib/permissions/index.ts).
+--
+-- Rollback: drop table public.employee_documents, public.employee_leave_balances,
+--           public.employee_salary_structures, public.leave_types, public.shifts;
+--           alter table public.employees drop column ... (the columns added below);
+--           delete from public.permissions where module = 'hr';
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- The employee record grows up
+-- -----------------------------------------------------------------------------
+-- Added to the existing table rather than kept in a satellite: every one of
+-- these is one-to-one with the employee and is read whenever the employee is.
+-- A join table here would buy nothing and cost a join on every screen.
+-- -----------------------------------------------------------------------------
+alter table public.employees
+  add column if not exists date_of_birth     date,
+  add column if not exists gender            text,
+  add column if not exists blood_group       text,
+  add column if not exists personal_email    text,
+  add column if not exists emergency_contact text,
+  add column if not exists emergency_mobile  text,
+
+  add column if not exists address_line1     text,
+  add column if not exists address_line2     text,
+  add column if not exists city              text,
+  add column if not exists state             text,
+  add column if not exists pincode           text,
+
+  -- Statutory identifiers. Held because payroll and PF/ESI filing need them.
+  add column if not exists pan               text,
+  add column if not exists aadhaar_last4     text,
+  add column if not exists uan               text,
+  add column if not exists esi_number        text,
+
+  -- Where salary is paid. The account number is the dealer's own record of it.
+  add column if not exists bank_account_name text,
+  add column if not exists bank_account_no   text,
+  add column if not exists bank_ifsc         text,
+
+  add column if not exists employment_type   text not null default 'PERMANENT',
+  add column if not exists probation_until   date,
+  add column if not exists confirmed_on      date,
+  add column if not exists exit_type         text,
+  add column if not exists exit_reason       text,
+
+  add column if not exists reports_to        uuid,
+  add column if not exists shift_id          uuid;
+
+comment on column public.employees.aadhaar_last4 is
+  'Last four digits only. The full number is not the dealer''s to keep, and a '
+  'partial one is enough to confirm a document already sighted.';
+
+alter table public.employees
+  add constraint employees_gender_check check (
+    gender is null or gender in ('MALE', 'FEMALE', 'OTHER')
+  ),
+  add constraint employees_employment_type_check check (
+    employment_type in ('PERMANENT', 'PROBATION', 'CONTRACT', 'INTERN', 'CONSULTANT')
+  ),
+  add constraint employees_exit_type_check check (
+    exit_type is null or exit_type in ('RESIGNATION', 'TERMINATION', 'RETIREMENT', 'END_OF_CONTRACT', 'ABSCONDED')
+  ),
+  add constraint employees_pan_check check (pan is null or pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]$'),
+  add constraint employees_aadhaar_last4_check check (aadhaar_last4 is null or aadhaar_last4 ~ '^[0-9]{4}$'),
+  add constraint employees_uan_check check (uan is null or uan ~ '^[0-9]{12}$'),
+  add constraint employees_ifsc_check check (bank_ifsc is null or bank_ifsc ~ '^[A-Z]{4}0[A-Z0-9]{6}$'),
+  add constraint employees_pincode_check check (pincode is null or pincode ~ '^[1-9][0-9]{5}$'),
+  add constraint employees_emergency_mobile_check check (
+    emergency_mobile is null or emergency_mobile ~ '^[6-9][0-9]{9}$'
+  ),
+  -- Someone who has left must say how, so an exit report is not guesswork.
+  add constraint employees_exit_shape_check check (
+    status not in ('RESIGNED', 'TERMINATED') or exit_type is not null
+  ),
+  -- Nobody reports to themselves.
+  add constraint employees_reports_to_check check (reports_to is null or reports_to <> id),
+  add constraint employees_reports_to_tenant_fkey
+    foreign key (reports_to, dealer_id) references public.employees (id, dealer_id);
+
+create index employees_reports_to_idx on public.employees (reports_to) where reports_to is not null;
+
+-- -----------------------------------------------------------------------------
+-- shifts — the working pattern a day is measured against
+-- -----------------------------------------------------------------------------
+-- Dealer-scoped, not branch-scoped: a showroom and a workshop in the same
+-- dealership run different shifts, but the pattern itself is defined once and
+-- assigned per employee.
+-- -----------------------------------------------------------------------------
+create table public.shifts (
+  id             uuid primary key default gen_random_uuid(),
+  dealer_id      uuid not null references public.dealers (id) on delete restrict,
+
+  code           text not null,
+  name           text not null,
+
+  starts_at      time not null,
+  ends_at        time not null,
+  break_minutes  smallint not null default 0,
+
+  -- Minutes after starts_at that are still "on time". Without it every employee
+  -- who arrives at 09:00:30 is late, and the register becomes noise.
+  grace_minutes  smallint not null default 0,
+
+  -- ISO weekday numbers that are off: 1 = Monday … 7 = Sunday.
+  week_off_days  smallint[] not null default '{7}',
+
+  -- Below this, the day counts as absent; below full_day_minutes, a half day.
+  half_day_minutes smallint not null default 240,
+  full_day_minutes smallint not null default 480,
+
+  status         text not null default 'ACTIVE',
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  created_by     uuid,
+  updated_by     uuid,
+
+  constraint shifts_dealer_code_key unique (dealer_id, code),
+  constraint shifts_id_dealer_key   unique (id, dealer_id),
+  constraint shifts_status_check    check (status in ('ACTIVE', 'INACTIVE')),
+  constraint shifts_code_check      check (code ~ '^[A-Z0-9_-]{1,20}$'),
+  constraint shifts_break_check     check (break_minutes between 0 and 480),
+  constraint shifts_grace_check     check (grace_minutes between 0 and 120),
+  constraint shifts_minutes_check   check (
+    half_day_minutes > 0 and full_day_minutes > half_day_minutes and full_day_minutes <= 1440
+  ),
+  -- A shift may cross midnight, so ends_at < starts_at is legitimate; what is
+  -- not legitimate is a shift of no length at all.
+  constraint shifts_span_check      check (ends_at <> starts_at),
+  constraint shifts_week_off_check  check (
+    week_off_days <@ array[1,2,3,4,5,6,7]::smallint[]
+  )
+);
+
+comment on table public.shifts is
+  'Working patterns (spec §12). Attendance measures a day against the employee''s '
+  'shift; a day with no shift has nothing to be late for.';
+
+create index shifts_dealer_status_idx on public.shifts (dealer_id, status);
+
+alter table public.employees
+  add constraint employees_shift_tenant_fkey
+  foreign key (shift_id, dealer_id) references public.shifts (id, dealer_id);
+
+create index employees_shift_idx on public.employees (shift_id) where shift_id is not null;
+
+-- -----------------------------------------------------------------------------
+-- leave_types — what leave exists, and how much of it
+-- -----------------------------------------------------------------------------
+create table public.leave_types (
+  id                uuid primary key default gen_random_uuid(),
+  dealer_id         uuid not null references public.dealers (id) on delete restrict,
+
+  code              text not null,
+  name              text not null,
+
+  annual_quota      numeric(6, 2) not null default 0,
+  -- Unpaid leave still has to be recorded: payroll needs to know the day was
+  -- taken in order to deduct it.
+  is_paid           boolean not null default true,
+  carry_forward     boolean not null default false,
+  max_carry_forward numeric(6, 2) not null default 0,
+  -- Whether a day of this leave counts as a day worked for payroll.
+  counts_as_worked  boolean not null default true,
+
+  status            text not null default 'ACTIVE',
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  created_by        uuid,
+  updated_by        uuid,
+
+  constraint leave_types_dealer_code_key unique (dealer_id, code),
+  constraint leave_types_id_dealer_key   unique (id, dealer_id),
+  constraint leave_types_code_check      check (code ~ '^[A-Z0-9_-]{1,20}$'),
+  constraint leave_types_status_check    check (status in ('ACTIVE', 'INACTIVE')),
+  constraint leave_types_quota_check     check (annual_quota >= 0 and max_carry_forward >= 0),
+  constraint leave_types_carry_check     check (
+    carry_forward or max_carry_forward = 0
+  )
+);
+
+comment on table public.leave_types is
+  'Leave a dealer grants (spec §12). is_paid and counts_as_worked are what '
+  'payroll reads: loss of pay is still leave, it simply is not paid.';
+
+create index leave_types_dealer_status_idx on public.leave_types (dealer_id, status);
+
+-- -----------------------------------------------------------------------------
+-- employee_salary_structures — effective-dated pay
+-- -----------------------------------------------------------------------------
+-- A revision is a new row, never an edit (spec §15, §60.9). The March payslip
+-- has to reproduce March's figures however many increments have happened since,
+-- exactly as an invoice keeps the price it was raised at.
+-- -----------------------------------------------------------------------------
+create table public.employee_salary_structures (
+  id                uuid primary key default gen_random_uuid(),
+  dealer_id         uuid not null references public.dealers (id) on delete restrict,
+  employee_id       uuid not null,
+
+  effective_from    date not null,
+  -- Closed by the next revision. Null means "current".
+  effective_to      date,
+
+  -- Earnings, monthly.
+  basic             numeric(14, 2) not null default 0,
+  hra               numeric(14, 2) not null default 0,
+  conveyance        numeric(14, 2) not null default 0,
+  medical_allowance numeric(14, 2) not null default 0,
+  special_allowance numeric(14, 2) not null default 0,
+  other_allowance   numeric(14, 2) not null default 0,
+
+  -- Statutory deductions, monthly.
+  pf_employee       numeric(14, 2) not null default 0,
+  esi_employee      numeric(14, 2) not null default 0,
+  professional_tax  numeric(14, 2) not null default 0,
+  other_deduction   numeric(14, 2) not null default 0,
+
+  -- Employer contributions: a cost to the dealer, not a deduction from the
+  -- employee, so they are kept apart from the two columns above.
+  pf_employer       numeric(14, 2) not null default 0,
+  esi_employer      numeric(14, 2) not null default 0,
+
+  -- Derived, so a stored figure can never disagree with the parts it came from.
+  gross_earnings    numeric(14, 2) generated always as (
+    basic + hra + conveyance + medical_allowance + special_allowance + other_allowance
+  ) stored,
+  total_deductions  numeric(14, 2) generated always as (
+    pf_employee + esi_employee + professional_tax + other_deduction
+  ) stored,
+  net_payable       numeric(14, 2) generated always as (
+    basic + hra + conveyance + medical_allowance + special_allowance + other_allowance
+    - pf_employee - esi_employee - professional_tax - other_deduction
+  ) stored,
+  cost_to_company   numeric(14, 2) generated always as (
+    basic + hra + conveyance + medical_allowance + special_allowance + other_allowance
+    + pf_employer + esi_employer
+  ) stored,
+
+  revision_note     text,
+  created_at        timestamptz not null default now(),
+  created_by        uuid,
+
+  constraint ess_employee_from_key unique (employee_id, effective_from),
+  constraint ess_id_dealer_key     unique (id, dealer_id),
+  constraint ess_employee_tenant_fkey
+    foreign key (employee_id, dealer_id) references public.employees (id, dealer_id) on delete cascade,
+  constraint ess_amounts_check check (
+    basic >= 0 and hra >= 0 and conveyance >= 0 and medical_allowance >= 0
+    and special_allowance >= 0 and other_allowance >= 0
+    and pf_employee >= 0 and esi_employee >= 0 and professional_tax >= 0
+    and other_deduction >= 0 and pf_employer >= 0 and esi_employer >= 0
+  ),
+  constraint ess_range_check check (effective_to is null or effective_to >= effective_from),
+  -- Nobody works for a negative wage; if deductions exceed earnings the
+  -- structure is wrong, and finding out at payroll time is too late.
+  constraint ess_net_check check (
+    basic + hra + conveyance + medical_allowance + special_allowance + other_allowance
+    >= pf_employee + esi_employee + professional_tax + other_deduction
+  )
+);
+
+comment on table public.employee_salary_structures is
+  'Effective-dated pay (spec §15). A revision is a new row; the old one is never '
+  'edited, so a payslip re-run for a past month reproduces that month exactly.';
+
+create index ess_employee_idx on public.employee_salary_structures (employee_id, effective_from desc);
+create index ess_dealer_idx   on public.employee_salary_structures (dealer_id, effective_from desc);
+
+-- -----------------------------------------------------------------------------
+-- employee_leave_balances — entitlement, and what is left of it
+-- -----------------------------------------------------------------------------
+-- One row per employee, leave type and year. `used` is maintained by the
+-- Attendance module when leave is approved; it is a column here rather than a
+-- count over leave applications so a balance check is one lookup rather than an
+-- aggregate over a growing table.
+-- -----------------------------------------------------------------------------
+create table public.employee_leave_balances (
+  id             uuid primary key default gen_random_uuid(),
+  dealer_id      uuid not null references public.dealers (id) on delete restrict,
+  employee_id    uuid not null,
+  leave_type_id  uuid not null,
+
+  -- Financial year, as the token app.financial_year_token() issues.
+  financial_year text not null,
+
+  opening        numeric(6, 2) not null default 0,
+  accrued        numeric(6, 2) not null default 0,
+  used           numeric(6, 2) not null default 0,
+  encashed       numeric(6, 2) not null default 0,
+
+  balance        numeric(6, 2) generated always as (opening + accrued - used - encashed) stored,
+
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  created_by     uuid,
+  updated_by     uuid,
+
+  constraint elb_employee_type_year_key unique (employee_id, leave_type_id, financial_year),
+  constraint elb_id_dealer_key unique (id, dealer_id),
+  constraint elb_employee_tenant_fkey
+    foreign key (employee_id, dealer_id) references public.employees (id, dealer_id) on delete cascade,
+  constraint elb_type_tenant_fkey
+    foreign key (leave_type_id, dealer_id) references public.leave_types (id, dealer_id),
+  constraint elb_amounts_check check (
+    opening >= 0 and accrued >= 0 and used >= 0 and encashed >= 0
+  ),
+  constraint elb_year_check check (financial_year ~ '^[0-9]{4}$')
+);
+
+comment on table public.employee_leave_balances is
+  'Leave entitlement per employee, type and year (spec §12). `used` is written '
+  'by leave approval in the Attendance module; `balance` is derived from the parts.';
+
+create index elb_employee_idx on public.employee_leave_balances (employee_id, financial_year);
+create index elb_dealer_year_idx on public.employee_leave_balances (dealer_id, financial_year);
+
+-- -----------------------------------------------------------------------------
+-- employee_documents — what the dealer holds, and when it runs out
+-- -----------------------------------------------------------------------------
+-- The file itself lives in Supabase Storage; this is the record of it. Expiry is
+-- the column that earns the table: a driving licence or a work permit that has
+-- lapsed is a liability nobody notices until someone looks.
+-- -----------------------------------------------------------------------------
+create table public.employee_documents (
+  id             uuid primary key default gen_random_uuid(),
+  dealer_id      uuid not null references public.dealers (id) on delete restrict,
+  employee_id    uuid not null,
+
+  document_type  text not null,
+  document_name  text not null,
+  document_no    text,
+
+  issued_on      date,
+  expires_on     date,
+
+  -- Object path in Supabase Storage. Never a public URL (spec §47).
+  storage_path   text,
+
+  notes          text,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  created_by     uuid,
+  updated_by     uuid,
+
+  constraint ed_id_dealer_key unique (id, dealer_id),
+  constraint ed_employee_tenant_fkey
+    foreign key (employee_id, dealer_id) references public.employees (id, dealer_id) on delete cascade,
+  constraint ed_type_check check (document_type in (
+    'AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENCE', 'OFFER_LETTER', 'CONTRACT',
+    'EDUCATION', 'EXPERIENCE', 'BANK_PROOF', 'ADDRESS_PROOF', 'PHOTO', 'OTHER'
+  )),
+  constraint ed_dates_check check (expires_on is null or issued_on is null or expires_on >= issued_on),
+  constraint ed_name_check check (length(btrim(document_name)) between 1 and 150)
+);
+
+comment on table public.employee_documents is
+  'Documents held for an employee (spec §46, §47). The file is in Storage; this '
+  'is the register, and expires_on is what makes it worth keeping.';
+
+create index ed_employee_idx on public.employee_documents (employee_id);
+create index ed_expiry_idx on public.employee_documents (dealer_id, expires_on)
+  where expires_on is not null;
+
+-- -----------------------------------------------------------------------------
+-- A salary revision closes the one before it
+-- -----------------------------------------------------------------------------
+-- Kept by trigger rather than asked of the caller: "the previous structure ends
+-- the day before this one starts" is a fact about the data, and a caller who
+-- forgets it leaves two structures live on the same date with no way to say
+-- which one a payslip should use.
+-- -----------------------------------------------------------------------------
+create or replace function app.salary_structures_close_previous()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  update public.employee_salary_structures
+     set effective_to = new.effective_from - 1
+   where employee_id = new.employee_id
+     and id <> new.id
+     and effective_from < new.effective_from
+     and (effective_to is null or effective_to >= new.effective_from);
+
+  -- A revision dated before an existing one is a correction to history, which
+  -- payroll cannot represent: the month it would change may already be paid.
+  if exists (
+    select 1 from public.employee_salary_structures
+     where employee_id = new.employee_id
+       and id <> new.id
+       and effective_from > new.effective_from
+  ) then
+    raise exception
+      'A later salary structure already exists for this employee. Add the revision after it, not before.'
+      using errcode = 'check_violation',
+            hint = 'Spec §15: effective-dated records are appended, never back-dated over.';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger salary_structures_close_previous
+  after insert on public.employee_salary_structures
+  for each row execute function app.salary_structures_close_previous();
+
+-- -----------------------------------------------------------------------------
+-- public.employee_salary_on() — what someone was paid on a given date
+-- -----------------------------------------------------------------------------
+-- The one place that answers "which structure applies", so payroll, a payslip
+-- re-run and the screen can never pick different ones.
+-- -----------------------------------------------------------------------------
+create or replace function public.employee_salary_on(
+  p_employee_id uuid,
+  p_as_on       date default current_date
+)
+returns uuid
+language sql
+stable
+as $$
+  select s.id
+    from public.employee_salary_structures s
+   where s.employee_id = p_employee_id
+     and s.effective_from <= p_as_on
+     and (s.effective_to is null or s.effective_to >= p_as_on)
+   order by s.effective_from desc
+   limit 1;
+$$;
+
+comment on function public.employee_salary_on(uuid, date) is
+  'The salary structure in force for an employee on a date (spec §15, §42). One '
+  'answer, so a payslip and the screen behind it cannot disagree.';
+
+create trigger shifts_set_updated_at before update on public.shifts
+  for each row execute function app.set_updated_at();
+create trigger leave_types_set_updated_at before update on public.leave_types
+  for each row execute function app.set_updated_at();
+create trigger elb_set_updated_at before update on public.employee_leave_balances
+  for each row execute function app.set_updated_at();
+create trigger ed_set_updated_at before update on public.employee_documents
+  for each row execute function app.set_updated_at();
+
+-- Salary is personal data about a colleague; every touch of it is logged (§46).
+create trigger shifts_audit after insert or update or delete on public.shifts
+  for each row execute function app.audit_trigger();
+create trigger leave_types_audit after insert or update or delete on public.leave_types
+  for each row execute function app.audit_trigger();
+create trigger ess_audit after insert or update or delete on public.employee_salary_structures
+  for each row execute function app.audit_trigger();
+create trigger elb_audit after insert or update or delete on public.employee_leave_balances
+  for each row execute function app.audit_trigger();
+create trigger ed_audit after insert or update or delete on public.employee_documents
+  for each row execute function app.audit_trigger();
+
+-- -----------------------------------------------------------------------------
+-- Row Level Security
+-- -----------------------------------------------------------------------------
+-- Shifts and leave types are configuration: anyone who may see the employee
+-- master may read them. Salary and documents are not — they carry personal data
+-- and get permissions of their own, so a branch manager who may see the roster
+-- does not thereby see what everyone is paid (spec §47, §52).
+-- -----------------------------------------------------------------------------
+alter table public.shifts                     enable row level security;
+alter table public.leave_types                enable row level security;
+alter table public.employee_salary_structures enable row level security;
+alter table public.employee_leave_balances    enable row level security;
+alter table public.employee_documents         enable row level security;
+
+create policy shifts_select on public.shifts
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('masters.employees.view'))
+  );
+
+create policy shifts_write on public.shifts
+  for all to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.settings.manage'))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.settings.manage'))
+  );
+
+create policy leave_types_select on public.leave_types
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('masters.employees.view'))
+  );
+
+create policy leave_types_write on public.leave_types
+  for all to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.settings.manage'))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.settings.manage'))
+  );
+
+-- Salary: the permission, or your own. An employee linked to a login may read
+-- their own structure and nobody else's — the row is about them.
+create policy salary_structures_select on public.employee_salary_structures
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and (app.has_permission('hr.salary.view')
+             or exists (
+               select 1 from public.employees e
+                where e.id = employee_salary_structures.employee_id
+                  and e.user_id = auth.uid()
+             )))
+  );
+
+create policy salary_structures_write on public.employee_salary_structures
+  for all to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.salary.manage'))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.salary.manage'))
+  );
+
+create policy leave_balances_select on public.employee_leave_balances
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and (app.has_permission('hr.leave.view')
+             or exists (
+               select 1 from public.employees e
+                where e.id = employee_leave_balances.employee_id
+                  and e.user_id = auth.uid()
+             )))
+  );
+
+create policy leave_balances_write on public.employee_leave_balances
+  for all to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.leave.manage'))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.leave.manage'))
+  );
+
+create policy employee_documents_select on public.employee_documents
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and (app.has_permission('hr.documents.view')
+             or exists (
+               select 1 from public.employees e
+                where e.id = employee_documents.employee_id
+                  and e.user_id = auth.uid()
+             )))
+  );
+
+create policy employee_documents_write on public.employee_documents
+  for all to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.documents.manage'))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.documents.manage'))
+  );
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant select, insert, update, delete on public.shifts to authenticated';
+    execute 'grant select, insert, update, delete on public.leave_types to authenticated';
+    execute 'grant select, insert, update, delete on public.employee_salary_structures to authenticated';
+    execute 'grant select, insert, update, delete on public.employee_leave_balances to authenticated';
+    execute 'grant select, insert, update, delete on public.employee_documents to authenticated';
+    execute 'grant all on public.shifts to service_role';
+    execute 'grant all on public.leave_types to service_role';
+    execute 'grant all on public.employee_salary_structures to service_role';
+    execute 'grant all on public.employee_leave_balances to service_role';
+    execute 'grant all on public.employee_documents to service_role';
+    execute 'grant execute on function public.employee_salary_on(uuid, date) to authenticated';
+  end if;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Permissions
+-- -----------------------------------------------------------------------------
+-- hr.salary.view is marked sensitive: spec §52 requires such fields to be absent
+-- from the API response, not merely hidden, and src/lib/permissions/index.ts
+-- strips them on the way out.
+--
+-- Granted to DEALER_OWNER only. Accounts is deliberately NOT given salary by
+-- default — a dealership's accountant is usually also an employee, and "can see
+-- the ledger" is not the same decision as "can see what colleagues earn". A
+-- dealer who wants it can grant it; the reverse, discovering it was on all
+-- along, is not recoverable.
+-- -----------------------------------------------------------------------------
+insert into public.permissions (code, module, description, is_sensitive) values
+  ('hr.settings.manage',  'hr', 'Manage shifts and leave types',            false),
+  ('hr.salary.view',      'hr', 'View employee salary structures',          true),
+  ('hr.salary.manage',    'hr', 'Set and revise employee salary structures', true),
+  ('hr.leave.view',       'hr', 'View employee leave balances',             false),
+  ('hr.leave.manage',     'hr', 'Set and adjust leave balances',            false),
+  ('hr.documents.view',   'hr', 'View employee documents',                  false),
+  ('hr.documents.manage', 'hr', 'Upload and manage employee documents',     false)
+on conflict (code) do update
+  set module        = excluded.module,
+      description   = excluded.description,
+      is_sensitive  = excluded.is_sensitive;
+
+insert into public.role_permissions (role_id, permission_code)
+select r.id, p.code
+  from public.roles r
+  cross join (values
+    ('hr.settings.manage'), ('hr.salary.view'), ('hr.salary.manage'),
+    ('hr.leave.view'), ('hr.leave.manage'),
+    ('hr.documents.view'), ('hr.documents.manage')
+  ) as p(code)
+ where r.is_system and r.code = 'DEALER_OWNER'
+on conflict do nothing;
+
+-- Accounts runs the roster and the paperwork, but not the pay scale.
+insert into public.role_permissions (role_id, permission_code)
+select r.id, p.code
+  from public.roles r
+  cross join (values
+    ('hr.settings.manage'), ('hr.leave.view'), ('hr.leave.manage'),
+    ('hr.documents.view'), ('hr.documents.manage')
+  ) as p(code)
+ where r.is_system and r.code = 'ACCOUNTS'
+on conflict do nothing;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0054_attendance_integration.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0054 — Attendance, mirrored from an external system
+-- =============================================================================
+-- Spec §12, §40, §46, §47, §48, §50, §52, §59.
+--
+-- The dealer already runs an attendance SaaS. Rebuilding punch-in here would
+-- give them two registers that disagree by lunchtime, so this does not do that:
+-- it MIRRORS the external record into this database and leaves the other system
+-- as the source of truth for who clocked in.
+--
+-- ── Why mirror rather than query live ───────────────────────────────────────
+--
+-- Three reasons, and each on its own would be enough:
+--
+--   1. Payroll has to reproduce March next year. A payslip that depends on a
+--      vendor being reachable — or on the subscription still being paid — is a
+--      payslip that stops existing when the contract ends.
+--   2. Reports have to join attendance to branches, departments and salary
+--      structures. The vendor cannot do that; it does not know what a branch is
+--      here. Spec §59 wants reports reconciling with data held here.
+--   3. A vendor outage must never block payroll. Mirrored data is simply stale,
+--      and "last synced three days ago" is a state a person can act on.
+--
+-- This is the same rule spec §40 sets for the tax portal: build an integration
+-- layer, and never let an external failure corrupt what is already recorded.
+--
+-- ── The one rule that stops the sync fighting a human ───────────────────────
+--
+-- A day corrected by hand is never overwritten by a later sync. Someone who
+-- fixes a missed punch has more information than the device did, and a sync
+-- that silently reverted them would teach everyone to stop correcting anything.
+-- `source` is what carries that: SYNC rows are refreshed, MANUAL rows are left.
+--
+-- Rollback: drop table public.attendance_days, public.attendance_sync_runs;
+--           drop function public.import_attendance_days(uuid, jsonb),
+--                         public.start_attendance_sync(date, date),
+--                         public.finish_attendance_sync(uuid, text, text);
+--           alter table public.employees drop column external_ref;
+--           delete from public.permissions where code like 'hr.attendance%';
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- The join between the two systems
+-- -----------------------------------------------------------------------------
+-- The attendance app has its own id for each person, and it is not ours. This
+-- column is the mapping, and it is the whole integration in one field: without
+-- it every sync would have to guess, and guessing wrong attributes one person's
+-- attendance to another.
+-- -----------------------------------------------------------------------------
+alter table public.employees
+  add column if not exists external_ref text;
+
+comment on column public.employees.external_ref is
+  'This employee''s id in the external attendance system (spec §40). Unique per '
+  'dealer: two employees mapped to one external record would split one person''s '
+  'attendance across both.';
+
+create unique index employees_external_ref_key
+  on public.employees (dealer_id, external_ref)
+  where external_ref is not null;
+
+-- -----------------------------------------------------------------------------
+-- attendance_sync_runs — what was fetched, when, and what went wrong
+-- -----------------------------------------------------------------------------
+-- Modelled on the e-invoice queue (0034, 0048): the attempt is recorded before
+-- the call, so a run that dies mid-flight leaves evidence rather than nothing.
+-- -----------------------------------------------------------------------------
+create table public.attendance_sync_runs (
+  id             uuid primary key default gen_random_uuid(),
+  dealer_id      uuid not null references public.dealers (id) on delete restrict,
+
+  from_date      date not null,
+  to_date        date not null,
+
+  status         text not null default 'RUNNING',
+
+  fetched_count   integer not null default 0,
+  -- Rows whose external_ref matched an employee here.
+  matched_count   integer not null default 0,
+  -- Rows that did not. The count that matters: unmatched attendance is somebody
+  -- whose pay will be wrong, and it is silent unless it is counted.
+  unmatched_count integer not null default 0,
+  written_count   integer not null default 0,
+  -- Days left alone because a person had corrected them by hand.
+  skipped_manual_count integer not null default 0,
+
+  -- For the operator, and for whoever has to ring the vendor.
+  last_error     text,
+  error_detail   jsonb,
+
+  started_at     timestamptz not null default now(),
+  finished_at    timestamptz,
+  triggered_by   uuid,
+
+  constraint asr_id_dealer_key unique (id, dealer_id),
+  constraint asr_status_check check (status in ('RUNNING', 'SUCCESS', 'PARTIAL', 'FAILED')),
+  constraint asr_range_check  check (to_date >= from_date),
+  constraint asr_counts_check check (
+    fetched_count >= 0 and matched_count >= 0 and unmatched_count >= 0
+    and written_count >= 0 and skipped_manual_count >= 0
+  ),
+  -- A finished run says how it finished.
+  constraint asr_finished_check check (
+    status = 'RUNNING' or finished_at is not null
+  )
+);
+
+comment on table public.attendance_sync_runs is
+  'One pull from the external attendance system (spec §40). Its counts are how '
+  'anyone knows whether the mirror is complete, and unmatched_count is the one '
+  'that means somebody''s pay will be wrong.';
+
+create index asr_dealer_started_idx on public.attendance_sync_runs (dealer_id, started_at desc);
+create index asr_status_idx on public.attendance_sync_runs (dealer_id, status);
+
+-- -----------------------------------------------------------------------------
+-- attendance_days — one row per employee per day
+-- -----------------------------------------------------------------------------
+create table public.attendance_days (
+  id              uuid primary key default gen_random_uuid(),
+  dealer_id       uuid not null references public.dealers (id) on delete restrict,
+  branch_id       uuid not null,
+  employee_id     uuid not null,
+
+  attendance_date date not null,
+
+  status          text not null,
+  -- Null when the day was not worked. Times rather than timestamps: the day is
+  -- already known, and a shift that crosses midnight is described by the shift.
+  first_in        time,
+  last_out        time,
+
+  worked_minutes       integer not null default 0,
+  late_minutes         integer not null default 0,
+  early_exit_minutes   integer not null default 0,
+  overtime_minutes     integer not null default 0,
+
+  -- Set when status = 'LEAVE'. Payroll reads leave_types.is_paid through this
+  -- to decide whether the day is paid.
+  leave_type_id   uuid,
+
+  -- SYNC rows are refreshed by the next pull; MANUAL rows are never overwritten.
+  source          text not null default 'SYNC',
+  -- The vendor's own id for the record, so a re-pull updates rather than doubles.
+  external_ref    text,
+  sync_run_id     uuid,
+
+  remarks         text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  created_by      uuid,
+  updated_by      uuid,
+
+  -- One day, one row, one person. This is what makes a re-pull idempotent
+  -- (spec §50) rather than a way to double someone's month.
+  constraint ad_employee_date_key unique (employee_id, attendance_date),
+  constraint ad_id_dealer_key unique (id, dealer_id),
+  constraint ad_employee_tenant_fkey
+    foreign key (employee_id, dealer_id) references public.employees (id, dealer_id) on delete cascade,
+  constraint ad_branch_tenant_fkey
+    foreign key (branch_id, dealer_id) references public.branches (id, dealer_id),
+  constraint ad_leave_type_tenant_fkey
+    foreign key (leave_type_id, dealer_id) references public.leave_types (id, dealer_id),
+  constraint ad_sync_run_tenant_fkey
+    foreign key (sync_run_id, dealer_id) references public.attendance_sync_runs (id, dealer_id),
+
+  constraint ad_status_check check (status in (
+    'PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE', 'WEEK_OFF', 'HOLIDAY'
+  )),
+  constraint ad_source_check check (source in ('SYNC', 'MANUAL')),
+  constraint ad_minutes_check check (
+    worked_minutes between 0 and 1440
+    and late_minutes >= 0 and early_exit_minutes >= 0 and overtime_minutes >= 0
+  ),
+  -- A leave day says which leave; anything else does not pretend to.
+  constraint ad_leave_shape_check check (
+    (status = 'LEAVE' and leave_type_id is not null)
+    or (status <> 'LEAVE' and leave_type_id is null)
+  ),
+  -- A day nobody worked has no clock times to show.
+  constraint ad_times_shape_check check (
+    status in ('PRESENT', 'HALF_DAY') or (first_in is null and last_out is null)
+  )
+);
+
+comment on table public.attendance_days is
+  'The attendance mirror (spec §12, §40). The external system stays the source '
+  'of truth for who clocked in; this is the copy payroll and the reports read, '
+  'so neither depends on that system being reachable.';
+comment on column public.attendance_days.source is
+  'SYNC rows are refreshed by the next pull. MANUAL rows never are: someone who '
+  'corrected a missed punch knew more than the device did.';
+
+create index ad_employee_date_idx on public.attendance_days (employee_id, attendance_date desc);
+create index ad_dealer_date_idx   on public.attendance_days (dealer_id, attendance_date desc);
+create index ad_branch_date_idx   on public.attendance_days (branch_id, attendance_date desc);
+create index ad_run_idx           on public.attendance_days (sync_run_id) where sync_run_id is not null;
+
+create trigger attendance_days_set_updated_at before update on public.attendance_days
+  for each row execute function app.set_updated_at();
+create trigger attendance_days_audit after insert or update or delete on public.attendance_days
+  for each row execute function app.audit_trigger();
+create trigger attendance_sync_runs_audit after insert or update or delete on public.attendance_sync_runs
+  for each row execute function app.audit_trigger();
+
+-- -----------------------------------------------------------------------------
+-- public.start_attendance_sync() — record the attempt before making it
+-- -----------------------------------------------------------------------------
+-- The row exists before the vendor is called, so a run that dies mid-flight
+-- leaves a RUNNING row somebody can see rather than no evidence at all — the
+-- same reason record_einvoice_request() writes before transmission (0048).
+-- -----------------------------------------------------------------------------
+create or replace function public.start_attendance_sync(
+  p_from date,
+  p_to   date
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_dealer uuid := app.current_dealer_id();
+  v_run    uuid;
+begin
+  if v_dealer is null then
+    raise exception 'No dealer in context.' using errcode = 'insufficient_privilege';
+  end if;
+  if p_to < p_from then
+    raise exception 'The end of the range comes before its start.'
+      using errcode = 'check_violation';
+  end if;
+  -- A year at a time is already generous; an unbounded range is how a sync
+  -- becomes a denial of service against the vendor and against this database.
+  if p_to - p_from > 366 then
+    raise exception 'Sync at most a year at a time.' using errcode = 'check_violation';
+  end if;
+
+  insert into public.attendance_sync_runs (dealer_id, from_date, to_date, triggered_by)
+  values (v_dealer, p_from, p_to, auth.uid())
+  returning id into v_run;
+
+  return v_run;
+end;
+$$;
+
+comment on function public.start_attendance_sync(date, date) is
+  'Opens a sync run before the external system is called (spec §40), so a run '
+  'that fails mid-flight leaves evidence rather than silence.';
+
+-- -----------------------------------------------------------------------------
+-- public.import_attendance_days() — the mirror is written here, not by the client
+-- -----------------------------------------------------------------------------
+-- Takes what the vendor returned, already normalised by the client, as:
+--
+--   [{"external_ref": "E-4417", "date": "2026-09-01", "status": "PRESENT",
+--     "first_in": "09:28", "last_out": "18:35", "worked_minutes": 487,
+--     "late_minutes": 0, "record_ref": "att_99182"}, …]
+--
+-- Matching by external_ref only — never by name, and never by a fuzzy guess. An
+-- unmatched row is counted and skipped, because attributing one person's
+-- attendance to another is worse than a gap somebody can see and fix.
+-- -----------------------------------------------------------------------------
+create or replace function public.import_attendance_days(
+  p_run_id uuid,
+  p_rows   jsonb
+)
+returns table (
+  matched        integer,
+  unmatched      integer,
+  written        integer,
+  skipped_manual integer
+)
+language plpgsql
+as $$
+declare
+  v_run       public.attendance_sync_runs;
+  v_row       jsonb;
+  v_emp       record;
+  v_matched   integer := 0;
+  v_unmatched integer := 0;
+  v_written   integer := 0;
+  v_skipped   integer := 0;
+  v_status    text;
+  v_date      date;
+  v_leave     uuid;
+begin
+  select * into v_run from public.attendance_sync_runs where id = p_run_id for update;
+  if v_run.id is null then
+    raise exception 'Sync run not found.' using errcode = 'no_data_found';
+  end if;
+  if v_run.status <> 'RUNNING' then
+    raise exception 'Sync run % has already finished.', p_run_id using errcode = 'check_violation';
+  end if;
+  if jsonb_typeof(p_rows) <> 'array' then
+    raise exception 'Attendance rows must be a list.' using errcode = 'invalid_parameter_value';
+  end if;
+
+  for v_row in select * from jsonb_array_elements(p_rows) loop
+    v_date := (v_row ->> 'date')::date;
+
+    -- Outside the window the run declared is a vendor bug, not data: importing
+    -- it would put rows into a month nobody asked to re-sync.
+    continue when v_date is null or v_date < v_run.from_date or v_date > v_run.to_date;
+
+    select e.id, e.branch_id, e.dealer_id
+      into v_emp
+      from public.employees e
+     where e.dealer_id = v_run.dealer_id
+       and e.external_ref = (v_row ->> 'external_ref');
+
+    if not found then
+      v_unmatched := v_unmatched + 1;
+      continue;
+    end if;
+
+    v_matched := v_matched + 1;
+
+    -- A day someone corrected by hand outranks the device.
+    if exists (
+      select 1 from public.attendance_days d
+       where d.employee_id = v_emp.id
+         and d.attendance_date = v_date
+         and d.source = 'MANUAL'
+    ) then
+      v_skipped := v_skipped + 1;
+      continue;
+    end if;
+
+    v_status := coalesce(upper(v_row ->> 'status'), 'ABSENT');
+    if v_status not in ('PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE', 'WEEK_OFF', 'HOLIDAY') then
+      v_status := 'ABSENT';
+    end if;
+
+    -- Leave arrives as the vendor's own code; it is only usable if this dealer
+    -- has a leave type with that code. Otherwise the day is still recorded —
+    -- just not as leave, because an unmapped leave type would fail the shape
+    -- constraint and lose the whole day.
+    v_leave := null;
+    if v_status = 'LEAVE' then
+      select lt.id into v_leave
+        from public.leave_types lt
+       where lt.dealer_id = v_run.dealer_id
+         and lt.code = upper(coalesce(v_row ->> 'leave_code', ''));
+      if v_leave is null then
+        v_status := 'ABSENT';
+      end if;
+    end if;
+
+    insert into public.attendance_days
+      (dealer_id, branch_id, employee_id, attendance_date, status,
+       first_in, last_out, worked_minutes, late_minutes, early_exit_minutes,
+       overtime_minutes, leave_type_id, source, external_ref, sync_run_id,
+       remarks, created_by)
+    values
+      (v_run.dealer_id, v_emp.branch_id, v_emp.id, v_date, v_status,
+       case when v_status in ('PRESENT', 'HALF_DAY') then (v_row ->> 'first_in')::time end,
+       case when v_status in ('PRESENT', 'HALF_DAY') then (v_row ->> 'last_out')::time end,
+       greatest(coalesce((v_row ->> 'worked_minutes')::integer, 0), 0),
+       greatest(coalesce((v_row ->> 'late_minutes')::integer, 0), 0),
+       greatest(coalesce((v_row ->> 'early_exit_minutes')::integer, 0), 0),
+       greatest(coalesce((v_row ->> 'overtime_minutes')::integer, 0), 0),
+       v_leave, 'SYNC', v_row ->> 'record_ref', p_run_id,
+       v_row ->> 'remarks', auth.uid())
+    on conflict (employee_id, attendance_date) do update
+      set status             = excluded.status,
+          first_in           = excluded.first_in,
+          last_out           = excluded.last_out,
+          worked_minutes     = excluded.worked_minutes,
+          late_minutes       = excluded.late_minutes,
+          early_exit_minutes = excluded.early_exit_minutes,
+          overtime_minutes   = excluded.overtime_minutes,
+          leave_type_id      = excluded.leave_type_id,
+          external_ref       = excluded.external_ref,
+          sync_run_id        = excluded.sync_run_id,
+          remarks            = excluded.remarks,
+          updated_by         = auth.uid();
+
+    v_written := v_written + 1;
+  end loop;
+
+  update public.attendance_sync_runs
+     set fetched_count        = fetched_count + jsonb_array_length(p_rows),
+         matched_count        = matched_count + v_matched,
+         unmatched_count      = unmatched_count + v_unmatched,
+         written_count        = written_count + v_written,
+         skipped_manual_count = skipped_manual_count + v_skipped
+   where id = p_run_id;
+
+  matched := v_matched; unmatched := v_unmatched;
+  written := v_written; skipped_manual := v_skipped;
+  return next;
+end;
+$$;
+
+comment on function public.import_attendance_days(uuid, jsonb) is
+  'Writes a batch of external attendance into the mirror (spec §40, §50). '
+  'Matches on external_ref only; a manually corrected day is never overwritten.';
+
+-- -----------------------------------------------------------------------------
+-- public.finish_attendance_sync() — close the run, however it ended
+-- -----------------------------------------------------------------------------
+create or replace function public.finish_attendance_sync(
+  p_run_id uuid,
+  p_status text,
+  p_error  text default null,
+  p_detail jsonb default null
+)
+returns void
+language plpgsql
+as $$
+begin
+  if p_status not in ('SUCCESS', 'PARTIAL', 'FAILED') then
+    raise exception 'A sync ends SUCCESS, PARTIAL or FAILED; got %.', p_status
+      using errcode = 'check_violation';
+  end if;
+
+  update public.attendance_sync_runs
+     set status       = p_status,
+         last_error   = p_error,
+         error_detail = p_detail,
+         finished_at  = now()
+   where id = p_run_id and status = 'RUNNING';
+end;
+$$;
+
+comment on function public.finish_attendance_sync(uuid, text, text, jsonb) is
+  'Closes a sync run. A vendor failure ends the run FAILED and changes nothing '
+  'that was already mirrored (spec §40).';
+
+-- -----------------------------------------------------------------------------
+-- public.attendance_summary() — days worked, for payroll and the register
+-- -----------------------------------------------------------------------------
+-- The one place that turns days into the figures payroll needs, so the payslip
+-- and the register on screen can never disagree about a month.
+--
+-- Paid leave counts as worked when the leave type says so, which is what
+-- leave_types.counts_as_worked was added for in 0053.
+-- -----------------------------------------------------------------------------
+create or replace function public.attendance_summary(
+  p_from      date,
+  p_to        date,
+  p_branch_id uuid default null
+)
+returns table (
+  employee_id     uuid,
+  employee_code   text,
+  employee_name   text,
+  branch_name     text,
+  present_days    numeric(6, 2),
+  leave_days      numeric(6, 2),
+  paid_leave_days numeric(6, 2),
+  absent_days     integer,
+  week_off_days   integer,
+  holiday_days    integer,
+  payable_days    numeric(6, 2),
+  late_count      integer,
+  overtime_minutes integer,
+  recorded_days   integer
+)
+language sql
+stable
+as $$
+  select e.id, e.employee_code, e.name, b.name,
+         coalesce(sum(case d.status when 'PRESENT' then 1 when 'HALF_DAY' then 0.5 else 0 end), 0),
+         coalesce(sum(case when d.status = 'LEAVE' then 1 else 0 end), 0),
+         coalesce(sum(case when d.status = 'LEAVE' and lt.is_paid then 1 else 0 end), 0),
+         coalesce(sum(case when d.status = 'ABSENT' then 1 else 0 end), 0)::integer,
+         coalesce(sum(case when d.status = 'WEEK_OFF' then 1 else 0 end), 0)::integer,
+         coalesce(sum(case when d.status = 'HOLIDAY' then 1 else 0 end), 0)::integer,
+         -- What payroll pays for: days worked, plus leave the dealer said counts,
+         -- plus the week offs and holidays a monthly salary already covers.
+         coalesce(sum(
+           case d.status
+             when 'PRESENT'  then 1
+             when 'HALF_DAY' then 0.5
+             when 'WEEK_OFF' then 1
+             when 'HOLIDAY'  then 1
+             when 'LEAVE'    then case when lt.counts_as_worked then 1 else 0 end
+             else 0
+           end), 0),
+         coalesce(sum(case when d.late_minutes > 0 then 1 else 0 end), 0)::integer,
+         coalesce(sum(d.overtime_minutes), 0)::integer,
+         count(d.id)::integer
+    from public.employees e
+    join public.branches b on b.id = e.branch_id
+    left join public.attendance_days d
+           on d.employee_id = e.id
+          and d.attendance_date between p_from and p_to
+    left join public.leave_types lt on lt.id = d.leave_type_id
+   where e.status in ('ACTIVE', 'ON_LEAVE')
+     and (p_branch_id is null or e.branch_id = p_branch_id)
+   group by e.id, e.employee_code, e.name, b.name
+   order by e.employee_code;
+$$;
+
+comment on function public.attendance_summary(date, date, uuid) is
+  'Days worked, on leave and payable for a period (spec §12). The one place '
+  'that turns days into what payroll pays for, so nothing can disagree with it.';
+
+-- -----------------------------------------------------------------------------
+-- Row Level Security
+-- -----------------------------------------------------------------------------
+alter table public.attendance_days      enable row level security;
+alter table public.attendance_sync_runs enable row level security;
+
+create policy attendance_days_select on public.attendance_days
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and (
+          (app.can_access_branch(branch_id) and app.has_permission('hr.attendance.view'))
+          -- Everyone may see their own register, which is the record they are
+          -- most entitled to and most likely to spot a mistake in.
+          or exists (
+            select 1 from public.employees e
+             where e.id = attendance_days.employee_id and e.user_id = auth.uid()
+          )
+        ))
+  );
+
+create policy attendance_days_write on public.attendance_days
+  for all to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and (app.has_permission('hr.attendance.edit') or app.has_permission('hr.attendance.sync')))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and (app.has_permission('hr.attendance.edit') or app.has_permission('hr.attendance.sync')))
+  );
+
+create policy attendance_sync_runs_select on public.attendance_sync_runs
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.attendance.view'))
+  );
+
+create policy attendance_sync_runs_write on public.attendance_sync_runs
+  for all to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.attendance.sync'))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('hr.attendance.sync'))
+  );
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant select, insert, update, delete on public.attendance_days to authenticated';
+    execute 'grant select, insert, update, delete on public.attendance_sync_runs to authenticated';
+    execute 'grant all on public.attendance_days to service_role';
+    execute 'grant all on public.attendance_sync_runs to service_role';
+    execute 'grant execute on function public.start_attendance_sync(date, date) to authenticated';
+    execute 'grant execute on function public.import_attendance_days(uuid, jsonb) to authenticated';
+    execute 'grant execute on function public.finish_attendance_sync(uuid, text, text, jsonb) to authenticated';
+    execute 'grant execute on function public.attendance_summary(date, date, uuid) to authenticated';
+  end if;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Permissions
+-- -----------------------------------------------------------------------------
+insert into public.permissions (code, module, description, is_sensitive) values
+  ('hr.attendance.view', 'hr', 'View the attendance register',                    false),
+  ('hr.attendance.sync', 'hr', 'Pull attendance from the external system',        false),
+  ('hr.attendance.edit', 'hr', 'Correct an attendance day by hand',               false),
+  ('hr.mapping.manage',  'hr', 'Map employees to the external attendance system', false)
+on conflict (code) do update
+  set module      = excluded.module,
+      description = excluded.description;
+
+insert into public.role_permissions (role_id, permission_code)
+select r.id, p.code
+  from public.roles r
+  cross join (values
+    ('hr.attendance.view'), ('hr.attendance.sync'), ('hr.attendance.edit'), ('hr.mapping.manage')
+  ) as p(code)
+ where r.is_system and r.code in ('DEALER_OWNER', 'ACCOUNTS')
+on conflict do nothing;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0055_dealer_status_gate.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0055 — A suspended dealer is actually suspended
+-- =============================================================================
+-- Spec §4, §6, §47, §60.3, §60.20.
+--
+-- public.dealers.status has accepted 'ACTIVE', 'SUSPENDED' and 'CLOSED' since
+-- migration 0002. Nothing has ever read it.
+--
+-- app.current_dealer_id() is the function every RLS policy in the schema resolves
+-- the tenant through, and it checks only that the USER is active:
+--
+--     select up.dealer_id from public.user_profiles up
+--      where up.id = auth.uid() and up.status = 'ACTIVE';
+--
+-- So a dealer marked SUSPENDED keeps working exactly as before, for every one of
+-- their users. There is no way to stop serving a tenant — not for non-payment,
+-- not during a dispute, not when they leave. Marking them CLOSED changes a label
+-- and nothing else.
+--
+-- One clause fixes it everywhere at once, which is the point of having a single
+-- tenant-resolution function: 133 policies inherit the change without being
+-- touched.
+--
+-- ── Why this ships on its own ───────────────────────────────────────────────
+--
+-- It alters what every policy in the database returns. That is worth deploying
+-- and verifying by itself rather than inside a larger change, because the
+-- failure mode in the other direction — a wrong predicate here — locks every
+-- tenant out of everything simultaneously.
+--
+-- Platform admins are unaffected: app.is_platform_admin() is a separate check
+-- that does not go through this function, so a suspended dealer can still be
+-- administered, looked at and reactivated.
+--
+-- Rollback: restore app.current_dealer_id() from 0004.
+-- =============================================================================
+
+create or replace function app.current_dealer_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select up.dealer_id
+    from public.user_profiles up
+    join public.dealers d on d.id = up.dealer_id
+   where up.id = auth.uid()
+     and up.status = 'ACTIVE'
+     -- The tenant has to be live too. Without this the status column is a label
+     -- rather than a switch, and there is no way to stop serving a dealer.
+     and d.status = 'ACTIVE';
+$$;
+
+comment on function app.current_dealer_id() is
+  'Tenant of the current session, resolved from the JWT (spec §4). Returns NULL '
+  'for platform admins, unauthenticated callers, inactive users AND suspended or '
+  'closed dealers — so `dealer_id = app.current_dealer_id()` is false for all of '
+  'them, and access ends everywhere at once. Deny by default.';
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0056_dealer_provisioning.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0056 — Provisioning a dealer: onboarding becomes a form, not a SQL script
+-- =============================================================================
+-- Spec §4, §6, §22, §24, §44, §45, §47, §48, §60.3.
+--
+-- Until now the only thing that has ever created a tenant is supabase/seed.sql —
+-- a hand-run script hardcoded to one dealer. Admin → Dealers is read-only and
+-- says so: "Platform administrators provision dealers." Onboarding the second
+-- dealer meant editing SQL and running it against production.
+--
+-- This is that script turned into a function, so onboarding is six fields and a
+-- button.
+--
+-- ── One transaction, or none of it ──────────────────────────────────────────
+--
+-- A half-provisioned tenant is worse than no tenant: the dealer logs in, raises
+-- their first sale, and hits `No accounting rule for SALES/INVOICE/RECEIVABLE` —
+-- a failure they cannot diagnose and nobody else can see. So the whole sequence
+-- is one plpgsql function, and app.dealer_readiness() runs inside it before it
+-- returns. A tenant that would not work never commits (spec §48).
+--
+-- The Supabase invite is deliberately NOT here. It is the one step Postgres
+-- cannot roll back, so the service layer sends it after this commits: the worst
+-- case then is a tenant with no invite sent, which the readiness check shows and
+-- a Resend button fixes. Inside the transaction, a later failure would have
+-- emailed someone a link to a dealership that no longer exists.
+--
+-- ── Rollback ────────────────────────────────────────────────────────────────
+--
+--   failed part-way   the transaction rolls back; nothing was written
+--   created wrongly   public.purge_dealer(), which refuses once anything posted
+--   has traded        status = 'CLOSED' (0055 makes that actually stop access)
+--
+-- Rollback: drop function public.purge_dealer(uuid, text),
+--                         public.dealer_readiness(uuid),
+--                         app.provision_dealer(...), app.seed_chart_of_accounts(uuid).
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- app.seed_chart_of_accounts() — the accounts every dealer starts with
+-- -----------------------------------------------------------------------------
+-- Lifted verbatim from the loop in seed.sql so there is one implementation
+-- rather than two that drift. Group headers are inserted before their children
+-- because parent_id is resolved by code as it goes; `order by code` is what makes
+-- that true, and is load-bearing rather than tidiness.
+-- -----------------------------------------------------------------------------
+create or replace function app.seed_chart_of_accounts(p_dealer_id uuid)
+returns integer
+language plpgsql
+as $$
+declare
+  v_account record;
+  v_parent  uuid;
+  v_added   integer := 0;
+begin
+  for v_account in
+    select * from (values
+      ('1000', 'Assets',                    'ASSET',     'DEBIT',  true,  null,   false),
+      ('1100', 'Cash',                      'ASSET',     'DEBIT',  false, '1000', true),
+      ('1200', 'Bank',                      'ASSET',     'DEBIT',  false, '1000', true),
+      ('1300', 'Customer Receivable',       'ASSET',     'DEBIT',  false, '1000', false),
+      ('1400', 'Finance Receivable',        'ASSET',     'DEBIT',  false, '1000', false),
+      ('1500', 'Vehicle Inventory',         'ASSET',     'DEBIT',  false, '1000', true),
+      ('1600', 'Accessories Inventory',     'ASSET',     'DEBIT',  false, '1000', true),
+      ('1700', 'Spare Inventory',           'ASSET',     'DEBIT',  false, '1000', true),
+      ('1800', 'Other Receivables',         'ASSET',     'DEBIT',  false, '1000', false),
+      ('1900', 'Input CGST',                'ASSET',     'DEBIT',  false, '1000', false),
+      ('1910', 'Input SGST',                'ASSET',     'DEBIT',  false, '1000', false),
+      ('1920', 'Input IGST',                'ASSET',     'DEBIT',  false, '1000', false),
+
+      ('2000', 'Liabilities',               'LIABILITY', 'CREDIT', true,  null,   false),
+      ('2100', 'Customer Advances',         'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2200', 'Supplier Payables',         'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2300', 'Output CGST',               'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2400', 'Output SGST',               'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2500', 'Output IGST',               'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2600', 'Finance Company Payable',   'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2700', 'Other Payables',            'LIABILITY', 'CREDIT', false, '2000', false),
+
+      ('3000', 'Equity',                    'EQUITY',    'CREDIT', true,  null,   false),
+      ('3100', 'Share Capital',             'EQUITY',    'CREDIT', false, '3000', false),
+      ('3200', 'Retained Earnings',         'EQUITY',    'CREDIT', false, '3000', false),
+
+      ('4000', 'Income',                    'INCOME',    'CREDIT', true,  null,   false),
+      ('4100', 'Vehicle Sales',             'INCOME',    'CREDIT', false, '4000', true),
+      ('4200', 'Accessories Sales',         'INCOME',    'CREDIT', false, '4000', true),
+      ('4300', 'Spare Sales',               'INCOME',    'CREDIT', false, '4000', true),
+      ('4400', 'Service Labour',            'INCOME',    'CREDIT', false, '4000', true),
+      ('4500', 'Finance Commission',        'INCOME',    'CREDIT', false, '4000', true),
+      ('4600', 'Insurance Commission',      'INCOME',    'CREDIT', false, '4000', true),
+      ('4700', 'Forwarding Income',         'INCOME',    'CREDIT', false, '4000', true),
+      ('4800', 'Other Income',              'INCOME',    'CREDIT', false, '4000', true),
+
+      ('5000', 'Costs and Expenses',        'EXPENSE',   'DEBIT',  true,  null,   false),
+      ('5100', 'Vehicle COGS',              'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5200', 'Accessories COGS',          'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5300', 'Spare COGS',                'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5400', 'Service Cost',              'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5500', 'Salaries',                  'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5600', 'Rent',                      'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5700', 'Utilities',                 'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5800', 'Bank Charges',              'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5900', 'Other Expenses',            'EXPENSE',   'DEBIT',  false, '5000', true)
+    ) as t(code, name, account_type, normal_balance, is_group, parent_code, branch_scoped)
+    order by code
+  loop
+    v_parent := null;
+    if v_account.parent_code is not null then
+      select id into v_parent from public.chart_of_accounts
+       where dealer_id = p_dealer_id and code = v_account.parent_code;
+    end if;
+
+    insert into public.chart_of_accounts
+      (dealer_id, code, name, account_type, normal_balance, is_group, parent_id,
+       is_system, is_branch_scoped)
+    values
+      (p_dealer_id, v_account.code, v_account.name, v_account.account_type,
+       v_account.normal_balance, v_account.is_group, v_parent, true,
+       v_account.branch_scoped)
+    on conflict on constraint coa_dealer_code_key do nothing;
+
+    if found then v_added := v_added + 1; end if;
+  end loop;
+
+  return v_added;
+end;
+$$;
+
+comment on function app.seed_chart_of_accounts(uuid) is
+  'The accounts a dealer starts with (spec §24). One implementation, shared by '
+  'seed.sql and app.provision_dealer(), so the two cannot drift.';
+
+-- -----------------------------------------------------------------------------
+-- public.dealer_readiness() — can this tenant actually trade?
+-- -----------------------------------------------------------------------------
+-- Provisioning runs this before it commits, and the screen runs it afterwards.
+-- Each row is one thing that must be true before a dealer can raise an invoice;
+-- the accounting-rule check counts rather than merely looks, because the way this
+-- breaks in future is a new seeder nobody added to provisioning.
+-- -----------------------------------------------------------------------------
+create or replace function public.dealer_readiness(p_dealer_id uuid)
+returns table (check_name text, ok boolean, detail text)
+language sql
+stable
+as $$
+  select 'Chart of accounts',
+         count(*) >= 40,
+         count(*) || ' accounts'
+    from public.chart_of_accounts where dealer_id = p_dealer_id
+  union all
+  select 'Control accounts resolvable',
+         count(*) = 4,
+         count(*) || ' of 4 (1100 cash, 1300 receivable, 2200 payable, 1500 vehicle stock)'
+    from public.chart_of_accounts
+   where dealer_id = p_dealer_id and code in ('1100', '1300', '1500', '2200')
+  union all
+  -- 0027 seeds the core, 0042 finance, 0049 accessory cost, 0052 purchases. The
+  -- number rises whenever a migration adds rules; a tenant below it is missing a
+  -- seeder and will fail at posting time rather than here.
+  select 'Accounting rules',
+         count(*) >= 40,
+         count(*) || ' rules across ' || count(distinct module) || ' modules'
+    from public.accounting_rules where dealer_id = p_dealer_id
+  union all
+  select 'Branches',
+         count(*) >= 1,
+         count(*) || ' branch(es)'
+    from public.branches where dealer_id = p_dealer_id
+  union all
+  select 'Cash account per branch',
+         count(*) filter (where c.id is null) = 0,
+         count(*) filter (where c.id is null) || ' branch(es) without one'
+    from public.branches b
+    left join public.cash_accounts c on c.branch_id = b.id
+   where b.dealer_id = p_dealer_id
+  union all
+  select 'Document sequences',
+         count(*) >= 9,
+         count(*) || ' series for the current financial year'
+    from public.document_sequences
+   where dealer_id = p_dealer_id
+     and financial_year = app.financial_year_token(p_dealer_id, current_date)
+  union all
+  select 'Accounting period open',
+         count(*) >= 1,
+         coalesce(min(name), 'none covering today')
+    from public.accounting_periods
+   where dealer_id = p_dealer_id and status = 'OPEN'
+     and current_date between start_date and end_date
+  union all
+  select 'Owner login',
+         count(*) >= 1,
+         count(*) || ' active user(s) with DEALER_OWNER'
+    from public.user_profiles up
+    join public.user_roles ur on ur.user_id = up.id
+    join public.roles r on r.id = ur.role_id
+   where up.dealer_id = p_dealer_id and up.status = 'ACTIVE' and r.code = 'DEALER_OWNER'
+  union all
+  select 'Dealer is active',
+         bool_or(status = 'ACTIVE'),
+         coalesce(min(status), 'missing')
+    from public.dealers where id = p_dealer_id;
+$$;
+
+comment on function public.dealer_readiness(uuid) is
+  'One row per thing that must be true before a dealer can trade (spec §48). Run '
+  'inside provisioning so a tenant that would not work never commits, and on the '
+  'screen afterwards so the state is visible rather than assumed.';
+
+-- -----------------------------------------------------------------------------
+-- app.provision_dealer() — the whole onboarding, as one transaction
+-- -----------------------------------------------------------------------------
+-- Returns the new dealer and branch so the caller can send the invite and show
+-- the readiness report. Raises rather than returning a failure: every failure
+-- here should roll the whole thing back, and an exception is the only way to be
+-- sure a caller cannot ignore one.
+-- -----------------------------------------------------------------------------
+create or replace function app.provision_dealer(
+  p_code            text,
+  p_legal_name      text,
+  p_trade_name      text,
+  p_state           text,
+  p_state_code      text,
+  p_owner_email     text,
+  p_owner_name      text,
+  p_owner_user_id   uuid,
+  p_branch_name     text default 'Head Office',
+  p_gstin           text default null,
+  p_pan             text default null,
+  p_city            text default null,
+  p_phone           text default null,
+  p_fy_start_month  smallint default 4
+)
+returns table (new_dealer_id uuid, new_branch_id uuid, accounts_created integer, rules_created integer)
+language plpgsql
+as $$
+declare
+  v_dealer   uuid;
+  v_branch   uuid;
+  v_accounts integer;
+  v_rules    integer;
+  v_year     text;
+  v_owner    uuid;
+  v_role     uuid;
+  v_fy_start date;
+  v_check    record;
+  v_failed   text;
+begin
+  -- ── 1. Refuse before writing anything ────────────────────────────────────
+  if not app.is_platform_admin() then
+    raise exception 'Only a platform administrator can provision a dealer.'
+      using errcode = 'insufficient_privilege';
+  end if;
+  if coalesce(btrim(p_code), '') = '' or coalesce(btrim(p_legal_name), '') = '' then
+    raise exception 'A dealer needs a code and a legal name.' using errcode = 'check_violation';
+  end if;
+  if coalesce(btrim(p_state_code), '') !~ '^[0-9]{2}$' then
+    -- Not cosmetic: this decides CGST+SGST versus IGST on every invoice the
+    -- dealer will ever raise (spec §16).
+    raise exception 'A two-digit state code is required; got %.', p_state_code
+      using errcode = 'check_violation';
+  end if;
+  if exists (select 1 from public.dealers where upper(code) = upper(btrim(p_code))) then
+    raise exception 'Dealer code % is already taken.', p_code using errcode = 'unique_violation';
+  end if;
+  -- Two tenants sharing a GSTIN would file each other's returns.
+  if p_gstin is not null and exists (
+    select 1 from public.dealers where gstin = upper(btrim(p_gstin))
+  ) then
+    raise exception 'GSTIN % already belongs to another dealer.', p_gstin
+      using errcode = 'unique_violation';
+  end if;
+  if p_owner_user_id is null then
+    raise exception 'The owner''s auth account must exist before provisioning.'
+      using errcode = 'check_violation',
+            hint = 'Create the Supabase Auth user first, then pass its id.';
+  end if;
+  if exists (select 1 from public.user_profiles where id = p_owner_user_id) then
+    raise exception 'That login already belongs to a dealer.' using errcode = 'unique_violation';
+  end if;
+
+  -- ── 2. The dealer ────────────────────────────────────────────────────────
+  insert into public.dealers
+    (code, legal_name, trade_name, gstin, pan, city, state, state_code, phone,
+     email, fy_start_month, status, created_by)
+  values
+    (upper(btrim(p_code)), btrim(p_legal_name), coalesce(nullif(btrim(p_trade_name), ''), btrim(p_legal_name)),
+     upper(nullif(btrim(p_gstin), '')), upper(nullif(btrim(p_pan), '')),
+     nullif(btrim(p_city), ''), btrim(p_state), btrim(p_state_code),
+     nullif(btrim(p_phone), ''), lower(btrim(p_owner_email)),
+     p_fy_start_month, 'ACTIVE', auth.uid())
+  returning id into v_dealer;
+
+  -- ── 3. The first branch ──────────────────────────────────────────────────
+  -- Every sale, receipt and journal is branch-scoped, so a dealer without one
+  -- cannot transact at all.
+  insert into public.branches
+    (dealer_id, code, name, city, state, state_code, phone, status, created_by)
+  values
+    (v_dealer, 'MAIN', coalesce(nullif(btrim(p_branch_name), ''), 'Head Office'),
+     nullif(btrim(p_city), ''), btrim(p_state), btrim(p_state_code),
+     nullif(btrim(p_phone), ''), 'ACTIVE', auth.uid())
+  returning id into v_branch;
+
+  -- ── 4. Chart of accounts ─────────────────────────────────────────────────
+  v_accounts := app.seed_chart_of_accounts(v_dealer);
+
+  -- ── 5. Every accounting-rule seeder ──────────────────────────────────────
+  -- The list that grows. A migration adding rules adds a line here, and the
+  -- readiness check below is the backstop when someone forgets.
+  v_rules := app.seed_default_accounting_rules(v_dealer)
+           + app.seed_finance_accounting_rules(v_dealer)
+           + app.seed_cogs_accounting_rules(v_dealer)
+           + app.seed_purchase_accounting_rules(v_dealer);
+
+  -- ── 6. Document sequences ────────────────────────────────────────────────
+  -- Financial documents only. Identifier sequences — customer, supplier,
+  -- purchase-bill codes — self-provision on first use, deliberately: an
+  -- identifier must never fail for want of setup, a financial document should.
+  v_year := app.financial_year_token(v_dealer, current_date);
+
+  insert into public.document_sequences
+    (dealer_id, branch_id, doc_type, financial_year, prefix, padding)
+  values
+    (v_dealer, null, 'VEHICLE_INVOICE',     v_year, 'INV', 6),
+    (v_dealer, null, 'BOOKING',             v_year, 'BK',  6),
+    (v_dealer, null, 'RECEIPT',             v_year, 'REC', 6),
+    (v_dealer, null, 'PAYMENT',             v_year, 'PAY', 6),
+    (v_dealer, null, 'JOB_CARD',            v_year, 'JC',  6),
+    (v_dealer, null, 'SERVICE_INVOICE',     v_year, 'SVC', 6),
+    (v_dealer, null, 'COUNTER_INVOICE',     v_year, 'CSI', 6),
+    (v_dealer, null, 'JOURNAL',             v_year, 'JE',  6),
+    (v_dealer, null, 'BANK_RECONCILIATION', v_year, 'BRS', 6),
+    (v_dealer, null, 'DELIVERY',            v_year, 'DLV', 6)
+  on conflict on constraint document_sequences_scope_key do nothing;
+
+  -- ── 7. Cash account, and an open accounting period ───────────────────────
+  -- Without a cash account, record_cash_transaction() raises "This branch has no
+  -- cash account" the first time anyone takes money over the counter.
+  perform app.ensure_branch_cash_accounts(v_dealer);
+
+  v_fy_start := make_date(
+    case when extract(month from current_date) >= p_fy_start_month
+         then extract(year from current_date)::int
+         else extract(year from current_date)::int - 1 end,
+    p_fy_start_month, 1);
+
+  insert into public.accounting_periods (dealer_id, name, start_date, end_date, status)
+  values (
+    v_dealer,
+    'FY ' || to_char(v_fy_start, 'YYYY') || '-' || to_char(v_fy_start + interval '1 year' - interval '1 day', 'YY'),
+    v_fy_start,
+    (v_fy_start + interval '1 year' - interval '1 day')::date,
+    'OPEN')
+  on conflict (dealer_id, start_date, end_date) do nothing;
+
+  -- ── 8. The owner ─────────────────────────────────────────────────────────
+  insert into public.user_profiles
+    (id, dealer_id, full_name, email, has_all_branch_access, default_branch_id, status)
+  values
+    (p_owner_user_id, v_dealer, btrim(p_owner_name), lower(btrim(p_owner_email)),
+     true, v_branch, 'ACTIVE')
+  returning id into v_owner;
+
+  -- The system roles are global rows (dealer_id is null), so a new tenant needs
+  -- none of its own — granting the role resolves all 123 permissions.
+  select id into v_role from public.roles where code = 'DEALER_OWNER' and dealer_id is null;
+  if v_role is null then
+    raise exception 'The DEALER_OWNER system role is missing. Run seed.sql first.'
+      using errcode = 'no_data_found';
+  end if;
+
+  insert into public.user_roles (user_id, role_id) values (v_owner, v_role)
+  on conflict do nothing;
+
+  -- ── 9. Refuse to commit a tenant that cannot trade ───────────────────────
+  for v_check in select * from public.dealer_readiness(v_dealer) where not ok loop
+    v_failed := coalesce(v_failed || '; ', '') || v_check.check_name || ' (' || v_check.detail || ')';
+  end loop;
+
+  if v_failed is not null then
+    raise exception 'Provisioning would leave % unable to trade: %', p_code, v_failed
+      using errcode = 'check_violation',
+            hint = 'Nothing was written. Fix the cause and run again.';
+  end if;
+
+  new_dealer_id := v_dealer; new_branch_id := v_branch;
+  accounts_created := v_accounts; rules_created := v_rules;
+  return next;
+end;
+$$;
+
+comment on function app.provision_dealer(text, text, text, text, text, text, text, uuid, text, text, text, text, text, smallint) is
+  'Onboards a dealer in one transaction (spec §48): dealer, branch, chart of '
+  'accounts, every accounting-rule seeder, document sequences, cash account, '
+  'accounting period and owner. Refuses to commit a tenant that cannot trade. '
+  'The invite email is sent by the caller AFTER this commits — it is the one '
+  'step that cannot be rolled back.';
+
+-- -----------------------------------------------------------------------------
+-- public.purge_dealer() — undo an onboarding, while that is still honest
+-- -----------------------------------------------------------------------------
+-- For a tenant created by mistake. It refuses outright once anything has been
+-- posted, rather than asking for confirmation: a posted journal is a statutory
+-- record, it stays the dealer's whether or not they are still a customer, and a
+-- confirmation dialog is a thing people click through.
+--
+-- The delete order below is the one scripts/remove-demo-dealer.sql works out —
+-- 23 tables reference dealers with ON DELETE RESTRICT and 18 cascade, so a bare
+-- `delete from dealers` fails immediately.
+-- -----------------------------------------------------------------------------
+create or replace function public.purge_dealer(
+  p_dealer_id uuid,
+  p_reason    text
+)
+returns void
+language plpgsql
+as $$
+declare
+  v_code text;
+begin
+  if not app.is_platform_admin() then
+    raise exception 'Only a platform administrator can purge a dealer.'
+      using errcode = 'insufficient_privilege';
+  end if;
+  if coalesce(btrim(p_reason), '') = '' then
+    raise exception 'Purging a dealer requires a reason.' using errcode = 'check_violation';
+  end if;
+
+  select code into v_code from public.dealers where id = p_dealer_id;
+  if v_code is null then
+    raise exception 'Dealer not found.' using errcode = 'no_data_found';
+  end if;
+
+  -- The hard stop.
+  if exists (
+    select 1 from public.journal_entries
+     where dealer_id = p_dealer_id and status in ('POSTED', 'REVERSED')
+  ) then
+    raise exception
+      'Dealer % has posted journals and cannot be purged. Close it instead.', v_code
+      using errcode = 'insufficient_privilege',
+            hint = 'A posted ledger is a statutory record. Set status to CLOSED.';
+  end if;
+
+  -- Recorded before the rows go, because afterwards there is nothing to point at.
+  insert into public.audit_logs
+    (dealer_id, user_id, action, entity_type, entity_id, new_data, changed_fields)
+  values
+    (p_dealer_id, auth.uid(), 'DELETE', 'dealers', p_dealer_id::text,
+     jsonb_build_object('code', v_code, 'reason', btrim(p_reason)), array['purged']);
+
+  -- RESTRICT-referencing children first, deepest last-written first. Everything
+  -- else cascades from public.dealers.
+  delete from public.journal_entry_lines where dealer_id = p_dealer_id;
+  delete from public.journal_entries      where dealer_id = p_dealer_id;
+  delete from public.inventory_transactions where dealer_id = p_dealer_id;
+  delete from public.vehicle_stock_transactions where dealer_id = p_dealer_id;
+  delete from public.cash_transactions    where dealer_id = p_dealer_id;
+  delete from public.bank_transactions    where dealer_id = p_dealer_id;
+  delete from public.user_roles ur using public.user_profiles up
+   where ur.user_id = up.id and up.dealer_id = p_dealer_id;
+  delete from public.user_branches        where dealer_id = p_dealer_id;
+  delete from public.user_profiles        where dealer_id = p_dealer_id;
+  delete from public.accounting_rules     where dealer_id = p_dealer_id;
+  -- Cash and bank accounts point AT the chart of accounts, so they go first;
+  -- deleting the accounts underneath them fails on the ledger foreign key.
+  delete from public.cash_accounts        where dealer_id = p_dealer_id;
+  delete from public.bank_accounts        where dealer_id = p_dealer_id;
+  -- Children before parents: the chart is self-referencing through parent_id.
+  delete from public.chart_of_accounts    where dealer_id = p_dealer_id and parent_id is not null;
+  delete from public.chart_of_accounts    where dealer_id = p_dealer_id;
+  delete from public.branches             where dealer_id = p_dealer_id;
+  delete from public.dealers              where id = p_dealer_id;
+end;
+$$;
+
+comment on function public.purge_dealer(uuid, text) is
+  'Deletes a mis-created tenant (spec §60.3). Refuses once any journal is POSTED '
+  'or REVERSED — that ledger is the dealer''s statutory record. The owner''s '
+  'Supabase Auth account survives and must be removed separately.';
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant execute on function public.dealer_readiness(uuid) to authenticated';
+    execute 'grant execute on function public.purge_dealer(uuid, text) to authenticated';
+    execute 'grant execute on function app.provision_dealer(text, text, text, text, text, text, text, uuid, text, text, text, text, text, smallint) to authenticated';
+    execute 'grant execute on function app.seed_chart_of_accounts(uuid) to authenticated';
+  end if;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- public.provision_dealer() — the RPC surface
+-- -----------------------------------------------------------------------------
+-- PostgREST exposes `public` only, and app.provision_dealer() is where the work
+-- lives (the app schema is where privileged machinery belongs, as with
+-- app.post_journal). This is the thin wrapper the application calls.
+-- -----------------------------------------------------------------------------
+create or replace function public.provision_dealer(
+  p_code            text,
+  p_legal_name      text,
+  p_trade_name      text,
+  p_state           text,
+  p_state_code      text,
+  p_owner_email     text,
+  p_owner_name      text,
+  p_owner_user_id   uuid,
+  p_branch_name     text default 'Head Office',
+  p_gstin           text default null,
+  p_pan             text default null,
+  p_city            text default null,
+  p_phone           text default null,
+  p_fy_start_month  smallint default 4
+)
+returns table (new_dealer_id uuid, new_branch_id uuid, accounts_created integer, rules_created integer)
+language sql
+as $$
+  select * from app.provision_dealer(
+    p_code, p_legal_name, p_trade_name, p_state, p_state_code,
+    p_owner_email, p_owner_name, p_owner_user_id, p_branch_name,
+    p_gstin, p_pan, p_city, p_phone, p_fy_start_month);
+$$;
+
+comment on function public.provision_dealer(text, text, text, text, text, text, text, uuid, text, text, text, text, text, smallint) is
+  'Onboards a dealer (spec §48). Thin wrapper over app.provision_dealer() so '
+  'PostgREST can reach it; the permission check lives in the inner function.';
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant execute on function public.provision_dealer(text, text, text, text, text, text, text, uuid, text, text, text, text, text, smallint) to authenticated';
+  end if;
+end;
+$$;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SOURCE: supabase/migrations/0057_purchase_returns.sql
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- =============================================================================
+-- 0057 — Purchase returns: the debit note that sends bought stock back
+-- =============================================================================
+-- Spec §21, §22, §23, §24, §28, §29, §34, §41, §44, §45, §48, §50, §59, §60.22.
+--
+-- The hole this fills. 0052 gave the dealer a way to bring stock in and 0051
+-- gave the customer a way to send it back out. Between them there is nothing
+-- pointing at the supplier. Goods arrive damaged, the wrong variant is sent, a
+-- carton is short — and today the only tool for any of it is
+-- cancel_purchase_bill(), which reverses the WHOLE bill. So a dealer returning
+-- three floor mats out of a bill of two hundred lines has to reverse the entire
+-- consignment and re-key it, or leave the mats on the books for ever and let
+-- inventory drift away from the shelf.
+--
+-- ── What a debit note is, and what it is not ────────────────────────────────
+--
+-- Cancelling a bill says "this purchase never happened". A return says "this
+-- purchase happened, and some of it is going back". They are different facts and
+-- the ledger has to be able to state both:
+--
+--     cancel_purchase_bill()   whole bill, reversal of the original journal
+--     post_purchase_return()   part of a bill, a new journal of its own
+--
+-- The return is the mirror of the bill, line for line:
+--
+--     Dr  2200 Supplier Payables   (party-tagged)      total
+--         Cr  1500 / 1600 / 1700   inventory                    at cost
+--         Cr  1900 / 1910 / 1920   input GST reversed           ITC given back
+--
+-- It resolves the SAME accounting rules the purchase used (INVENTORY/PURCHASE)
+-- and flips the side, rather than gaining rules of its own. That is deliberate:
+-- a return has to relieve the very accounts the purchase raised, and a separate
+-- mapping is a way for one dealer's misconfiguration to leave inventory
+-- overstated for ever with a balanced journal to prove it.
+--
+-- ── Where the money goes ────────────────────────────────────────────────────
+--
+-- Nowhere, here. The debit note reduces what is owed; it does not move cash.
+-- Posted, it becomes an unapplied DEBIT on the supplier's ledger, which is
+-- exactly what 0050's bill-wise settlement was built to consume — knock it off
+-- the bill it came from, or off the next one. If the supplier actually sends
+-- money back, that is a cash or bank receipt tagged to the supplier (0041) and
+-- allocated against this note, and it goes through the book that itemises it
+-- like every other movement. Inventing a second money path here would put a
+-- receipt in the ledger that the cash book had never heard of.
+--
+-- ── A returned vehicle is not a cancelled one ───────────────────────────────
+--
+-- Sending a chassis back needs it out of stock, and the obvious move — reusing
+-- CANCELLED — is wrong twice over. It reads as "this record was a mistake" when
+-- the truth is "this vehicle went back to the manufacturer", and CANCELLED is
+-- terminal by design (0017), so reversing the return could never bring the
+-- vehicle back. So vehicles gain RETURNED, whose only exit is back to IN_STOCK
+-- when the note is reversed. The lifecycle stays a closed set of legal moves.
+--
+-- The chassis stays on its purchase bill line, and the unique index there means
+-- it can never be billed again. That is correct: it was bought once, and it left.
+--
+-- Rollback: drop function public.post_purchase_return(uuid, jsonb, text, date, text, text);
+--           drop function public.cancel_purchase_return(uuid, text);
+--           drop function public.returnable_purchase_lines(uuid);
+--           drop table public.purchase_return_lines, public.purchase_returns;
+--           drop function app.purchase_returns_assign_number(), app.purchase_returns_guard();
+--           restore app.vehicles_log_movement() and app.vehicles_guard_status() from 0036/0017;
+--           alter table public.vehicles drop constraint vehicles_status_check, re-add without RETURNED;
+--           delete from public.document_sequences where doc_type = 'PURCHASE_RETURN';
+--           delete from public.permissions where code = 'purchases.return';
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- A bill line becomes addressable by a composite tenant key
+-- -----------------------------------------------------------------------------
+-- Every foreign key in this schema carries (id, dealer_id) so it cannot cross a
+-- tenant boundary even if the application asks it to. purchase_bill_lines had
+-- never been the target of one; it is now.
+-- -----------------------------------------------------------------------------
+alter table public.purchase_bill_lines
+  add constraint pbl_id_dealer_key unique (id, dealer_id);
+
+-- -----------------------------------------------------------------------------
+-- vehicles.status gains RETURNED
+-- -----------------------------------------------------------------------------
+alter table public.vehicles drop constraint vehicles_status_check;
+alter table public.vehicles add constraint vehicles_status_check check (status in (
+  'IN_STOCK', 'BOOKED', 'SOLD_PENDING_DELIVERY', 'DELIVERED', 'TRANSFERRED',
+  'RETURNED', 'CANCELLED'
+));
+
+-- The lifecycle guard from 0017, with the two new moves. IN_STOCK is the only
+-- way in, because a vehicle that is booked, sold or in transit is not the
+-- dealer's to send back; IN_STOCK is the only way out, and only a reversal of
+-- the debit note takes it.
+create or replace function app.vehicles_guard_status()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_allowed text[];
+begin
+  if tg_op = 'INSERT' then
+    if new.status <> 'IN_STOCK' then
+      raise exception 'A vehicle enters stock as IN_STOCK, not %.', new.status
+        using errcode = 'check_violation';
+    end if;
+    return new;
+  end if;
+
+  if new.status = old.status then
+    return new;
+  end if;
+
+  v_allowed := case old.status
+    when 'IN_STOCK'              then array['BOOKED', 'SOLD_PENDING_DELIVERY', 'TRANSFERRED', 'RETURNED', 'CANCELLED']
+    when 'BOOKED'                then array['IN_STOCK', 'SOLD_PENDING_DELIVERY', 'CANCELLED']
+    when 'SOLD_PENDING_DELIVERY' then array['DELIVERED', 'IN_STOCK', 'CANCELLED']
+    when 'TRANSFERRED'           then array['IN_STOCK', 'CANCELLED']
+    -- Sent back to the supplier. Comes back only if the debit note is reversed.
+    when 'RETURNED'              then array['IN_STOCK']
+    -- Terminal. A delivered vehicle is the customer's; a cancelled one is out.
+    when 'DELIVERED'             then array[]::text[]
+    when 'CANCELLED'             then array[]::text[]
+    else array[]::text[]
+  end;
+
+  if not (new.status = any (v_allowed)) then
+    raise exception 'Vehicle % cannot move from % to %.', old.chassis_no, old.status, new.status
+      using errcode = 'check_violation',
+            hint = 'Spec §13 defines the vehicle status lifecycle.';
+  end if;
+
+  return new;
+end;
+$$;
+
+-- The stock ledger has to label the two new movements. Everything else is
+-- exactly as 0036 left it: the trigger stays the sole writer of the log, and the
+-- causing document still arrives in app.vehicle_movement_ref.
+create or replace function app.vehicles_log_movement()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_ref  text;
+  v_type text;
+  v_id   uuid;
+begin
+  if tg_op = 'INSERT' then
+    insert into public.vehicle_stock_transactions
+      (dealer_id, branch_id, vehicle_id, transaction_type, to_status, to_branch_id, value, created_by)
+    values (new.dealer_id, new.branch_id, new.id, 'PURCHASE', new.status, new.branch_id,
+            new.purchase_cost, new.created_by);
+    return null;
+  end if;
+
+  if new.status is distinct from old.status or new.branch_id is distinct from old.branch_id then
+    v_ref := nullif(current_setting('app.vehicle_movement_ref', true), '');
+    if v_ref is not null then
+      v_type := split_part(v_ref, ':', 1);
+      v_id   := nullif(split_part(v_ref, ':', 2), '')::uuid;
+    end if;
+
+    insert into public.vehicle_stock_transactions
+      (dealer_id, branch_id, vehicle_id, transaction_type,
+       from_status, to_status, from_branch_id, to_branch_id, value,
+       reference_type, reference_id, created_by)
+    values (new.dealer_id, new.branch_id, new.id,
+            case
+              -- The branch moved, so the unit has arrived somewhere.
+              when new.branch_id is distinct from old.branch_id then 'TRANSFER_IN'
+              -- On its way: out of the source branch's stock, not yet anywhere.
+              when new.status = 'TRANSFERRED'                    then 'TRANSFER_OUT'
+              -- Back to the supplier, and back again if the note is reversed.
+              when new.status = 'RETURNED'                       then 'RETURN'
+              when old.status = 'RETURNED'                       then 'REVERSAL'
+              when old.status in ('SOLD_PENDING_DELIVERY', 'DELIVERED')
+                   and new.status = 'IN_STOCK'                   then 'RETURN'
+              else 'STATUS_CHANGE'
+            end,
+            old.status, new.status, old.branch_id, new.branch_id, new.purchase_cost,
+            v_type, v_id, new.updated_by);
+  end if;
+
+  return null;
+end;
+$$;
+
+comment on function app.vehicles_log_movement() is
+  'Sole writer of the vehicle stock ledger (spec §34). Labels transfers, sale '
+  'returns and purchase returns from the status pair, and takes the causing '
+  'document from the transaction-local setting app.vehicle_movement_ref.';
+
+-- -----------------------------------------------------------------------------
+-- purchase_returns — the debit note
+-- -----------------------------------------------------------------------------
+create table public.purchase_returns (
+  id               uuid primary key default gen_random_uuid(),
+  dealer_id        uuid not null references public.dealers (id) on delete restrict,
+  branch_id        uuid not null,
+
+  return_number    text not null,
+  -- The bill the goods came in on. A return always has one: what is being sent
+  -- back was bought at a price, on a date, at a tax rate, and those are the
+  -- figures the credit has to use.
+  purchase_bill_id uuid not null,
+  -- Denormalised from the bill so the supplier's own list is one index lookup.
+  -- The posting function is the only writer and copies it from the bill.
+  supplier_id      uuid not null,
+
+  return_date      date not null default current_date,
+  -- Their credit note number, when they have issued one. Not unique: a supplier
+  -- may not have raised it yet, and two may reuse a number.
+  supplier_ref     text,
+
+  status           text not null default 'DRAFT',
+
+  -- Why. Required, because a debit note without one is unexplainable a year
+  -- later, and it is written onto the accounting narration (spec §23).
+  reason           text not null,
+
+  taxable_value    numeric(18, 4) not null default 0,
+  cgst_amount      numeric(18, 4) not null default 0,
+  sgst_amount      numeric(18, 4) not null default 0,
+  igst_amount      numeric(18, 4) not null default 0,
+  total_amount     numeric(18, 4) not null default 0,
+
+  notes            text,
+  journal_entry_id uuid,
+  -- A duplicate submission returns the first note rather than sending the goods
+  -- back twice (spec §50). Supplied by the browser, one per dialog.
+  idempotency_key  text,
+
+  posted_at        timestamptz,
+  posted_by        uuid,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  created_by       uuid,
+  updated_by       uuid,
+
+  constraint purchase_returns_number_key    unique (dealer_id, return_number),
+  constraint purchase_returns_id_dealer_key unique (id, dealer_id),
+  constraint purchase_returns_idempotency_key unique (dealer_id, idempotency_key),
+
+  constraint purchase_returns_branch_tenant_fkey
+    foreign key (branch_id, dealer_id) references public.branches (id, dealer_id),
+  constraint purchase_returns_bill_tenant_fkey
+    foreign key (purchase_bill_id, dealer_id) references public.purchase_bills (id, dealer_id),
+  constraint purchase_returns_supplier_tenant_fkey
+    foreign key (supplier_id, dealer_id) references public.suppliers (id, dealer_id),
+  constraint purchase_returns_journal_tenant_fkey
+    foreign key (journal_entry_id, dealer_id) references public.journal_entries (id, dealer_id),
+
+  constraint purchase_returns_status_check check (status in ('DRAFT', 'POSTED', 'CANCELLED')),
+  constraint purchase_returns_reason_check check (length(btrim(reason)) between 1 and 500),
+  constraint purchase_returns_amounts_check check (
+    taxable_value >= 0 and cgst_amount >= 0 and sgst_amount >= 0
+    and igst_amount >= 0 and total_amount >= 0
+  ),
+  constraint purchase_returns_posted_stamp_check check (
+    status <> 'POSTED' or (posted_at is not null and journal_entry_id is not null)
+  )
+);
+
+comment on table public.purchase_returns is
+  'Debit note against a purchase bill (spec §24, §34, §41). Takes part of a '
+  'consignment back off the books at the cost it came in at, reverses its input '
+  'GST and reduces what is owed to the supplier.';
+comment on column public.purchase_returns.status is
+  'DRAFT exists only inside post_purchase_return(), which creates the note and '
+  'posts it in one transaction. Nothing in the product leaves one in DRAFT.';
+
+create index purchase_returns_bill_idx     on public.purchase_returns (purchase_bill_id);
+create index purchase_returns_supplier_idx on public.purchase_returns (supplier_id, return_date desc);
+create index purchase_returns_dealer_idx   on public.purchase_returns (dealer_id, return_date desc);
+create index purchase_returns_branch_idx   on public.purchase_returns (branch_id, return_date desc);
+create index purchase_returns_status_idx   on public.purchase_returns (dealer_id, status);
+
+-- -----------------------------------------------------------------------------
+-- purchase_return_lines — what is going back, and off which bill line
+-- -----------------------------------------------------------------------------
+-- Every line points at the bill line it reverses. That is what makes "how much
+-- of this line is still returnable" answerable, and it carries the rate and the
+-- tax split forward so the credit is at the price actually paid rather than at
+-- whatever the item costs today.
+-- -----------------------------------------------------------------------------
+create table public.purchase_return_lines (
+  id                   uuid primary key default gen_random_uuid(),
+  purchase_return_id   uuid not null,
+  dealer_id            uuid not null,
+  purchase_bill_line_id uuid not null,
+
+  line_number    smallint not null,
+  line_type      text not null,
+
+  vehicle_id     uuid,
+  item_id        uuid,
+  source         text,
+
+  description    text not null,
+  quantity       numeric(18, 3) not null,
+  unit_rate      numeric(18, 4) not null,
+
+  taxable_value  numeric(18, 4) not null,
+  cgst_amount    numeric(18, 4) not null default 0,
+  sgst_amount    numeric(18, 4) not null default 0,
+  igst_amount    numeric(18, 4) not null default 0,
+  total_amount   numeric(18, 4) not null,
+
+  created_at     timestamptz not null default now(),
+
+  constraint prl_return_line_key unique (purchase_return_id, line_number),
+  constraint prl_return_tenant_fkey
+    foreign key (purchase_return_id, dealer_id)
+    references public.purchase_returns (id, dealer_id) on delete cascade,
+  constraint prl_bill_line_tenant_fkey
+    foreign key (purchase_bill_line_id, dealer_id)
+    references public.purchase_bill_lines (id, dealer_id),
+  constraint prl_vehicle_tenant_fkey
+    foreign key (vehicle_id, dealer_id) references public.vehicles (id, dealer_id),
+  constraint prl_item_tenant_fkey
+    foreign key (item_id, dealer_id) references public.inventory_items (id, dealer_id),
+
+  constraint prl_type_check check (line_type in ('VEHICLE', 'ACCESSORY', 'SPARE')),
+  constraint prl_source_check check (source is null or source in ('LOCAL', 'COMPANY')),
+  -- The same shapes the bill line has: a chassis goes back whole, a counted item
+  -- goes back from the lot it joined (spec §28).
+  constraint prl_shape_check check (
+    (line_type = 'VEHICLE'
+       and vehicle_id is not null and item_id is null and source is null and quantity = 1)
+    or (line_type <> 'VEHICLE'
+       and item_id is not null and vehicle_id is null and source is not null and quantity > 0)
+  ),
+  constraint prl_amounts_check check (
+    unit_rate >= 0 and taxable_value >= 0 and total_amount >= 0
+    and cgst_amount >= 0 and sgst_amount >= 0 and igst_amount >= 0
+  ),
+  constraint prl_tax_split_check check (
+    (igst_amount = 0) or (cgst_amount = 0 and sgst_amount = 0)
+  ),
+  constraint prl_line_number_check check (line_number > 0)
+);
+
+comment on table public.purchase_return_lines is
+  'What is going back to the supplier, against the bill line it came in on '
+  '(spec §34). Priced at the bill''s rate, never at today''s cost.';
+
+-- One chassis goes back once. A second note for the same vehicle is a duplicate,
+-- and the returnable-quantity check would already have refused it — this makes
+-- it impossible rather than merely checked (spec §49, §50).
+create unique index purchase_return_lines_vehicle_key
+  on public.purchase_return_lines (vehicle_id) where vehicle_id is not null;
+
+create index purchase_return_lines_return_idx on public.purchase_return_lines (purchase_return_id);
+create index purchase_return_lines_bill_line_idx on public.purchase_return_lines (purchase_bill_line_id);
+create index purchase_return_lines_item_idx on public.purchase_return_lines (item_id) where item_id is not null;
+
+-- -----------------------------------------------------------------------------
+-- The note's number, issued by the database
+-- -----------------------------------------------------------------------------
+create or replace function app.purchase_returns_assign_number()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_year text;
+begin
+  if new.return_number is not null and btrim(new.return_number) <> '' then
+    return new;
+  end if;
+
+  v_year := app.financial_year_token(new.dealer_id, coalesce(new.return_date, current_date));
+
+  insert into public.document_sequences (dealer_id, branch_id, doc_type, financial_year, prefix, padding)
+  values (new.dealer_id, null, 'PURCHASE_RETURN', v_year, 'PR', 6)
+  on conflict on constraint document_sequences_scope_key do nothing;
+
+  new.return_number := app.next_document_number(new.dealer_id, null, 'PURCHASE_RETURN', v_year);
+  return new;
+end;
+$$;
+
+create trigger purchase_returns_assign_number
+  before insert on public.purchase_returns
+  for each row execute function app.purchase_returns_assign_number();
+
+-- -----------------------------------------------------------------------------
+-- A posted note is immutable, and no note is ever deleted
+-- -----------------------------------------------------------------------------
+create or replace function app.purchase_returns_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'Purchase return % cannot be deleted.', old.return_number
+      using errcode = 'insufficient_privilege',
+            hint = 'Spec §23: corrections use reversal, not deletion.';
+  end if;
+
+  -- A note is born as a draft, the same way a journal is (0007). Declaring one
+  -- POSTED on the way in would put a document on the supplier's ledger that
+  -- moved no stock and wrote no journal.
+  if tg_op = 'INSERT' then
+    if new.status <> 'DRAFT' then
+      raise exception 'A purchase return is created as DRAFT and posted by post_purchase_return(); got %.',
+        new.status using errcode = 'check_violation';
+    end if;
+    return new;
+  end if;
+
+  -- DRAFT exists only for the moment inside post_purchase_return() between
+  -- writing the note and posting its journal. A note reaching POSTED by any
+  -- other route would carry no stock movements and no accounting: the journal
+  -- named has to be one that points back at this very note.
+  if old.status = 'DRAFT' and new.status = 'POSTED' then
+    if not exists (
+      select 1 from public.journal_entries je
+       where je.id = new.journal_entry_id
+         and je.source_document_type = 'PURCHASE_RETURN'
+         and je.source_document_id = new.id
+    ) then
+      raise exception 'A purchase return is posted by post_purchase_return(), not by hand.'
+        using errcode = 'insufficient_privilege';
+    end if;
+  end if;
+
+  if old.status = 'POSTED' then
+    -- Only the cancellation the reverse path writes may change.
+    if not (new.status = 'CANCELLED'
+            and (to_jsonb(new) - 'status' - 'notes' - 'updated_at' - 'updated_by')
+                = (to_jsonb(old) - 'status' - 'notes' - 'updated_at' - 'updated_by')) then
+      raise exception 'Purchase return % is POSTED and immutable.', old.return_number
+        using errcode = 'insufficient_privilege',
+              hint = 'Spec §23: reverse it instead of editing.';
+    end if;
+  end if;
+
+  if old.status = 'CANCELLED' and new.status <> 'CANCELLED' then
+    raise exception 'Purchase return % is reversed and cannot be reopened.', old.return_number
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  return new;
+end;
+$$;
+
+-- INSERT is guarded too: the status a note is born with is as load-bearing as
+-- the ones it may move to.
+create trigger purchase_returns_guard
+  before insert or update or delete on public.purchase_returns
+  for each row execute function app.purchase_returns_guard();
+
+-- Lines are written once, by the posting function, inside the transaction that
+-- creates the note. Nothing edits them afterwards.
+create trigger purchase_return_lines_append_only
+  before update or delete on public.purchase_return_lines
+  for each row execute function app.forbid_mutation();
+
+create trigger purchase_returns_set_updated_at
+  before update on public.purchase_returns
+  for each row execute function app.set_updated_at();
+
+create trigger purchase_returns_audit
+  after insert or update or delete on public.purchase_returns
+  for each row execute function app.audit_trigger();
+
+-- -----------------------------------------------------------------------------
+-- Row Level Security
+-- -----------------------------------------------------------------------------
+alter table public.purchase_returns      enable row level security;
+alter table public.purchase_return_lines enable row level security;
+
+create policy purchase_returns_select on public.purchase_returns
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and app.has_permission('purchases.view'))
+  );
+
+create policy purchase_returns_insert on public.purchase_returns
+  for insert to authenticated
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and app.has_permission('purchases.return'))
+  );
+
+-- The DRAFT → POSTED flip inside the posting function, and the cancellation.
+-- The guard above decides what an update may actually contain.
+create policy purchase_returns_update on public.purchase_returns
+  for update to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and (app.has_permission('purchases.return') or app.has_permission('purchases.cancel')))
+  )
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and app.can_access_branch(branch_id)
+        and (app.has_permission('purchases.return') or app.has_permission('purchases.cancel')))
+  );
+
+-- Deliberately no delete policy: a debit note is a document, not a draft.
+
+create policy purchase_return_lines_select on public.purchase_return_lines
+  for select to authenticated
+  using (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id()
+        and exists (
+          select 1 from public.purchase_returns r
+           where r.id = purchase_return_lines.purchase_return_id
+             and app.can_access_branch(r.branch_id)
+        )
+        and app.has_permission('purchases.view'))
+  );
+
+create policy purchase_return_lines_insert on public.purchase_return_lines
+  for insert to authenticated
+  with check (
+    app.is_platform_admin()
+    or (dealer_id = app.current_dealer_id() and app.has_permission('purchases.return'))
+  );
+
+-- -----------------------------------------------------------------------------
+-- public.returnable_purchase_lines() — what is left to send back
+-- -----------------------------------------------------------------------------
+-- Billed, less everything already returned on posted notes. Invoker-rights, so
+-- it shows only what the caller's branches and permissions already allow.
+-- -----------------------------------------------------------------------------
+create or replace function public.returnable_purchase_lines(p_bill_id uuid)
+returns table (
+  bill_line_id        uuid,
+  line_number         smallint,
+  line_type           text,
+  description         text,
+  source              text,
+  chassis_no          text,
+  item_code           text,
+  vehicle_status      text,
+  billed_quantity     numeric(18, 3),
+  returned_quantity   numeric(18, 3),
+  returnable_quantity numeric(18, 3),
+  unit_rate           numeric(18, 4),
+  cgst_rate           numeric(6, 3),
+  sgst_rate           numeric(6, 3),
+  igst_rate           numeric(6, 3)
+)
+language sql
+stable
+as $$
+  select l.id, l.line_number, l.line_type, l.description, l.source,
+         v.chassis_no, i.item_code, v.status,
+         l.quantity,
+         coalesce(r.returned, 0)::numeric(18, 3),
+         (l.quantity - coalesce(r.returned, 0))::numeric(18, 3),
+         l.unit_rate, l.cgst_rate, l.sgst_rate, l.igst_rate
+    from public.purchase_bill_lines l
+    left join public.vehicles v on v.id = l.vehicle_id
+    left join public.inventory_items i on i.id = l.item_id
+    left join lateral (
+      select sum(rl.quantity) as returned
+        from public.purchase_return_lines rl
+        join public.purchase_returns pr on pr.id = rl.purchase_return_id
+       where rl.purchase_bill_line_id = l.id
+         and pr.status = 'POSTED'
+    ) r on true
+   where l.purchase_bill_id = p_bill_id
+   order by l.line_number;
+$$;
+
+comment on function public.returnable_purchase_lines(uuid) is
+  'Bill lines with how much of each has already gone back (spec §34), so a '
+  'debit note cannot return more than arrived.';
+
+-- -----------------------------------------------------------------------------
+-- public.post_purchase_return() — the debit note, in one transaction
+-- -----------------------------------------------------------------------------
+-- Spec §48: the note, its lines, the stock movements and the journal all commit
+-- together or not at all. p_lines is [{ "bill_line_id": uuid, "quantity": n }].
+-- -----------------------------------------------------------------------------
+create or replace function public.post_purchase_return(
+  p_bill_id         uuid,
+  p_lines           jsonb,
+  p_reason          text,
+  p_return_date     date default current_date,
+  p_supplier_ref    text default null,
+  p_idempotency_key text default null
+)
+returns table (
+  return_id     uuid,
+  return_number text,
+  entry_id      uuid,
+  total         numeric(18, 4)
+)
+language plpgsql
+as $$
+declare
+  v_bill        public.purchase_bills;
+  v_return      public.purchase_returns;
+  v_line        public.purchase_bill_lines;
+  v_req         jsonb;
+  v_veh         record;
+  v_account     uuid;
+  v_entry       uuid;
+  v_index       smallint := 0;
+  v_qty         numeric(18, 3);
+  v_returned    numeric(18, 3);
+  v_ret_taxable numeric(18, 4);
+  v_ret_cgst    numeric(18, 4);
+  v_ret_sgst    numeric(18, 4);
+  v_ret_igst    numeric(18, 4);
+  v_taxable     numeric(18, 4);
+  v_cgst        numeric(18, 4);
+  v_sgst        numeric(18, 4);
+  v_igst        numeric(18, 4);
+  v_share       numeric;
+  v_sum_taxable numeric(18, 4) := 0;
+  v_sum_cgst    numeric(18, 4) := 0;
+  v_sum_sgst    numeric(18, 4) := 0;
+  v_sum_igst    numeric(18, 4) := 0;
+  v_sum_total   numeric(18, 4) := 0;
+  v_entries     jsonb := '[]'::jsonb;
+begin
+  if p_reason is null or btrim(p_reason) = '' then
+    raise exception 'A purchase return requires a reason.'
+      using errcode = 'check_violation',
+            hint = 'Spec §23: the reason is part of the record, not optional.';
+  end if;
+  if jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) = 0 then
+    raise exception 'Choose at least one line to send back.'
+      using errcode = 'check_violation';
+  end if;
+
+  -- Locked for the rest of the transaction, so two notes against the same bill
+  -- cannot each believe the same quantity is still returnable (spec §49).
+  select * into v_bill from public.purchase_bills where id = p_bill_id for update;
+
+  if v_bill.id is null then
+    raise exception 'Purchase bill not found.' using errcode = 'no_data_found';
+  end if;
+  if v_bill.status <> 'POSTED' then
+    raise exception
+      'Purchase bill % is % — only a posted bill has stock on the books to send back.',
+      v_bill.bill_number, v_bill.status using errcode = 'check_violation';
+  end if;
+
+  -- A repeated submission returns the note the first one wrote rather than
+  -- sending the goods back twice (spec §50).
+  if p_idempotency_key is not null then
+    select * into v_return from public.purchase_returns
+     where dealer_id = v_bill.dealer_id and idempotency_key = p_idempotency_key;
+    if v_return.id is not null then
+      return query select v_return.id, v_return.return_number,
+                          v_return.journal_entry_id, v_return.total_amount;
+      return;
+    end if;
+  end if;
+
+  insert into public.purchase_returns
+    (dealer_id, branch_id, purchase_bill_id, supplier_id, return_date,
+     supplier_ref, reason, idempotency_key, created_by)
+  values
+    (v_bill.dealer_id, v_bill.branch_id, p_bill_id, v_bill.supplier_id,
+     coalesce(p_return_date, current_date), nullif(btrim(p_supplier_ref), ''),
+     btrim(p_reason), p_idempotency_key, auth.uid())
+  returning * into v_return;
+
+  -- ── Every line: what goes back, off the books, and out of stock ───────────
+  for v_req in select value from jsonb_array_elements(p_lines) loop
+    v_index := v_index + 1;
+
+    select * into v_line from public.purchase_bill_lines
+     where id = (v_req->>'bill_line_id')::uuid
+       and purchase_bill_id = p_bill_id;
+
+    if v_line.id is null then
+      raise exception 'A line being returned is not on bill %.', v_bill.bill_number
+        using errcode = 'no_data_found';
+    end if;
+
+    v_qty := round(coalesce((v_req->>'quantity')::numeric, 0), 3);
+    if v_qty <= 0 then
+      raise exception 'Line % has nothing to return. Enter a quantity above zero.',
+        v_line.line_number using errcode = 'check_violation';
+    end if;
+
+    -- What has already gone back on this bill line, and at what value. Both are
+    -- needed: the quantity to cap this note, the value so the last return of a
+    -- line takes the exact remainder rather than a rounded share of it.
+    select coalesce(sum(rl.quantity), 0), coalesce(sum(rl.taxable_value), 0),
+           coalesce(sum(rl.cgst_amount), 0), coalesce(sum(rl.sgst_amount), 0),
+           coalesce(sum(rl.igst_amount), 0)
+      into v_returned, v_ret_taxable, v_ret_cgst, v_ret_sgst, v_ret_igst
+      from public.purchase_return_lines rl
+      join public.purchase_returns pr on pr.id = rl.purchase_return_id
+     where rl.purchase_bill_line_id = v_line.id
+       and pr.status = 'POSTED';
+
+    if v_qty > v_line.quantity - v_returned then
+      raise exception
+        'Line % has % of % left to return; % is more than arrived.',
+        v_line.line_number, v_line.quantity - v_returned, v_line.quantity, v_qty
+        using errcode = 'check_violation';
+    end if;
+
+    if v_qty = v_line.quantity - v_returned then
+      -- The remainder, exactly. Rounding cannot accumulate across part returns
+      -- and leave a few paise of stock on the books for ever.
+      v_taxable := v_line.taxable_value - v_ret_taxable;
+      v_cgst    := v_line.cgst_amount   - v_ret_cgst;
+      v_sgst    := v_line.sgst_amount   - v_ret_sgst;
+      v_igst    := v_line.igst_amount   - v_ret_igst;
+    else
+      v_share   := v_qty / v_line.quantity;
+      v_taxable := round(v_line.taxable_value * v_share, 4);
+      v_cgst    := round(v_line.cgst_amount   * v_share, 4);
+      v_sgst    := round(v_line.sgst_amount   * v_share, 4);
+      v_igst    := round(v_line.igst_amount   * v_share, 4);
+    end if;
+
+    if v_line.line_type = 'VEHICLE' then
+      if v_qty <> 1 then
+        raise exception 'A vehicle goes back whole; % of one cannot be returned.', v_qty
+          using errcode = 'check_violation';
+      end if;
+
+      select id, status, chassis_no into v_veh
+        from public.vehicles where id = v_line.vehicle_id for update;
+
+      if v_veh.id is null then
+        raise exception 'The vehicle on line % no longer exists.', v_line.line_number
+          using errcode = 'no_data_found';
+      end if;
+      -- Booked, sold or in transit, it is not the dealer's to send back.
+      if v_veh.status <> 'IN_STOCK' then
+        raise exception
+          'Chassis % is % — only a vehicle still in stock can go back to the supplier.',
+          v_veh.chassis_no, v_veh.status using errcode = 'check_violation';
+      end if;
+
+      -- The RETURN ledger row is written by app.vehicles_log_movement(), which
+      -- reads this setting to record what the movement was for.
+      perform set_config('app.vehicle_movement_ref', 'PURCHASE_RETURN:' || v_return.id, true);
+      update public.vehicles
+         set status = 'RETURNED', updated_by = auth.uid()
+       where id = v_line.vehicle_id;
+      perform set_config('app.vehicle_movement_ref', '', true);
+
+      v_account := app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE',
+                                       'VEHICLE_INVENTORY', v_bill.branch_id);
+    else
+      -- Out of the lot it joined, never merged with the other one (spec §28,
+      -- §60.16). The movement is what reduces the quantity (spec §34), and the
+      -- trigger on inventory_transactions refuses to drive the lot negative.
+      insert into public.inventory_transactions
+        (dealer_id, branch_id, item_id, source, transaction_type, quantity, unit_cost,
+         reference_type, reference_id, reference_number, narration, reason, created_by)
+      values
+        (v_bill.dealer_id, v_bill.branch_id, v_line.item_id, v_line.source, 'RETURN',
+         -v_qty, round(v_taxable / v_qty, 4),
+         'PURCHASE_RETURN', v_return.id, v_return.return_number,
+         'Returned to supplier on ' || v_return.return_number, btrim(p_reason), auth.uid());
+
+      v_account := app.require_account(
+        v_bill.dealer_id, 'INVENTORY', 'PURCHASE',
+        case when v_line.line_type = 'ACCESSORY' then 'ACCESSORY_INVENTORY'
+             else 'SPARE_INVENTORY' end,
+        v_bill.branch_id);
+    end if;
+
+    insert into public.purchase_return_lines
+      (purchase_return_id, dealer_id, purchase_bill_line_id, line_number, line_type,
+       vehicle_id, item_id, source, description, quantity, unit_rate,
+       taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount)
+    values
+      (v_return.id, v_bill.dealer_id, v_line.id, v_index, v_line.line_type,
+       v_line.vehicle_id, v_line.item_id, v_line.source, v_line.description,
+       v_qty, v_line.unit_rate,
+       v_taxable, v_cgst, v_sgst, v_igst, v_taxable + v_cgst + v_sgst + v_igst);
+
+    -- The credit that takes it off the balance sheet, at the cost it came in at.
+    v_entries := v_entries || jsonb_build_object(
+      'account_id', v_account, 'debit', 0, 'credit', v_taxable,
+      'narration', 'Returned: ' || v_line.description);
+
+    v_sum_taxable := v_sum_taxable + v_taxable;
+    v_sum_cgst    := v_sum_cgst + v_cgst;
+    v_sum_sgst    := v_sum_sgst + v_sgst;
+    v_sum_igst    := v_sum_igst + v_igst;
+  end loop;
+
+  v_sum_total := v_sum_taxable + v_sum_cgst + v_sum_sgst + v_sum_igst;
+
+  if v_sum_total <= 0 then
+    raise exception 'This return comes to nothing. Check the quantities.'
+      using errcode = 'check_violation';
+  end if;
+
+  -- ── Input GST goes back too: credit that is no longer claimable ───────────
+  if v_sum_cgst > 0 then
+    v_entries := v_entries || jsonb_build_object(
+      'account_id', app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE', 'INPUT_CGST', v_bill.branch_id),
+      'debit', 0, 'credit', v_sum_cgst, 'narration', 'Input CGST reversed ' || v_return.return_number);
+  end if;
+  if v_sum_sgst > 0 then
+    v_entries := v_entries || jsonb_build_object(
+      'account_id', app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE', 'INPUT_SGST', v_bill.branch_id),
+      'debit', 0, 'credit', v_sum_sgst, 'narration', 'Input SGST reversed ' || v_return.return_number);
+  end if;
+  if v_sum_igst > 0 then
+    v_entries := v_entries || jsonb_build_object(
+      'account_id', app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE', 'INPUT_IGST', v_bill.branch_id),
+      'debit', 0, 'credit', v_sum_igst, 'narration', 'Input IGST reversed ' || v_return.return_number);
+  end if;
+
+  -- ── And the one debit: what the dealer no longer owes ─────────────────────
+  -- Party-tagged, so it lands on the supplier's own ledger as an open debit that
+  -- bill-wise settlement (0050) can knock off the bill it came from.
+  v_entries := v_entries || jsonb_build_object(
+    'account_id', app.require_account(v_bill.dealer_id, 'INVENTORY', 'PURCHASE', 'PAYABLE', v_bill.branch_id),
+    'debit', v_sum_total, 'credit', 0,
+    'narration', 'Debit note ' || v_return.return_number || ' on ' || v_bill.supplier_bill_number,
+    'party_type', 'SUPPLIER', 'party_id', v_bill.supplier_id);
+
+  update public.purchase_returns
+     set taxable_value = v_sum_taxable,
+         cgst_amount   = v_sum_cgst,
+         sgst_amount   = v_sum_sgst,
+         igst_amount   = v_sum_igst,
+         total_amount  = v_sum_total
+   where id = v_return.id;
+
+  v_entry := app.post_journal(
+    v_bill.dealer_id, v_bill.branch_id, coalesce(p_return_date, current_date), 'INVENTORY',
+    'Purchase return ' || v_return.return_number || ' — ' || v_bill.bill_number,
+    v_entries,
+    'PURCHASE_RETURN', v_return.id,
+    'purchase-return:' || v_return.id::text
+  );
+
+  update public.purchase_returns
+     set status = 'POSTED', journal_entry_id = v_entry,
+         posted_at = now(), posted_by = auth.uid(), updated_by = auth.uid()
+   where id = v_return.id;
+
+  return query select v_return.id, v_return.return_number, v_entry, v_sum_total;
+end;
+$$;
+
+comment on function public.post_purchase_return(uuid, jsonb, text, date, text, text) is
+  'Sends part of a purchase bill back to the supplier (spec §21, §34, §48): '
+  'stock out at the cost it came in at, input GST reversed, and the payable '
+  'reduced on the supplier''s ledger. Idempotent (spec §50).';
+
+-- -----------------------------------------------------------------------------
+-- public.cancel_purchase_return() — the note itself was wrong
+-- -----------------------------------------------------------------------------
+-- The goods never went, or went on the wrong note. The journal is reversed by a
+-- second entry, the stock comes back into the lot it left, and a returned
+-- chassis returns to stock. The note stays on the record (spec §23).
+-- -----------------------------------------------------------------------------
+create or replace function public.cancel_purchase_return(
+  p_return_id uuid,
+  p_reason    text
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_return public.purchase_returns;
+  v_line   record;
+  v_entry  uuid;
+begin
+  if p_reason is null or btrim(p_reason) = '' then
+    raise exception 'Reversing a purchase return requires a reason.'
+      using errcode = 'check_violation',
+            hint = 'Spec §23: the reason is part of the record, not optional.';
+  end if;
+
+  select * into v_return from public.purchase_returns where id = p_return_id for update;
+
+  if v_return.id is null then
+    raise exception 'Purchase return not found.' using errcode = 'no_data_found';
+  end if;
+  if v_return.status <> 'POSTED' then
+    raise exception 'Purchase return % is % and cannot be reversed.',
+      v_return.return_number, v_return.status using errcode = 'check_violation';
+  end if;
+
+  v_entry := app.reverse_journal(v_return.journal_entry_id, btrim(p_reason), current_date);
+
+  for v_line in
+    select * from public.purchase_return_lines
+     where purchase_return_id = p_return_id
+     order by line_number
+  loop
+    if v_line.line_type = 'VEHICLE' then
+      perform set_config('app.vehicle_movement_ref', 'PURCHASE_RETURN:' || p_return_id, true);
+      update public.vehicles
+         set status = 'IN_STOCK', updated_by = auth.uid()
+       where id = v_line.vehicle_id;
+      perform set_config('app.vehicle_movement_ref', '', true);
+    else
+      insert into public.inventory_transactions
+        (dealer_id, branch_id, item_id, source, transaction_type, quantity, unit_cost,
+         reference_type, reference_id, reference_number, narration, reason, created_by)
+      values
+        (v_return.dealer_id, v_return.branch_id, v_line.item_id, v_line.source, 'REVERSAL',
+         v_line.quantity, round(v_line.taxable_value / v_line.quantity, 4),
+         'PURCHASE_RETURN', p_return_id, v_return.return_number,
+         'Reversed ' || v_return.return_number, btrim(p_reason), auth.uid());
+    end if;
+  end loop;
+
+  update public.purchase_returns
+     set status = 'CANCELLED', updated_by = auth.uid(),
+         notes = coalesce(notes || E'\n', '') || 'Reversed: ' || btrim(p_reason)
+   where id = p_return_id;
+
+  return v_entry;
+end;
+$$;
+
+comment on function public.cancel_purchase_return(uuid, text) is
+  'Reverses a posted debit note (spec §23): a second journal undoes the first '
+  'and the stock comes back into the lot it left.';
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant select, insert, update on public.purchase_returns to authenticated';
+    execute 'grant select, insert on public.purchase_return_lines to authenticated';
+    execute 'grant all on public.purchase_returns to service_role';
+    execute 'grant all on public.purchase_return_lines to service_role';
+    execute 'grant execute on function public.returnable_purchase_lines(uuid) to authenticated';
+    execute 'grant execute on function public.post_purchase_return(uuid, jsonb, text, date, text, text) to authenticated';
+    execute 'grant execute on function public.cancel_purchase_return(uuid, text) to authenticated';
+  end if;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Permissions
+-- -----------------------------------------------------------------------------
+-- Separate from purchases.create: entering what arrived and deciding that some
+-- of it goes back are different authorities, and the second one moves stock off
+-- the books (spec §6).
+-- -----------------------------------------------------------------------------
+insert into public.permissions (code, module, description, is_sensitive) values
+  ('purchases.return', 'purchases', 'Return purchased stock to a supplier (debit note)', false)
+on conflict (code) do update
+  set module      = excluded.module,
+      description = excluded.description;
+
+insert into public.role_permissions (role_id, permission_code)
+select r.id, 'purchases.return'
+  from public.roles r
+ where r.is_system and r.code in ('DEALER_OWNER', 'ACCOUNTS')
+on conflict do nothing;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- SOURCE: supabase/seed.sql
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -13896,6 +18373,23 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('accounting.journals.reverse',     'accounting', 'Reverse a posted journal entry', false),
   ('accounting.periods.manage',       'accounting', 'Open, close and lock accounting periods', false),
   ('accounting.ledgers.view',         'accounting', 'View customer, supplier and finance ledgers', false),
+  ('accounting.allocations.manage',   'accounting', 'Split payments against bills and settle party ledgers', false),
+  ('purchases.view',                  'purchases',  'View purchase bills', false),
+  ('purchases.create',                'purchases',  'Create and edit draft purchase bills', false),
+  ('purchases.post',                  'purchases',  'Post a purchase bill to the accounts', false),
+  ('purchases.cancel',                'purchases',  'Cancel or reverse a purchase bill', false),
+  ('purchases.return',                'purchases',  'Return purchased stock to a supplier (debit note)', false),
+  ('hr.settings.manage',              'hr',         'Manage shifts and leave types', false),
+  ('hr.salary.view',                  'hr',         'View employee salary structures', true),
+  ('hr.salary.manage',                'hr',         'Set and revise employee salary structures', true),
+  ('hr.leave.view',                   'hr',         'View employee leave balances', false),
+  ('hr.leave.manage',                 'hr',         'Set and adjust leave balances', false),
+  ('hr.documents.view',               'hr',         'View employee documents', false),
+  ('hr.documents.manage',             'hr',         'Upload and manage employee documents', false),
+  ('hr.attendance.view',              'hr',         'View the attendance register', false),
+  ('hr.attendance.sync',              'hr',         'Pull attendance from the external system', false),
+  ('hr.attendance.edit',              'hr',         'Correct an attendance day by hand', false),
+  ('hr.mapping.manage',               'hr',         'Map employees to the external attendance system', false),
   ('accounting.reports.view',         'accounting', 'View trial balance, P&L and balance sheet', false),
 
   ('cashbook.view',                   'cashbook',   'View the daily cash book', false),
@@ -14001,7 +18495,7 @@ select r.id, p.code
   cross join public.permissions p
  where r.code = 'ACCOUNTS'
    and (
-        p.module in ('accounting', 'cashbook', 'bank', 'gst', 'reports', 'masters', 'inventory', 'vehicles', 'finance')
+        p.module in ('accounting', 'cashbook', 'bank', 'gst', 'reports', 'masters', 'inventory', 'vehicles', 'finance', 'purchases')
      or p.code in (
           'dashboard.view', 'dashboard.view_consolidated', 'dashboard.view_margin',
           'sales.view', 'sales.verify', 'sales.approve', 'sales.post', 'sales.cancel',
@@ -14010,7 +18504,12 @@ select r.id, p.code
           'customers.view', 'customers.view_ledger',
           'service.jobcards.view', 'service.history.view',
           'admin.audit.view', 'admin.settings.view', 'admin.settings.manage',
-          'admin.branches.view', 'admin.users.view'
+          'admin.branches.view', 'admin.users.view',
+          -- HR paperwork and the roster, but deliberately not the pay scale:
+          -- the accountant is usually an employee too (see migration 0053).
+          'hr.settings.manage', 'hr.leave.view', 'hr.leave.manage',
+          'hr.documents.view', 'hr.documents.manage',
+          'hr.attendance.view', 'hr.attendance.sync', 'hr.attendance.edit', 'hr.mapping.manage'
         )
    );
 
@@ -14229,6 +18728,9 @@ begin
       ('1600', 'Accessories Inventory',     'ASSET',     'DEBIT',  false, '1000', true),
       ('1700', 'Spare Inventory',           'ASSET',     'DEBIT',  false, '1000', true),
       ('1800', 'Other Receivables',         'ASSET',     'DEBIT',  false, '1000', false),
+      ('1900', 'Input CGST',                'ASSET',     'DEBIT',  false, '1000', false),
+      ('1910', 'Input SGST',                'ASSET',     'DEBIT',  false, '1000', false),
+      ('1920', 'Input IGST',                'ASSET',     'DEBIT',  false, '1000', false),
 
       ('2000', 'Liabilities',               'LIABILITY', 'CREDIT', true,  null,   false),
       ('2100', 'Customer Advances',         'LIABILITY', 'CREDIT', false, '2000', false),
@@ -14289,6 +18791,7 @@ begin
   perform app.seed_default_accounting_rules(v_dealer_id);
   perform app.seed_finance_accounting_rules(v_dealer_id);
   perform app.seed_cogs_accounting_rules(v_dealer_id);
+  perform app.seed_purchase_accounting_rules(v_dealer_id);
 
   -- ── One cash account per branch (spec §36) ────────────────────────────────
   -- Here rather than with the branches above, because a cash account needs a
@@ -14324,6 +18827,8 @@ begin
          (v_dealer_id, null, 'JOB_CARD',            v_fy, 'JC',  6),
          (v_dealer_id, null, 'SERVICE_INVOICE',     v_fy, 'SVC', 6),
          (v_dealer_id, null, 'COUNTER_INVOICE',     v_fy, 'CSI', 6),
+         (v_dealer_id, null, 'PURCHASE_BILL',       v_fy, 'PB',  6),
+         (v_dealer_id, null, 'PURCHASE_RETURN',     v_fy, 'PR',  6),
          (v_dealer_id, null, 'JOURNAL',             v_fy, 'JE',  6),
          (v_dealer_id, null, 'BANK_RECONCILIATION', v_fy, 'BRS', 6),
          (v_dealer_id, null, 'STOCK_TRANSFER',      v_fy, 'TRF', 6),
