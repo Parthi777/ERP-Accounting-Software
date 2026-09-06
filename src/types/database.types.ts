@@ -996,6 +996,58 @@ type PurchaseBillsRow = {
 
 type PurchaseBillsRowInsert = Insertable<PurchaseBillsRow, 'dealer_id' | 'branch_id' | 'supplier_bill_number' | 'supplier_id'>;
 
+type PurchaseReturnLinesRow = {
+  id: string;
+  purchase_return_id: string;
+  dealer_id: string;
+  purchase_bill_line_id: string;
+  line_number: number;
+  line_type: 'VEHICLE' | 'ACCESSORY' | 'SPARE';
+  vehicle_id: string | null;
+  item_id: string | null;
+  source: 'LOCAL' | 'COMPANY' | null;
+  description: string;
+  quantity: string;
+  unit_rate: string;
+  taxable_value: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  created_at: string;
+};
+
+type PurchaseReturnLinesRowInsert = Insertable<PurchaseReturnLinesRow, 'purchase_return_id' | 'dealer_id' | 'purchase_bill_line_id' | 'line_number' | 'line_type' | 'description' | 'quantity' | 'unit_rate' | 'taxable_value' | 'total_amount'>;
+
+type PurchaseReturnsRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  return_number: string;
+  purchase_bill_id: string;
+  supplier_id: string;
+  return_date: string;
+  supplier_ref: string | null;
+  status: 'DRAFT' | 'POSTED' | 'CANCELLED';
+  reason: string;
+  taxable_value: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  notes: string | null;
+  journal_entry_id: string | null;
+  idempotency_key: string | null;
+  posted_at: string | null;
+  posted_by: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type PurchaseReturnsRowInsert = Insertable<PurchaseReturnsRow, 'dealer_id' | 'branch_id' | 'purchase_bill_id' | 'supplier_id' | 'reason'>;
+
 type RolePermissionsRow = {
   role_id: string;
   permission_code: string;
@@ -1455,7 +1507,7 @@ type VehiclesRow = {
   purchase_date: string | null;
   purchase_cost: string;
   stock_date: string;
-  status: 'IN_STOCK' | 'BOOKED' | 'SOLD_PENDING_DELIVERY' | 'DELIVERED' | 'TRANSFERRED' | 'CANCELLED';
+  status: 'IN_STOCK' | 'BOOKED' | 'SOLD_PENDING_DELIVERY' | 'DELIVERED' | 'TRANSFERRED' | 'RETURNED' | 'CANCELLED';
   sale_id: string | null;
   registration_no: string | null;
   created_at: string;
@@ -2635,6 +2687,83 @@ export interface Database {
           },
         ];
       };
+      purchase_return_lines: {
+        Row: PurchaseReturnLinesRow;
+        Insert: PurchaseReturnLinesRowInsert;
+        Update: Partial<PurchaseReturnLinesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'prl_bill_line_tenant_fkey';
+            columns: ['purchase_bill_line_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_bill_lines';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'prl_item_tenant_fkey';
+            columns: ['item_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'inventory_items';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'prl_return_tenant_fkey';
+            columns: ['purchase_return_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_returns';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'prl_vehicle_tenant_fkey';
+            columns: ['vehicle_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'vehicles';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      purchase_returns: {
+        Row: PurchaseReturnsRow;
+        Insert: PurchaseReturnsRowInsert;
+        Update: Partial<PurchaseReturnsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'purchase_returns_bill_tenant_fkey';
+            columns: ['purchase_bill_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_bills';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'purchase_returns_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'purchase_returns_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'purchase_returns_journal_tenant_fkey';
+            columns: ['journal_entry_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'journal_entries';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'purchase_returns_supplier_tenant_fkey';
+            columns: ['supplier_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'suppliers';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       role_permissions: {
         Row: RolePermissionsRow;
         Insert: RolePermissionsRowInsert;
@@ -3245,6 +3374,10 @@ export interface Database {
         Args: { p_bill_id: string; p_reason: string };
         Returns: string;
       };
+      cancel_purchase_return: {
+        Args: { p_return_id: string; p_reason: string };
+        Returns: string;
+      };
       cash_book: {
         Args: { p_branch_id: string; p_date?: string | null };
         Returns: { transaction_time: string; reference_number: string; particular: string; receipt: string; payment: string; running_balance: string; journal_entry_id: string }[];
@@ -3421,6 +3554,10 @@ export interface Database {
         Args: { p_bill_id: string; p_idempotency_key?: string | null };
         Returns: string;
       };
+      post_purchase_return: {
+        Args: { p_bill_id: string; p_lines: Json; p_reason: string; p_return_date?: string | null; p_supplier_ref?: string | null; p_idempotency_key?: string | null };
+        Returns: { return_id: string; return_number: string; entry_id: string; total: string }[];
+      };
       post_service_invoice: {
         Args: { p_invoice_id: string; p_idempotency_key?: string | null };
         Returns: string;
@@ -3508,6 +3645,10 @@ export interface Database {
       return_vehicle_sale: {
         Args: { p_sale_id: string; p_reason: string; p_refund_mode?: string | null; p_refund_amount?: number | null; p_bank_account_id?: string | null; p_reference?: string | null; p_date?: string | null };
         Returns: { reversal_entry_id: string; refund_entry_id: string; refunded: string; credit_left: string }[];
+      };
+      returnable_purchase_lines: {
+        Args: { p_bill_id: string };
+        Returns: { bill_line_id: string; line_number: number; line_type: string; description: string; source: string; chassis_no: string; item_code: string; vehicle_status: string; billed_quantity: string; returned_quantity: string; returnable_quantity: string; unit_rate: string; cgst_rate: string; sgst_rate: string; igst_rate: string }[];
       };
       sales_summary: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null; p_group_by?: string | null };

@@ -1,6 +1,6 @@
 # Permissions
 
-103 permission codes across 15 modules. Defined once in `src/lib/permissions/registry.ts`, seeded
+124 permission codes across 17 modules. Defined once in `src/lib/permissions/registry.ts`, seeded
 into `public.permissions`, and kept in step by `npm run check:permissions`.
 
 Authorization is **permission-based, never role-name-based**. No check anywhere asks "is this user a
@@ -21,7 +21,7 @@ a dealer can define its own without a code change (spec §6).
 
 ## Restricted permissions
 
-Seven codes gate cost, margin, profit and commission:
+Nine codes gate cost, margin, profit, pay and commission:
 
 | Code | Gates |
 |---|---|
@@ -29,6 +29,8 @@ Seven codes gate cost, margin, profit and commission:
 | `sales.view_cost` | Purchase cost and COGS on a sale |
 | `vehicles.view_cost` | Vehicle purchase cost |
 | `inventory.view_cost` | Item purchase cost |
+| `hr.salary.view` | Employee salary structures |
+| `hr.salary.manage` | Setting and revising pay |
 | `finance.commission.view` | Finance commission income |
 | `reports.margin.view` | Margin reports |
 | `reports.profitability.view` | Profitability reports |

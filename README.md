@@ -3,13 +3,13 @@
 Multi-tenant, accounting-first ERP for two-wheeler dealers. Built to the specification in
 [CLAUDE.md](CLAUDE.md).
 
-**Status: all eight phases built.** Every module in the specification has a working screen — 70
+**Status: all eight phases built.** Every module in the specification has a working screen — 75
 navigable routes, none of them placeholders. The foundation (tenancy, roles, audit, document
 numbering, the posting engine) is joined by masters, pricing with approval, vehicle and parts
 inventory, bookings and sales, service and counter sales, finance, cash and bank, GST, and the
 consolidated MIS.
 
-Verified by `npm run verify`: 47 migrations, 17 test files and 439 database assertions run
+Verified by `npm run verify`: 57 migrations, 26 test files and 690 database assertions run
 against a throwaway PostgreSQL instance on every check.
 
 ---
@@ -140,7 +140,7 @@ These are enforced by PostgreSQL, so no application bug can bypass them. Each is
 - **Safe document numbers.** Issued under a row lock in the database, never in the browser.
 - **Idempotency.** A duplicate business reference on a journal is rejected by a unique index.
 
-Run `npm run db:verify` to see every assertion execute — 439 of them, across 17 files.
+Run `npm run db:verify` to see every assertion execute — 690 of them, across 26 files.
 
 ---
 
@@ -157,10 +157,10 @@ Display uses Indian grouping: `₹1,25,000.00`.
 ## Permissions
 
 Authorization is permission-based, never role-name-based. Codes are defined once in
-[`src/lib/permissions/registry.ts`](src/lib/permissions/registry.ts) (107 across 15 modules) and
+[`src/lib/permissions/registry.ts`](src/lib/permissions/registry.ts) (124 across 17 modules) and
 seeded into the database; `npm run check:permissions` fails the build if the two drift.
 
-Seven restricted permissions gate cost, margin, profit and commission. A role without them does not
+Nine restricted permissions gate cost, margin, profit, pay and commission. A role without them does not
 merely have those fields hidden — `scrubRestrictedFields()` removes them from the payload at the
 service boundary, so they never reach the browser.
 

@@ -8,12 +8,17 @@ import {
   getPurchasePickers,
   getUnbilledVehicles,
 } from '@/server/services/purchases/purchase-service';
+import {
+  getReturnableLines,
+  getReturnsForBill,
+} from '@/server/services/purchases/purchase-return-service';
 import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { PurchaseBillEditor } from '@/components/purchases/purchase-bill-editor';
+import { PurchaseReturnForm } from '@/components/purchases/purchase-return-form';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { formatINR } from '@/lib/money';
+import { add, formatINR, subtract, ZERO } from '@/lib/money';
 import { formatDate, formatDateTime } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Purchase bill' };
@@ -38,17 +43,28 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     edit: hasPermission(context, 'purchases.create'),
     post: hasPermission(context, 'purchases.post'),
     cancel: hasPermission(context, 'purchases.cancel'),
+    return: hasPermission(context, 'purchases.return'),
   };
 
-  // Only a draft can gain lines, so the pickers are only worth loading for one.
-  const [vehicles, pickers] = await Promise.all([
+  // Only a draft can gain lines, so the pickers are only worth loading for one;
+  // only a posted bill can be returned against, so the same holds there.
+  const [vehicles, pickers, returnable, notes] = await Promise.all([
     bill.status === 'DRAFT' && can.edit
       ? getUnbilledVehicles({ branchId: bill.branchId })
       : Promise.resolve([]),
     bill.status === 'DRAFT' && can.edit
       ? getPurchasePickers()
       : Promise.resolve({ suppliers: [], items: [] }),
+    bill.status === 'POSTED' && can.return
+      ? getReturnableLines(bill.id)
+      : Promise.resolve([]),
+    bill.status === 'DRAFT' ? Promise.resolve([]) : getReturnsForBill(bill.id),
   ]);
+
+  // Reversed notes took nothing back, so they do not count against the bill.
+  const returned = notes
+    .filter((note) => note.status === 'POSTED')
+    .reduce((running, note) => add(running, note.totalAmount), ZERO);
 
   return (
     <div>
@@ -90,6 +106,44 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             items={pickers.items}
             can={can}
           />
+
+          {bill.status === 'POSTED' && can.return && (
+            <PurchaseReturnForm
+              billId={bill.id}
+              billNumber={bill.billNumber}
+              supplierName={bill.supplierName}
+              lines={returnable}
+            />
+          )}
+
+          {notes.length > 0 && (
+            <Panel>
+              <PanelHeader><PanelTitle>Returned to the supplier</PanelTitle></PanelHeader>
+              <PanelContent>
+                <ul className="divide-y divide-ink-100">
+                  {notes.map((note) => (
+                    <li key={note.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2 first:pt-0 last:pb-0">
+                      <span className="min-w-0">
+                        <Link href={`/purchases/returns/${note.id}`} className="font-mono text-xs text-brand-600 hover:underline">
+                          {note.returnNumber}
+                        </Link>
+                        <span className="ml-2 text-xs text-ink-500">{formatDate(note.returnDate)}</span>
+                        <span className="block truncate text-xs text-ink-600">{note.reason}</span>
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <Badge variant={note.status === 'POSTED' ? 'warning' : 'neutral'}>
+                          {note.status === 'CANCELLED' ? 'REVERSED' : 'RETURNED'}
+                        </Badge>
+                        <span className={`numeric text-sm ${note.status === 'POSTED' ? 'text-ink-900' : 'text-ink-400 line-through'}`}>
+                          {formatINR(note.totalAmount)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </PanelContent>
+            </Panel>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -104,6 +158,14 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 <div className="border-t border-ink-200 pt-2.5">
                   <Row label="Payable to supplier" value={formatINR(bill.totalAmount)} strong />
                 </div>
+                {returned > 0 && (
+                  // What the bill charged is a fact and never changes; what is
+                  // still owed on it is the figure someone is actually asking for.
+                  <div className="border-t border-ink-200 pt-2.5">
+                    <Row label="Returned since" value={`− ${formatINR(returned)}`} />
+                    <Row label="Net of returns" value={formatINR(subtract(bill.totalAmount, returned))} strong />
+                  </div>
+                )}
               </dl>
               <p className="mt-3 text-[11px] text-ink-400">
                 Input GST is an asset — it is credit the dealer claims back, not part of what the

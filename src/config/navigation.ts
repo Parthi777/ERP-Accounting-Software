@@ -150,6 +150,7 @@ export const NAVIGATION: readonly NavSection[] = [
     items: [
       { label: 'Purchase Bills', href: '/purchases', permission: 'purchases.view', status: 'ready' },
       { label: 'New Purchase Bill', href: '/purchases/new', permission: 'purchases.create', status: 'ready' },
+      { label: 'Purchase Returns', href: '/purchases/returns', permission: 'purchases.view', status: 'ready' },
     ],
   },
   {

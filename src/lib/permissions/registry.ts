@@ -100,6 +100,7 @@ export const PERMISSIONS = [
   { code: 'purchases.create', module: 'purchases', description: 'Create and edit draft purchase bills' },
   { code: 'purchases.post', module: 'purchases', description: 'Post a purchase bill to the accounts' },
   { code: 'purchases.cancel', module: 'purchases', description: 'Cancel or reverse a purchase bill' },
+  { code: 'purchases.return', module: 'purchases', description: 'Return purchased stock to a supplier (debit note)' },
 
   // ── HR ────────────────────────────────────────────────────────────────────
   { code: 'hr.settings.manage', module: 'hr', description: 'Manage shifts and leave types' },

@@ -147,6 +147,7 @@ type Insertable<T, R extends keyof T> = Partial<Omit<T, R>> & Pick<T, R>;
 const TRIGGER_FILLED = {
   customers: ['customer_code'],
   purchase_bills: ['bill_number'],
+  purchase_returns: ['return_number'],
   inventory_transactions: ['balance_after'],
   cash_transactions: ['balance_after'],
   bank_transactions: ['balance_after'],
@@ -237,6 +238,8 @@ const RPC = new Set([
   'party_open_items', 'allocate_party_payment',
   // Purchases — spec §24, §41.
   'post_purchase_bill', 'cancel_purchase_bill', 'unbilled_vehicles',
+  // Purchase returns — spec §21, §23, §34, §41.
+  'post_purchase_return', 'cancel_purchase_return', 'returnable_purchase_lines',
   // HR — spec §12, §15.
   'employee_salary_on',
   // Attendance integration — spec §12, §40.
