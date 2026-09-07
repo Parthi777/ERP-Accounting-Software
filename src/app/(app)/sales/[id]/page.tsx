@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Lock } from 'lucide-react';
+import { ArrowLeft, FileText, Lock } from 'lucide-react';
 
 import { getSale } from '@/server/services/sales/sale-service';
 import { requireTenantContext } from '@/server/auth/tenant-context';
@@ -67,11 +67,28 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
           </p>
         </div>
 
-        {sale.bookingNumber && (
-          <Button variant="secondary" size="sm" asChild>
-            <Link href={`/bookings/${sale.bookingId}`}>From booking {sale.bookingNumber}</Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Only a posted sale has a real invoice behind it; the route refuses
+              anything earlier, and offering the button would promise otherwise. */}
+          {(sale.status === 'POSTED' || sale.status === 'DELIVERED') && (
+            <Button size="sm" asChild>
+              <a
+                href={`/api/documents/sale-invoice/${sale.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileText aria-hidden />
+                Tax invoice
+              </a>
+            </Button>
+          )}
+
+          {sale.bookingNumber && (
+            <Button variant="secondary" size="sm" asChild>
+              <Link href={`/bookings/${sale.bookingId}`}>From booking {sale.bookingNumber}</Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="mb-4">

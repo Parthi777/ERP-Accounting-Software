@@ -46,7 +46,7 @@ const STRIPE = '#f8fafc';
 const WARN_BG = '#fef3c7';
 const WARN_INK = '#92400e';
 
-interface Fonts {
+export interface Fonts {
   readonly regular: Buffer | 'Helvetica';
   readonly bold: Buffer | 'Helvetica-Bold';
   /** False when we fell back, so amounts print as `INR` rather than a tofu box. */
@@ -63,7 +63,7 @@ let cachedFonts: Fonts | null = null;
  * traced files preserving their paths. next.config names this directory in
  * `outputFileTracingIncludes` so the copy actually happens.
  */
-function loadFonts(): Fonts {
+export function loadFonts(): Fonts {
   if (cachedFonts) return cachedFonts;
 
   const roots = [process.cwd(), path.join(process.cwd(), '..', '..')];
