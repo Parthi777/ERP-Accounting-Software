@@ -9,7 +9,7 @@ numbering, the posting engine) is joined by masters, pricing with approval, vehi
 inventory, bookings and sales, service and counter sales, finance, cash and bank, GST, and the
 consolidated MIS.
 
-Verified by `npm run verify`: 57 migrations, 26 test files and 690 database assertions run
+Verified by `npm run verify`: 58 migrations, 27 test files and 703 database assertions run
 against a throwaway PostgreSQL instance on every check.
 
 ---
@@ -140,7 +140,7 @@ These are enforced by PostgreSQL, so no application bug can bypass them. Each is
 - **Safe document numbers.** Issued under a row lock in the database, never in the browser.
 - **Idempotency.** A duplicate business reference on a journal is rejected by a unique index.
 
-Run `npm run db:verify` to see every assertion execute — 690 of them, across 26 files.
+Run `npm run db:verify` to see every assertion execute — 703 of them, across 27 files.
 
 ---
 

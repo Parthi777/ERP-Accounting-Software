@@ -5,6 +5,7 @@ import { FileText, Truck } from 'lucide-react';
 import {
   getGstPortalStatus,
   getGstr1Summary,
+  getInputTaxSummary,
   getHsnSummary,
   type GstrSection,
   type HsnSummaryRow,
@@ -14,7 +15,7 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { add, formatINR, paise } from '@/lib/money';
+import { add, formatINR, paise, subtract } from '@/lib/money';
 import { monthRange } from '@/lib/period';
 import { formatDate } from '@/lib/format';
 
@@ -81,14 +82,19 @@ export default async function Page({
   const params = await searchParams;
   const range = monthRange(params.from, params.to);
 
-  const [sections, hsn, portal] = await Promise.all([
+  const [sections, hsn, inputTax, portal] = await Promise.all([
     getGstr1Summary({ from: range.from, to: range.to }),
     getHsnSummary({ from: range.from, to: range.to }),
+    getInputTaxSummary({ from: range.from, to: range.to }),
     getGstPortalStatus(),
   ]);
 
   const totalTax = sections.reduce((sum, s) => add(sum, s.totalTax), paise(0));
   const totalTaxable = sections.reduce((sum, s) => add(sum, s.taxableValue), paise(0));
+  // What was paid on purchases, and therefore what is set against output tax.
+  // The number a dealer actually pays the government is the difference (spec §40).
+  const totalItc = inputTax.reduce((sum, r) => add(sum, r.totalTax), paise(0));
+  const netPayable = subtract(totalTax, totalItc);
   const b2c = sections.find((s) => s.section === 'B2C');
 
   return (
@@ -145,19 +151,32 @@ export default async function Page({
         </form>
       </Panel>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Panel className="p-4">
           <p className="text-xs text-ink-500">Taxable value</p>
           <p className="numeric mt-1 text-xl font-semibold text-ink-900">{formatINR(totalTaxable)}</p>
+          <p className="mt-1 text-[11px] text-ink-400">
+            {sections.reduce((n, s) => n + s.documentCount, 0)} document
+            {sections.reduce((n, s) => n + s.documentCount, 0) === 1 ? '' : 's'}
+          </p>
         </Panel>
         <Panel className="p-4">
           <p className="text-xs text-ink-500">Output tax</p>
           <p className="numeric mt-1 text-xl font-semibold text-brand-700">{formatINR(totalTax)}</p>
+          <p className="mt-1 text-[11px] text-ink-400">collected on sales</p>
         </Panel>
         <Panel className="p-4">
-          <p className="text-xs text-ink-500">Documents</p>
-          <p className="numeric mt-1 text-xl font-semibold text-ink-900">
-            {sections.reduce((n, s) => n + s.documentCount, 0)}
+          <p className="text-xs text-ink-500">Input tax credit</p>
+          <p className="numeric mt-1 text-xl font-semibold text-positive-700">{formatINR(totalItc)}</p>
+          <p className="mt-1 text-[11px] text-ink-400">paid on purchases, net of returns</p>
+        </Panel>
+        <Panel className="p-4">
+          <p className="text-xs text-ink-500">Net payable</p>
+          <p className={`numeric mt-1 text-xl font-semibold ${netPayable < 0 ? 'text-positive-700' : 'text-ink-900'}`}>
+            {formatINR(netPayable)}
+          </p>
+          <p className="mt-1 text-[11px] text-ink-400">
+            {netPayable < 0 ? 'credit carried forward' : 'output tax less credit'}
           </p>
         </Panel>
       </div>
@@ -192,6 +211,20 @@ export default async function Page({
         getRowKey={(row) => row.hsnCode}
         emptyMessage="No posted invoices in this period."
         caption="GST summary by HSN"
+      />
+
+      <h2 className="mb-1 mt-6 text-sm font-semibold text-ink-900">Input tax credit by HSN</h2>
+      <p className="mb-3 text-xs text-ink-500">
+        Tax paid on purchase bills in this period, less any debit notes that sent goods back — the
+        credit set against output tax when filing. Purchases are evidence of someone else&rsquo;s
+        invoice, so the HSN comes from the item or model bought.
+      </p>
+      <DataTable
+        columns={hsnColumns}
+        rows={inputTax}
+        getRowKey={(row) => row.hsnCode}
+        emptyMessage="No posted purchase bills in this period."
+        caption="Input tax credit by HSN"
       />
     </>
   );

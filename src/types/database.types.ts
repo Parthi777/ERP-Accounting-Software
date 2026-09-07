@@ -3494,6 +3494,10 @@ export interface Database {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null; p_section?: string | null };
         Returns: { document_type: string; document_id: string; document_number: string; document_date: string; customer_name: string; gstin: string; place_of_supply: string; section: string; taxable_value: string; cgst_amount: string; sgst_amount: string; igst_amount: string; invoice_value: string; einvoice_status: string; irn: string }[];
       };
+      gst_input_summary: {
+        Args: { p_from: string; p_to: string; p_branch_id?: string | null };
+        Returns: { hsn_code: string; description: string; taxable_value: string; cgst_amount: string; sgst_amount: string; igst_amount: string; total_tax: string; document_count: number }[];
+      };
       gst_summary: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { hsn_code: string; description: string; taxable_value: string; cgst_amount: string; sgst_amount: string; igst_amount: string; total_tax: string; document_count: number }[];

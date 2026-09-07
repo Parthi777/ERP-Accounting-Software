@@ -161,6 +161,44 @@ export async function getHsnSummary(params: {
   }));
 }
 
+/**
+ * Input tax credit for a period — spec §40, §41.
+ *
+ * The counterpart to getHsnSummary(). Output tax is what the dealer collected
+ * and owes; this is what they paid on purchases and may set against it. Reported
+ * separately and never netted here, because the two are declared separately on a
+ * return and a single blended figure would hide which side moved.
+ */
+export async function getInputTaxSummary(params: {
+  readonly from: string;
+  readonly to: string;
+  readonly branchId?: string | null;
+}): Promise<HsnSummaryRow[]> {
+  const context = await requirePermission('gst.summary.view');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.rpc('gst_input_summary', {
+    p_from: params.from,
+    p_to: params.to,
+    p_branch_id: resolveBranch(context, params.branchId),
+  });
+
+  if (error) {
+    throw new Error(`Failed to load input tax credit: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    hsnCode: row.hsn_code,
+    description: row.description,
+    taxableValue: fromDb(row.taxable_value),
+    cgst: fromDb(row.cgst_amount),
+    sgst: fromDb(row.sgst_amount),
+    igst: fromDb(row.igst_amount),
+    totalTax: fromDb(row.total_tax),
+    documentCount: Number(row.document_count),
+  }));
+}
+
 export async function getGstDocuments(params: {
   readonly from: string;
   readonly to: string;

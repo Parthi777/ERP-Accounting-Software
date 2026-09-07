@@ -68,6 +68,7 @@ Forward-only, applied in numerical order. Each file opens with its purpose and r
 | `0055_dealer_status_gate.sql` | `app.current_dealer_id()` also requires `dealers.status = 'ACTIVE'` — suspending a tenant finally ends access |
 | `0056_dealer_provisioning.sql` | `provision_dealer()`, `dealer_readiness()`, `purge_dealer()` — onboarding a tenant in one transaction |
 | `0057_purchase_returns.sql` | `purchase_returns` — debit notes: part of a bill goes back at the cost it came in at, its input GST is reversed and the payable falls; `vehicles.status` gains `RETURNED` |
+| `0058_gst_input_tax.sql` | `gst_input_summary()` — input tax credit by HSN, purchases less debit notes; the counterpart to `gst_summary()`, which reports only outward supplies |
 
 No extensions are required. `gen_random_uuid()` has been core since PostgreSQL 13, and
 case-insensitive email uses a `lower()` unique index rather than `citext` — which keeps the

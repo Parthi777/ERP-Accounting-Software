@@ -225,6 +225,7 @@ const RPC = new Set([
   'post_service_invoice', 'record_service_payment', 'service_history',
   // GST returns and the IRP queue — spec §40.
   'gstr1_summary', 'gst_document_register', 'queue_einvoice', 'record_einvoice_result',
+  'gst_input_summary',
   'queue_eway_bill', 'einvoice_queue',
   // MIS — spec §41, §43.
   'finance_summary', 'branch_performance', 'margin_report', 'consolidated_mis',
