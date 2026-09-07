@@ -34,3 +34,20 @@ export async function decidePriceVersionAction(
     return { ok: false, error: toAppError(error).userMessage };
   }
 }
+
+export async function decideAllPriceVersionsAction(
+  fromStatus: 'SUBMITTED' | 'APPROVED',
+  action: 'APPROVE' | 'ACTIVATE',
+): Promise<service.BulkPriceResult> {
+  try {
+    const result = await service.decideAllPriceVersions(fromStatus, action);
+    if (result.done > 0) {
+      revalidatePath('/masters/pricing');
+      revalidatePath('/vehicles/pricing');
+      revalidatePath('/sales/new');
+    }
+    return result;
+  } catch (error) {
+    return { ok: false, done: 0, failed: 0, error: toAppError(error).userMessage };
+  }
+}

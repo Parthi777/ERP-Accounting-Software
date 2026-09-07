@@ -9,6 +9,7 @@ import {
 import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { PriceApprovalActions } from '@/components/vehicles/price-approval-actions';
+import { BulkPriceActions } from '@/components/vehicles/bulk-price-actions';
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -120,9 +121,19 @@ export default async function Page({
         description="Price versions on their way to going live: draft, submitted, approved, active (spec §15)."
         count={rows.length}
         action={
-          <Button size="sm" variant="secondary" asChild>
-            <Link href="/vehicles/pricing/new"><Plus aria-hidden />New price version</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* A whole price list arrives at once, so it is approved at once —
+                each version still decided individually on the server. */}
+            {(status === 'SUBMITTED' && canApprove) || (status === 'APPROVED' && canManage) ? (
+              <BulkPriceActions
+                fromStatus={status === 'SUBMITTED' ? 'SUBMITTED' : 'APPROVED'}
+                count={rows.length}
+              />
+            ) : null}
+            <Button size="sm" variant="secondary" asChild>
+              <Link href="/vehicles/pricing/new"><Plus aria-hidden />New price version</Link>
+            </Button>
+          </div>
         }
       />
 

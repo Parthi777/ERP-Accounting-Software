@@ -324,3 +324,84 @@ export async function decidePriceVersion(
 
   return { ok: true, id };
 }
+
+export interface BulkPriceResult {
+  readonly ok: boolean;
+  readonly done: number;
+  readonly failed: number;
+  readonly error?: string;
+  readonly message?: string;
+}
+
+/**
+ * Moves every version at one status to the next one — spec §15.
+ *
+ * A dealer's price list is the whole range at once: 77 variants here, and a new
+ * TVS list lands every few weeks. Approving those one row at a time is 154
+ * clicks of identical decision, which is not review, it is attrition — and a
+ * reviewer who has stopped reading by row 20 is worse than one who checked the
+ * figures in a spreadsheet and approved the batch deliberately.
+ *
+ * So this is deliberately a batch of individual decisions rather than a bulk
+ * UPDATE: each version still goes through decidePriceVersion(), which means the
+ * same permission check, the same two-person rule, and its own audit row. A
+ * version the caller may not approve — one they submitted themselves — fails on
+ * its own and the rest continue, because a batch that stops halfway leaves the
+ * price list in two states with nothing saying where it stopped.
+ */
+export async function decideAllPriceVersions(
+  fromStatus: 'SUBMITTED' | 'APPROVED',
+  action: Extract<PriceAction, 'APPROVE' | 'ACTIVATE'>,
+): Promise<BulkPriceResult> {
+  const needed: Permission =
+    action === 'APPROVE' ? 'vehicles.pricing.approve' : 'masters.pricing.manage';
+
+  const context = await requireTenantContext();
+  if (!context.permissions.has(needed) && !context.permissions.has('vehicles.pricing.manage')) {
+    throw new ForbiddenError(needed);
+  }
+
+  const supabase = await createSupabaseServerClient();
+  // RLS scopes this to the caller's own dealer, so there is no tenant filter to
+  // forget here (spec §60.20).
+  const { data, error } = await supabase
+    .from('vehicle_price_versions')
+    .select('id')
+    .eq('status', fromStatus)
+    .order('effective_from')
+    .limit(500);
+
+  if (error) {
+    return { ok: false, done: 0, failed: 0, error: `Could not read the queue: ${error.message}` };
+  }
+  const ids = (data ?? []).map((row) => row.id);
+  if (ids.length === 0) {
+    return { ok: false, done: 0, failed: 0, error: `Nothing is waiting at ${fromStatus}.` };
+  }
+
+  let done = 0;
+  let failed = 0;
+  let firstError: string | undefined;
+
+  for (const id of ids) {
+    const result = await decidePriceVersion(id, action);
+    if (result.ok) {
+      done += 1;
+    } else {
+      failed += 1;
+      firstError ??= result.error;
+    }
+  }
+
+  const verb = action === 'APPROVE' ? 'approved' : 'activated';
+  return {
+    ok: done > 0,
+    done,
+    failed,
+    error: done === 0 ? firstError : undefined,
+    message:
+      failed === 0
+        ? `${done} price${done === 1 ? '' : 's'} ${verb}.`
+        : `${done} ${verb}, ${failed} could not be: ${firstError}`,
+  };
+}
