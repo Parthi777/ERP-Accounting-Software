@@ -235,3 +235,31 @@ by the policy's `USING` clause and affect **zero rows without raising**, while `
 **What this does not cover.** The shim is not Supabase. Real `auth.uid()` derived from a JWT, the
 Supabase Auth signup and password-reset flows, and Storage are unverified until the project exists.
 Schema, constraints, triggers, policy expressions and privileges are all exercised for real.
+
+## Knowing which migration a database is on
+
+`public.schema_migrations` (0059) holds one row per migration: version, name, and when the row was
+written. Every migration from 0059 stamps itself as its last statement; everything before it was
+backfilled by 0059, so those rows say *what* is applied but not *when* — there was nothing recording
+at the time.
+
+It exists because the application deploys to Railway on push while migrations are applied to Supabase
+by hand. Those two facts guarantee a window where the running code expects a schema that is not there,
+and before this the only symptom was a PostgREST error naming a function signature: no cause, no
+action, and seen by the one person who could not fix it.
+
+`EXPECTED_SCHEMA_VERSION` in `src/config/schema.ts` is the version the running build was written
+against — a constant rather than a read of `supabase/migrations/`, because the standalone build does
+not ship that directory. **Administration → Settings** compares the two and names the missing
+versions.
+
+Three states, kept distinct on purpose:
+
+| State | Meaning |
+|---|---|
+| Up to date | Every version up to `EXPECTED_SCHEMA_VERSION` is recorded |
+| *N* migrations behind | The database is missing versions the code expects; they are listed |
+| Not recorded | The database predates 0059 and cannot say — which is not the same as current |
+
+That last distinction is the point. Reporting "up to date" for a database that simply cannot answer
+is the false reassurance the panel exists to remove.

@@ -239,3 +239,29 @@ export async function getDealer(): Promise<Tables<'dealers'> | null> {
   }
   return data;
 }
+
+/**
+ * Which migrations this database has (0059).
+ *
+ * Returns null rather than throwing when the table is absent, because that is
+ * the one case this exists to describe: a database applied before 0059 has no
+ * record of itself, and "we cannot tell" is a different answer from "it is
+ * current". Any other error is a real fault and raises.
+ */
+export async function listSchemaMigrations(): Promise<Tables<'schema_migrations'>[] | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('schema_migrations')
+    .select('*')
+    .order('version', { ascending: false });
+
+  if (error) {
+    // PostgREST answers an unknown relation with 42P01, or with a schema-cache
+    // miss if the table arrived after the cache was built.
+    if (error.code === '42P01' || error.message.includes('schema cache')) {
+      return null;
+    }
+    throw new Error(`Failed to load the schema version: ${error.message}`);
+  }
+  return data ?? [];
+}

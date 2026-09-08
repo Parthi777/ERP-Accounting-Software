@@ -203,6 +203,10 @@ export async function getPartySettlement(params: {
   // — failing hard would take a page accounts use every day off the air for a
   // schema change that has not happened yet. Only this one cause is forgiven;
   // any other error is a real fault and still raises.
+  //
+  // Since 0059 the database records which migrations it has, and Administration
+  // → Settings states it plainly. This guess stays because it degrades the page
+  // gracefully, not because it is the diagnosis — that lives on the panel now.
   if (items.error) {
     if (isMissingMigration(items.error)) {
       console.warn('[settlement] migration 0050 has not been applied to this database');

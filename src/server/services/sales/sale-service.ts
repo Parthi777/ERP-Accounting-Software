@@ -639,7 +639,8 @@ function describeReturnError(message: string): string {
   if (message.includes('Could not find the function') || message.includes('schema cache')) {
     return (
       'Returns are unavailable until the database update for refunds is applied ' +
-      '(migration 0051). Nothing was changed.'
+      '(migration 0051). Nothing was changed. Administration → Settings shows ' +
+      'which migrations this database is missing.'
     );
   }
   if (message.includes('Say how it is being refunded')) {

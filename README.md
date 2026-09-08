@@ -97,6 +97,7 @@ catalogue, the system roles and the audit trail.
 | `npm run db:verify` | Applies migrations, seeds and integrity tests to a throwaway local database |
 | `scripts/apply-to-supabase.sh` | Applies migrations and seeds to a live database via `DATABASE_URL` |
 | `npm run check:bundle` | Fails if `ALL-IN-ONE.sql` has drifted from the migrations on disk |
+| `npm run check:schema-version` | Fails if the expected schema version lags the migrations, or a migration does not stamp itself |
 | `scripts/create-platform-admin.sql` | Grants an existing login platform administration, so it can onboard dealers |
 | `scripts/link-auth-users.sql` | Links Supabase Auth accounts to profiles, roles and branch access |
 | `npm run verify` | All of the above, in order |

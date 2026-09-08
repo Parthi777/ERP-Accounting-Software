@@ -1168,6 +1168,14 @@ type SalesRow = {
 
 type SalesRowInsert = Insertable<SalesRow, 'dealer_id' | 'branch_id' | 'invoice_number' | 'customer_id' | 'vehicle_id'>;
 
+type SchemaMigrationsRow = {
+  version: string;
+  name: string;
+  applied_at: string;
+};
+
+type SchemaMigrationsRowInsert = Insertable<SchemaMigrationsRow, 'version' | 'name'>;
+
 type ServiceInvoicesRow = {
   id: string;
   dealer_id: string;
@@ -2910,6 +2918,12 @@ export interface Database {
             referencedColumns: ['id', 'dealer_id'];
           },
         ];
+      };
+      schema_migrations: {
+        Row: SchemaMigrationsRow;
+        Insert: SchemaMigrationsRowInsert;
+        Update: Partial<SchemaMigrationsRow>;
+        Relationships: [];
       };
       service_invoices: {
         Row: ServiceInvoicesRow;

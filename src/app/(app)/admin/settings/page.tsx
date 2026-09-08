@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 
-import { getSettings } from '@/server/services/org/org-service';
+import { getSettings, type SchemaStatus } from '@/server/services/org/org-service';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import type { Tables } from '@/types/database.types';
+import { formatDateTime } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -66,7 +67,7 @@ const sequenceColumns: Column<Tables<'document_sequences'>>[] = [
 ];
 
 export default async function SettingsPage() {
-  const { settings, sequences } = await getSettings();
+  const { settings, sequences, schema } = await getSettings();
 
   return (
     <div className="space-y-5">
@@ -102,18 +103,95 @@ export default async function SettingsPage() {
         />
       </div>
 
-      <Panel>
-        <PanelHeader>
-          <PanelTitle>Phase 1 scope</PanelTitle>
-        </PanelHeader>
-        <PanelContent>
-          <p className="text-sm text-ink-600">
-            These values are readable here and editable through the database. Editing screens arrive
-            with the modules that consume each setting — accessory allocation with inventory, cash
-            closing with the cash book, and so on.
-          </p>
-        </PanelContent>
-      </Panel>
+      <SchemaPanel schema={schema} />
     </div>
+  );
+}
+
+/**
+ * Whether the database has caught up with the code (spec §59).
+ *
+ * The application deploys on push while migrations are applied to Supabase by
+ * hand, so a running build can expect tables that are not there yet. Before this
+ * panel the only symptom was a PostgREST error about a function signature, shown
+ * to whoever pressed the button and to nobody who could act on it.
+ *
+ * Three states, deliberately distinct. "Not recorded" is not folded into
+ * "behind": a database applied before 0059 cannot say what it has, and claiming
+ * it is current would be the exact false reassurance this replaces.
+ */
+function SchemaPanel({ schema }: { readonly schema: SchemaStatus }) {
+  const behind = schema.tracked && schema.missing.length > 0;
+
+  return (
+    <Panel>
+      <PanelHeader>
+        <div className="flex items-center gap-2">
+          <PanelTitle>Database schema</PanelTitle>
+          {!schema.tracked ? (
+            <Badge variant="warning">Not recorded</Badge>
+          ) : behind ? (
+            <Badge variant="danger">
+              {schema.missing.length} migration{schema.missing.length === 1 ? '' : 's'} behind
+            </Badge>
+          ) : (
+            <Badge variant="positive">Up to date</Badge>
+          )}
+        </div>
+      </PanelHeader>
+      <PanelContent>
+        <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-3">
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-400">
+              Application expects
+            </dt>
+            <dd className="mt-0.5 font-mono text-sm text-ink-900">{schema.expected}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-400">
+              Database reports
+            </dt>
+            <dd className="mt-0.5 font-mono text-sm text-ink-900">{schema.applied ?? '—'}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-400">
+              Last applied
+            </dt>
+            <dd className="mt-0.5 text-sm text-ink-900">
+              {schema.appliedAt ? formatDateTime(schema.appliedAt) : '—'}
+            </dd>
+          </div>
+        </dl>
+
+        {behind && (
+          <div className="mt-4 rounded-lg border border-danger-200 bg-danger-50 p-3">
+            <p className="text-sm font-medium text-danger-700">
+              This database is missing {schema.missing.length} migration
+              {schema.missing.length === 1 ? '' : 's'}.
+            </p>
+            <p className="mt-1 text-sm text-danger-700">
+              Screens that depend on {schema.missing.length === 1 ? 'it' : 'them'} will fail or
+              degrade until {schema.missing.length === 1 ? 'it is' : 'they are'} applied. Bundle what
+              is missing with{' '}
+              <code className="font-mono text-xs">
+                FROM={schema.missing[0]} npm run db:incremental
+              </code>{' '}
+              and run it against the database.
+            </p>
+            <p className="mt-2 font-mono text-xs text-danger-700">{schema.missing.join(', ')}</p>
+          </div>
+        )}
+
+        {!schema.tracked && (
+          <div className="mt-4 rounded-lg border border-warning-200 bg-warning-50 p-3">
+            <p className="text-sm text-warning-700">
+              This database was applied before migration 0059, which is the one that introduced
+              version tracking, so it cannot report what it has. Applying 0059 records everything up
+              to it and this panel starts answering.
+            </p>
+          </div>
+        )}
+      </PanelContent>
+    </Panel>
   );
 }

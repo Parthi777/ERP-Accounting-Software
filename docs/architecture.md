@@ -137,7 +137,16 @@ than not displaying them.
 1. Add its permissions to `src/lib/permissions/registry.ts` **and** `supabase/seed.sql`; run
    `npm run check:permissions`.
 2. Write a migration: tables, constraints, indexes, RLS policies, audit triggers. Add cross-tenant
-   composite foreign keys.
+   composite foreign keys. End it by stamping itself:
+
+   ```sql
+   insert into public.schema_migrations (version, name)
+   values ('00NN', 'your_migration_name') on conflict (version) do nothing;
+   ```
+
+   Then bump `EXPECTED_SCHEMA_VERSION` in `src/config/schema.ts` and regenerate the bundles with
+   `bash scripts/build-all-in-one.sh`. `npm run check:schema-version` and `npm run check:bundle`
+   fail the build if you forget either.
 3. Add a test in `supabase/test/` asserting isolation and the module's own integrity rules.
 4. Add a repository, then a service that checks permissions and redacts restricted fields.
 5. Replace the placeholder page; set `status: 'ready'` in `src/config/navigation.ts`.
