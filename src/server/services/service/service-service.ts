@@ -637,6 +637,43 @@ export interface CustomerServiceRollup {
 const SERVICE_DUE_DAYS = 180;
 
 /**
+ * Billed and outstanding across every posted service invoice.
+ *
+ * Its own query, not a reduce over the invoice list. The list stops at a row
+ * cap, so summing it gave the most recent 200 invoices under a tile that read
+ * "Billed" — correct in demo data and quietly short from a workshop's 201st
+ * invoice onward.
+ *
+ * Always POSTED, whatever the screen is filtered to. The tiles describe what the
+ * workshop has billed and what it is still owed, which does not change because
+ * someone is looking at drafts; the old reduce dropped both to zero on a DRAFT
+ * filter, which read as "nothing outstanding" rather than "not shown".
+ */
+export async function getServiceInvoiceTotals(params: {
+  readonly branchId?: string | null;
+}): Promise<{ invoices: number; billed: Paise; paid: Paise; outstanding: Paise }> {
+  const context = await requirePermission('service.jobcards.view');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.rpc('service_invoice_totals', {
+    p_status: 'POSTED',
+    p_branch_id: branchFilter(context, params.branchId ?? null),
+  });
+
+  if (error) {
+    throw new Error(`Failed to load the service billing summary: ${error.message}`);
+  }
+
+  const row = data?.[0];
+  return {
+    invoices: Number(row?.invoices ?? 0),
+    billed: fromDb(row?.total_amount),
+    paid: fromDb(row?.paid_amount),
+    outstanding: fromDb(row?.balance),
+  };
+}
+
+/**
  * Who has been in, how often, what they are worth, and who has stopped coming.
  *
  * Deliberately not another per-visit list — `/service/history` already answers

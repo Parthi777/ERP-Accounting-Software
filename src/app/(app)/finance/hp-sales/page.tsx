@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   getFinanceApplications,
   getFinancePickers,
-  summarise,
+  getFinanceTotals,
   type FinanceApplicationRow,
 } from '@/server/services/finance/finance-service';
 import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
@@ -48,13 +48,20 @@ export default async function Page({
   const canManage = hasPermission(context, 'finance.applications.manage');
   const showCommission = hasPermission(context, 'finance.commission.view');
 
-  const [rows, pickers] = await Promise.all([
+  // The totals are their own query rather than a reduce over `rows`. `rows` stops
+  // at the row cap, so summing it described the most recent 200 applications
+  // while the tile above it said "Applications" — right in demo data, and
+  // quietly wrong from a dealer's 201st onward.
+  const [rows, totals, pickers] = await Promise.all([
     getFinanceApplications({ status, branchId: null, q: params.q }),
+    getFinanceTotals({ status, branchId: null, q: params.q }),
     canManage ? getFinancePickers() : Promise.resolve({ companies: [], bankAccounts: [] }),
   ]);
 
-  const totals = summarise(rows);
-  const penetration =
+  // An approval rate, and labelled as one. This was called `penetration`, which
+  // in the trade means financed sales ÷ total vehicle sales — a different figure
+  // that needs a number this screen does not have.
+  const approvalRate =
     totals.applications > 0 ? Math.round((totals.approved / totals.applications) * 100) : 0;
 
   const columns: Column<FinanceApplicationRow>[] = [
@@ -160,7 +167,7 @@ export default async function Page({
       <PageHeader
         title="HP sales"
         description="Hire-purchase applications from request to disbursement (spec §27)."
-        count={rows.length}
+        count={totals.applications}
         action={<ExportButtons report="finance-applications" />}
       />
 
@@ -171,8 +178,8 @@ export default async function Page({
           <p className="mt-0.5 text-[11px] text-ink-400">{totals.pending} awaiting a decision</p>
         </Panel>
         <Panel className="p-4">
-          <p className="text-xs text-ink-500">Approved</p>
-          <p className="mt-0.5 text-lg font-semibold text-positive-700">{penetration}%</p>
+          <p className="text-xs text-ink-500">Approval rate</p>
+          <p className="mt-0.5 text-lg font-semibold text-positive-700">{approvalRate}%</p>
           <p className="mt-0.5 text-[11px] text-ink-400">
             {totals.approved} of {totals.applications}
           </p>

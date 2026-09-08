@@ -57,7 +57,18 @@ export interface FinanceApplicationRow {
   readonly commissionAmount: Paise | null;
 }
 
-export interface FinancePenetration {
+/**
+ * Finance figures for a set of filters, over every matching application.
+ *
+ * Named for what it is. This was `FinancePenetration`, and its doc comment
+ * claimed spec §27 — but penetration is financed sales ÷ total vehicle sales,
+ * and total vehicle sales never appeared in it. What it actually reports is a
+ * count of applications by status and the money against them, which is useful
+ * and is not penetration. Real penetration is still not computed anywhere; a
+ * type asserting a metric nobody produces is worse than a missing metric,
+ * because it stops anyone looking for it.
+ */
+export interface FinanceTotals {
   readonly applications: number;
   readonly approved: number;
   readonly pending: number;
@@ -65,6 +76,8 @@ export interface FinancePenetration {
   readonly loanAmount: Paise;
   readonly disbursedAmount: Paise;
   readonly pendingAmount: Paise;
+  /** Null for sessions without `finance.commission.view` (spec §52). */
+  readonly commissionAmount: Paise | null;
 }
 
 function resolveBranch(context: TenantContext, requested: string | null): string | null {
@@ -90,82 +103,90 @@ export async function getFinanceApplications(params: {
   const context = await requirePermission('finance.applications.view');
   const supabase = await createSupabaseServerClient();
 
-  let query = supabase
-    .from('finance_applications')
-    .select(
-      'id, application_number, application_date, loan_amount, down_payment, approved_amount, disbursed_amount, pending_amount, approval_status, disbursement_status, dd_number, bank_reference, commission_amount, customer_id, finance_company_id, customers!inner ( name ), finance_companies!inner ( name ), branches!inner ( name ), vehicles ( chassis_no )',
-    )
-    .order('application_date', { ascending: false })
-    .limit(params.limit ?? 200);
+  // The search runs in the database (0060). It used to run here, over the rows
+  // the limit had already returned, so an application outside the most recent
+  // 200 could not be found however precisely you typed its number.
+  const { data, error } = await supabase.rpc('finance_applications_list', {
+    p_status: params.status,
+    p_branch_id: resolveBranch(context, params.branchId),
+    p_q: params.q?.trim() || null,
+    p_limit: params.limit ?? 200,
+  });
 
-  if (params.status !== 'ALL') {
-    query = query.eq('approval_status', params.status as ApprovalStatus);
-  }
-  const branchId = resolveBranch(context, params.branchId);
-  if (branchId) {
-    query = query.eq('branch_id', branchId);
-  }
-
-  const { data, error } = await query;
   if (error) {
     throw new Error(`Failed to load finance applications: ${error.message}`);
   }
 
   const maySeeCommission = context.permissions.has('finance.commission.view');
-  const term = params.q?.trim().toLowerCase();
 
-  return (data ?? [])
-    .map((row) => ({
-      id: row.id,
-      applicationNumber: row.application_number,
-      applicationDate: row.application_date,
-      customerId: row.customer_id,
-      customerName: row.customers.name,
-      companyId: row.finance_company_id,
-      companyName: row.finance_companies.name,
-      chassisNo: row.vehicles?.chassis_no ?? null,
-      branchName: row.branches.name,
-      loanAmount: fromDb(row.loan_amount),
-      downPayment: fromDb(row.down_payment),
-      approvedAmount: row.approved_amount === null ? null : fromDb(row.approved_amount),
-      disbursedAmount: fromDb(row.disbursed_amount),
-      pendingAmount: fromDb(row.pending_amount),
-      approvalStatus: row.approval_status,
-      disbursementStatus: row.disbursement_status,
-      ddNumber: row.dd_number,
-      bankReference: row.bank_reference,
-      commissionAmount: maySeeCommission ? fromDb(row.commission_amount) : null,
-    }))
-    .filter(
-      (row) =>
-        !term ||
-        row.applicationNumber.toLowerCase().includes(term) ||
-        row.customerName.toLowerCase().includes(term) ||
-        row.companyName.toLowerCase().includes(term) ||
-        (row.chassisNo?.toLowerCase().includes(term) ?? false),
-    );
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    applicationNumber: row.application_number,
+    applicationDate: row.application_date,
+    customerId: row.customer_id,
+    customerName: row.customer_name,
+    companyId: row.finance_company_id,
+    companyName: row.company_name,
+    chassisNo: row.chassis_no,
+    branchName: row.branch_name,
+    loanAmount: fromDb(row.loan_amount),
+    downPayment: fromDb(row.down_payment),
+    approvedAmount: row.approved_amount === null ? null : fromDb(row.approved_amount),
+    disbursedAmount: fromDb(row.disbursed_amount),
+    pendingAmount: fromDb(row.pending_amount),
+    approvalStatus: row.approval_status as ApprovalStatus,
+    disbursementStatus: row.disbursement_status,
+    ddNumber: row.dd_number,
+    bankReference: row.bank_reference,
+    commissionAmount: maySeeCommission ? fromDb(row.commission_amount) : null,
+  }));
 }
 
 /**
- * Finance penetration — spec §27. Derived from the same rows the table shows,
- * so the summary can never disagree with the list beneath it.
+ * The figures above the list, over every matching application.
+ *
+ * Separate from the list on purpose. `summarise(rows)` reduced over the rows the
+ * screen had drawn, which is correct only while there are fewer of them than the
+ * cap — so the tiles were right in demo data and silently wrong from a dealer's
+ * 201st application onward, describing the most recent 200 while labelled as the
+ * period. An aggregate has no such cliff.
+ *
+ * Takes the same filters as `getFinanceApplications`, and both resolve them
+ * through one predicate in the database, so the summary cannot disagree with the
+ * list beneath it — which was the one property the old reduce did guarantee and
+ * is worth keeping.
  */
-export function summarise(rows: readonly FinanceApplicationRow[]): FinancePenetration {
-  return rows.reduce<FinancePenetration>(
-    (acc, row) => ({
-      applications: acc.applications + 1,
-      approved: acc.approved + (row.approvalStatus === 'APPROVED' ? 1 : 0),
-      pending: acc.pending + (row.approvalStatus === 'PENDING' ? 1 : 0),
-      rejected: acc.rejected + (row.approvalStatus === 'REJECTED' ? 1 : 0),
-      loanAmount: add(acc.loanAmount, row.loanAmount),
-      disbursedAmount: add(acc.disbursedAmount, row.disbursedAmount),
-      pendingAmount: add(acc.pendingAmount, row.pendingAmount),
-    }),
-    {
-      applications: 0, approved: 0, pending: 0, rejected: 0,
-      loanAmount: ZERO, disbursedAmount: ZERO, pendingAmount: ZERO,
-    },
-  );
+export async function getFinanceTotals(params: {
+  readonly status: string;
+  readonly branchId: string | null;
+  readonly q?: string;
+}): Promise<FinanceTotals> {
+  const context = await requirePermission('finance.applications.view');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.rpc('finance_application_totals', {
+    p_status: params.status,
+    p_branch_id: resolveBranch(context, params.branchId),
+    p_q: params.q?.trim() || null,
+  });
+
+  if (error) {
+    throw new Error(`Failed to load the finance summary: ${error.message}`);
+  }
+
+  const row = data?.[0];
+  const maySeeCommission = context.permissions.has('finance.commission.view');
+
+  return {
+    applications: Number(row?.applications ?? 0),
+    approved: Number(row?.approved ?? 0),
+    pending: Number(row?.pending ?? 0),
+    rejected: Number(row?.rejected ?? 0),
+    loanAmount: fromDb(row?.loan_amount),
+    disbursedAmount: fromDb(row?.disbursed_amount),
+    pendingAmount: fromDb(row?.pending_amount),
+    commissionAmount: maySeeCommission ? fromDb(row?.commission_amount) : null,
+  };
 }
 
 export interface CreateApplicationInput {

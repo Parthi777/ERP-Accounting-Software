@@ -95,6 +95,8 @@ export default async function Page({
 
   const rows = await getGstDocuments({ from: range.from, to: range.to, section });
 
+  // Safe to reduce: the loader is an uncapped aggregate RPC returning one row
+  // per group, not a capped page. See 0060 for the screens where it was not.
   const taxable = rows.reduce((sum, r) => add(sum, r.taxableValue), paise(0));
   const tax = rows.reduce((sum, r) => add(sum, paise(r.cgst + r.sgst + r.igst)), paise(0));
   const value = rows.reduce((sum, r) => add(sum, r.invoiceValue), paise(0));

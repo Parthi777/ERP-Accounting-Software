@@ -44,6 +44,8 @@ export default async function Page({
       )
     : all;
 
+  // Safe to reduce: the loader is an uncapped aggregate RPC returning one row
+  // per group, not a capped page. See 0060 for the screens where it was not.
   const lifetime = rows.reduce((sum, r) => add(sum, r.lifetimeValue), ZERO);
   const dueCount = rows.filter((r) => r.serviceDue).length;
   const openJobs = rows.reduce((sum, r) => sum + r.openJobs, 0);

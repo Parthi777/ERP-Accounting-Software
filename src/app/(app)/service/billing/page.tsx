@@ -2,14 +2,14 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
-import { getServiceInvoices, type ServiceInvoiceRow } from '@/server/services/service/service-service';
+import { getServiceInvoices, getServiceInvoiceTotals, type ServiceInvoiceRow } from '@/server/services/service/service-service';
 import { requirePermission } from '@/server/auth/tenant-context';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ExportButtons } from '@/components/export/export-buttons';
-import { add, formatINR, paise } from '@/lib/money';
+import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Service billing' };
@@ -87,21 +87,24 @@ export default async function Page({
   const params = await searchParams;
   const status = params.status ?? 'ALL';
 
-  const rows = await getServiceInvoices({ status });
+  // The tiles are their own query. Reducing over `rows` summed only what the row
+  // cap had returned, so the figures were right until the 201st invoice and
+  // short from then on — and they collapsed to zero whenever the list was
+  // filtered to drafts, which reads as "nothing outstanding".
+  const [rows, totals] = await Promise.all([
+    getServiceInvoices({ status }),
+    getServiceInvoiceTotals({}),
+  ]);
 
-  const billed = rows
-    .filter((r) => r.status === 'POSTED')
-    .reduce((sum, r) => add(sum, r.total), paise(0));
-  const outstanding = rows
-    .filter((r) => r.status === 'POSTED')
-    .reduce((sum, r) => add(sum, r.balance), paise(0));
+  const billed = totals.billed;
+  const outstanding = totals.outstanding;
 
   return (
     <>
       <PageHeader
         title="Service billing"
         description="Workshop invoices (spec §32). Posting recognises revenue, GST, cost and stock together."
-        count={rows.length}
+        count={totals.invoices}
         action={
           <div className="flex flex-wrap items-center gap-2">
             <ExportButtons report="service-invoices" />

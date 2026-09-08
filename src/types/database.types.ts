@@ -3380,6 +3380,10 @@ export interface Database {
         Args: { p_bank_account_id: string; p_from_date?: string | null; p_to_date?: string | null };
         Returns: { id: number; transaction_date: string; particular: string; reference_number: string; utr: string; receipt: string; payment: string; running_balance: string; reconciled: boolean; journal_entry_id: string }[];
       };
+      bank_unreconciled_counts: {
+        Args: Record<string, never>;
+        Returns: { bank_account_id: string; unreconciled: number }[];
+      };
       branch_performance: {
         Args: { p_from: string; p_to: string };
         Returns: { branch_id: string; branch_code: string; branch_name: string; vehicle_units: number; vehicle_revenue: string; vehicle_cost: string; vehicle_margin: string; service_jobs: number; service_revenue: string; service_cost: string; bookings_open: number; booking_advances: string; cash_in_hand: string; receivables: string }[];
@@ -3491,6 +3495,14 @@ export interface Database {
       ensure_cash_day: {
         Args: { p_branch_id: string; p_date?: string | null };
         Returns: string;
+      };
+      finance_application_totals: {
+        Args: { p_status?: string | null; p_branch_id?: string | null; p_q?: string | null };
+        Returns: { applications: number; approved: number; pending: number; rejected: number; loan_amount: string; disbursed_amount: string; pending_amount: string; commission_amount: string }[];
+      };
+      finance_applications_list: {
+        Args: { p_status?: string | null; p_branch_id?: string | null; p_q?: string | null; p_limit?: number | null };
+        Returns: { id: string; application_number: string; application_date: string; customer_id: string; customer_name: string; finance_company_id: string; company_name: string; chassis_no: string; branch_name: string; loan_amount: string; down_payment: string; approved_amount: string; disbursed_amount: string; pending_amount: string; approval_status: string; disbursement_status: string; dd_number: string; bank_reference: string; commission_amount: string }[];
       };
       finance_company_ledger: {
         Args: { p_company_id: string; p_from: string; p_to: string };
@@ -3675,6 +3687,10 @@ export interface Database {
       service_history: {
         Args: { p_customer_id?: string | null; p_registration_no?: string | null };
         Returns: { job_card_id: string; job_card_number: string; job_date: string; customer_name: string; registration_no: string; odometer: string; service_type: string; complaint: string; status: string; invoice_number: string; invoice_total: string; paid_amount: string }[];
+      };
+      service_invoice_totals: {
+        Args: { p_status?: string | null; p_branch_id?: string | null };
+        Returns: { invoices: number; total_amount: string; paid_amount: string; balance: string }[];
       };
       start_attendance_sync: {
         Args: { p_from: string; p_to: string };

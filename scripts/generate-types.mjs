@@ -230,6 +230,10 @@ const RPC = new Set([
   // MIS — spec §41, §43.
   'finance_summary', 'branch_performance', 'margin_report', 'consolidated_mis',
   'inventory_movement_report',
+  // List totals — spec §51. Figures that describe the period rather than the
+  // page the screen happened to draw.
+  'finance_applications_list', 'finance_application_totals', 'service_invoice_totals',
+  'bank_unreconciled_counts',
   // Transfers, adjustments and returns — spec §21, §34, §35.
   'dispatch_vehicle_transfer', 'receive_vehicle_transfer', 'transfer_inventory_stock',
   'adjust_inventory_stock', 'return_vehicle_sale',

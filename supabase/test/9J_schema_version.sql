@@ -24,29 +24,29 @@ declare
   v_user    uuid;
 begin
   -- ── Every migration is recorded ─────────────────────────────────────────
-  select count(*) into v_count from public.schema_migrations;
-  perform app_test.assert_equals(
-    (v_count >= 59), true,
-    'every migration up to 0059 is recorded'
-  );
-
+  -- Deliberately derived rather than hardcoded. An earlier draft asserted
+  -- '0059' and broke the moment 0060 was written, which is a test failing for
+  -- being out of date rather than for finding anything.
   select max(version) into v_latest from public.schema_migrations;
+  select count(*) into v_count from public.schema_migrations;
+
   perform app_test.assert_equals(
-    v_latest, '0059',
-    'the latest recorded version is the latest migration'
+    v_count, v_latest::int,
+    'every version from 0001 to the latest is recorded, and none twice'
   );
 
   -- The application reads max(version) and trusts it, so a gap would make a
-  -- half-applied database look current.
+  -- half-applied database look current — the one failure this table exists to
+  -- prevent.
   select count(*) into v_count
-    from generate_series(1, 59) g
+    from generate_series(1, v_latest::int) g
    where not exists (
      select 1 from public.schema_migrations
       where version = lpad(g::text, 4, '0')
    );
   perform app_test.assert_equals(
     v_count, 0,
-    'there are no gaps between 0001 and the latest — a gap would read as current'
+    'there are no gaps below the latest — a gap would read as current'
   );
 
   -- ── Names travel with the versions ──────────────────────────────────────
@@ -67,11 +67,11 @@ begin
   -- Both bundles are one transaction and are meant to be safe to re-run; an
   -- ON CONFLICT that did not hold would abort the whole thing.
   insert into public.schema_migrations (version, name)
-  values ('0059', 'schema_version_stamp')
+  values (v_latest, 'restamped')
   on conflict (version) do nothing;
 
   select count(*) into v_count
-    from public.schema_migrations where version = '0059';
+    from public.schema_migrations where version = v_latest;
   perform app_test.assert_equals(
     v_count, 1, 'stamping the same version twice does not duplicate it'
   );
@@ -105,11 +105,11 @@ begin
     'a session cannot forge a migration record'
   );
   perform app_test.assert_raises(
-    $q$update public.schema_migrations set name = 'tampered' where version = '0059'$q$,
+    $q$update public.schema_migrations set name = 'tampered' where version = '0001'$q$,
     'a session cannot rewrite one'
   );
   perform app_test.assert_raises(
-    $q$delete from public.schema_migrations where version = '0059'$q$,
+    $q$delete from public.schema_migrations where version = '0001'$q$,
     'a session cannot delete one'
   );
 end $$;

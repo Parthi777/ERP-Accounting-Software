@@ -65,6 +65,8 @@ export default async function Page({
       : []),
   ];
 
+  // Safe to reduce: the loader is an uncapped aggregate RPC returning one row
+  // per group, not a capped page. See 0060 for the screens where it was not.
   const loan = rows.reduce((sum, r) => add(sum, r.loanAmount), paise(0));
   const awaiting = rows.reduce((sum, r) => add(sum, r.pendingDisbursement), paise(0));
 

@@ -52,6 +52,8 @@ export default async function Page({
 
   const rows = await getMarginReport({ from: range.from, to: range.to });
 
+  // Safe to reduce: the loader is an uncapped aggregate RPC returning one row
+  // per group, not a capped page. See 0060 for the screens where it was not.
   const revenue = rows.reduce((sum, r) => add(sum, r.revenue), paise(0));
   const cost = rows.reduce((sum, r) => add(sum, r.cost), paise(0));
   const margin = rows.reduce((sum, r) => add(sum, r.margin), paise(0));

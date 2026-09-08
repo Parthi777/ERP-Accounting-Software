@@ -113,17 +113,19 @@ export async function getBankAccounts(): Promise<BankAccountSummary[]> {
 
   const accounts = data ?? [];
 
-  // One count query for all accounts rather than one per account.
-  const { data: pending } = await supabase
-    .from('bank_transactions')
-    .select('bank_account_id')
-    .eq('reconciled', false)
-    .eq('status', 'ACTIVE');
+  // One grouped count in the database (0060). This used to select every
+  // unreconciled transaction and count the array — which grows with the
+  // dealer's trading history, and silently stops being true if PostgREST is
+  // ever given a row ceiling.
+  const { data: pending, error: pendingError } = await supabase.rpc('bank_unreconciled_counts');
 
-  const unreconciled = new Map<string, number>();
-  for (const row of pending ?? []) {
-    unreconciled.set(row.bank_account_id, (unreconciled.get(row.bank_account_id) ?? 0) + 1);
+  if (pendingError) {
+    throw new Error(`Failed to count unreconciled items: ${pendingError.message}`);
   }
+
+  const unreconciled = new Map<string, number>(
+    (pending ?? []).map((row) => [row.bank_account_id, Number(row.unreconciled)]),
+  );
 
   return accounts.map((row) => ({
     id: row.id,
