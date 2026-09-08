@@ -295,6 +295,12 @@ select r.id, p.code
      'cashbook.view', 'cashbook.receipts.create'
    );
 
+-- @BUNDLE-CUT ─────────────────────────────────────────────────────────────────
+-- scripts/build-all-in-one.sh stops here when generating the production bundle.
+-- Everything above is REQUIRED (permission catalogue + system roles); everything
+-- below is the demo tenant. Move this marker if that boundary ever moves.
+-- =============================================================================
+
 -- =============================================================================
 -- DEMO — one dealer, three branches, seven users, chart of accounts
 -- =============================================================================

@@ -42,6 +42,27 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
 Order matters — later migrations depend on earlier ones. `0009` defines policies over tables from
 `0002`–`0008`; `0004`'s helper functions are referenced by every policy.
 
+For the SQL editor, two generated bundles concatenate all of that into a single transactional script:
+
+| File | Contents | Verified to produce |
+|---|---|---|
+| `supabase/ALL-IN-ONE.sql` | Migrations + the required half of `seed.sql`. **Use this for a real dealer.** | 68 tables, 124 permissions, 7 system roles, **0 dealers** |
+| `supabase/ALL-IN-ONE-WITH-DEMO.sql` | The same, plus the demo tenant and its trading data | the above, plus 1 dealer, 3 branches, 8 employees, a balancing ledger |
+
+They were one file until the production copy carried the demo dealer behind a comment asking you to
+delete that section by hand before running it. A manual deletion step fails silently, and it fails
+towards a real dealer's database holding a fake dealer's ledger — so the choice is now which file you
+open.
+
+Note the split runs *inside* `supabase/seed.sql` as well as between files: that file holds the
+required permission catalogue **and** a demo tenant, so the production bundle is cut at the
+`@BUNDLE-CUT` marker in it. Cutting only `scripts/seed-demo-data.sql` would still have seeded a fake
+dealer with three branches and seven users.
+
+Regenerate both with `bash scripts/build-all-in-one.sh`; `npm run check:bundle` fails the build if
+they drift from `supabase/migrations/`, if the cut did not happen, or if the permission catalogue
+went missing.
+
 `seed.sql` is **required**: it installs the permission catalogue and the seven system roles, without
 which nobody can be authorized for anything. It also creates a demo dealer; the teardown for that is
 documented at the top of the file.
