@@ -146,6 +146,10 @@ type Insertable<T, R extends keyof T> = Partial<Omit<T, R>> & Pick<T, R>;
 // Populated by BEFORE INSERT triggers rather than column defaults.
 const TRIGGER_FILLED = {
   customers: ['customer_code'],
+  // 0040 gave suppliers the same code-issuing trigger customers have, and this
+  // list was not updated — so every TypeScript insert was forced to invent a
+  // supplier_code, which is exactly what the trigger exists to prevent.
+  suppliers: ['supplier_code'],
   purchase_bills: ['bill_number'],
   purchase_returns: ['return_number'],
   inventory_transactions: ['balance_after'],

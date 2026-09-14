@@ -1305,7 +1305,7 @@ type SuppliersRow = {
   updated_by: string | null;
 };
 
-type SuppliersRowInsert = Insertable<SuppliersRow, 'dealer_id' | 'supplier_code' | 'name'>;
+type SuppliersRowInsert = Insertable<SuppliersRow, 'dealer_id' | 'name'>;
 
 type SystemSettingsRow = {
   id: string;

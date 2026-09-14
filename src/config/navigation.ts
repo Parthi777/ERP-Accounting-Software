@@ -297,6 +297,7 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Employees', href: '/masters/employees', permission: 'masters.employees.view', status: 'ready' },
       { label: 'Finance Companies', href: '/masters/finance-companies', permission: 'finance.companies.view', status: 'ready' },
       { label: 'Suppliers', href: '/masters/suppliers', permission: 'masters.suppliers.view', status: 'ready' },
+      { label: 'Import Suppliers', href: '/masters/suppliers/upload', permission: 'masters.suppliers.manage', status: 'ready' },
       { label: 'Accessories', href: '/masters/accessories', permission: 'inventory.items.manage', status: 'ready' },
       { label: 'Spares', href: '/masters/spares', permission: 'inventory.items.manage', status: 'ready' },
       { label: 'Pricing', href: '/masters/pricing', permission: 'masters.pricing.manage', status: 'ready', phase: 3 },
