@@ -9,8 +9,9 @@ numbering, the posting engine) is joined by masters, pricing with approval, vehi
 inventory, bookings and sales, service and counter sales, finance, cash and bank, GST, and the
 consolidated MIS.
 
-Verified by `npm run verify`: 58 migrations, 27 test files and 703 database assertions run
-against a throwaway PostgreSQL instance on every check.
+Verified by `npm run verify`: 66 migrations, 32 SQL test files and 800+ database assertions run
+against a throwaway PostgreSQL instance on every check, plus 98 Vitest assertions over the
+TypeScript that money passes through.
 
 ---
 
@@ -90,6 +91,7 @@ catalogue, the system roles and the audit trail.
 | `npm run build` | Production build (standalone output for Railway) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint, including the architectural boundary rule |
+| `npm test` | Vitest — 98 unit assertions over money, redaction, parsing and the IRP client |
 | `npm run check:permissions` | Fails if the TS permission registry and SQL seed disagree |
 | `npm run check:nav` | Fails if a sidebar entry's status disagrees with whether its page is built |
 | `npm run db:incremental` | Bundles only the migrations a database is missing |

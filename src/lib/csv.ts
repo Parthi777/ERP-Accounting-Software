@@ -51,8 +51,21 @@ export function parseCsv(text: string): { headers: string[]; rows: Record<string
     return { headers: [], rows: [] };
   }
 
+  // Every run of non-alphanumeric characters becomes a single underscore, so
+  // "Chq/Ref No", "Chq Ref No" and "CHQ_REF_NO" all arrive as `chq_ref_no`.
+  //
+  // Replacing only whitespace was not enough, and the gap was invisible: HDFC
+  // writes "Chq/Ref No" and ICICI writes "Dr/Cr", which normalised to
+  // `chq/ref_no` and `dr/cr` and matched no alias. The first silently dropped
+  // every reference number; the second rejected every row of a single-amount
+  // statement as having no direction.
   const headers = splitCsvLine(lines[0]!).map((h) =>
-    h.trim().toLowerCase().replace(/^"|"$/g, '').replace(/\s+/g, '_'),
+    h
+      .trim()
+      .toLowerCase()
+      .replace(/^"|"$/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, ''),
   );
 
   const rows: Record<string, string>[] = [];
