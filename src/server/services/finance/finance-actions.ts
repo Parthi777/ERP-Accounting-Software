@@ -67,6 +67,7 @@ export async function recordTradeAdvanceAction(input: {
   date?: string;
   narration?: string | null;
   reference?: string | null;
+  idempotencyKey: string;
 }): Promise<service.FinanceResult> {
   try {
     const result = await service.recordTradeAdvance(input);

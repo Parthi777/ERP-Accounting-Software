@@ -456,6 +456,12 @@ export async function recordTradeAdvance(input: {
   readonly date?: string;
   readonly narration?: string | null;
   readonly reference?: string | null;
+  /**
+   * Makes a retried submission replay rather than write a second document
+   * (spec §50, migration 0063). Required, so typecheck names any caller that
+   * forgets it.
+   */
+  readonly idempotencyKey: string;
 }): Promise<FinanceResult> {
   const context = await requirePermission('finance.trade_advance.manage');
   const supabase = await createSupabaseServerClient();
@@ -478,6 +484,7 @@ export async function recordTradeAdvance(input: {
     p_date: input.date || undefined,
     p_narration: input.narration?.trim() || null,
     p_reference: input.reference?.trim() || null,
+    p_idempotency_key: input.idempotencyKey,
   });
 
   if (error) {

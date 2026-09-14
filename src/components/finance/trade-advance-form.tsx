@@ -8,6 +8,7 @@ import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { recordTradeAdvanceAction } from '@/server/services/finance/finance-actions';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 import {
   BANK_BACKED_TYPES,
   TRADE_ADVANCE_TYPES,
@@ -57,6 +58,10 @@ export function TradeAdvanceForm({
   const needsBank = BANK_BACKED_TYPES.includes(type);
   const value = Number(amount) || 0;
 
+  // Per company and type: two advances from the same financier on one day are
+  // a real possibility, so the key is renewed as soon as one is taken.
+  const idempotency = useIdempotencyKey(`trade-advance:${companyId}:${type}`);
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
@@ -76,12 +81,14 @@ export function TradeAdvanceForm({
         bankAccountId: needsBank ? bankAccountId : null,
         narration: narration.trim() || null,
         reference: reference.trim() || null,
+        idempotencyKey: idempotency.key(),
       });
 
       if (!result.ok) {
         setError(result.error ?? 'The entry could not be recorded.');
         return;
       }
+      idempotency.renew();
       setNotice(result.message ?? 'Recorded.');
       setAmount('');
       setNarration('');

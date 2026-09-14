@@ -416,6 +416,12 @@ export async function recordServicePayment(input: {
   readonly amount: number;
   readonly mode: string;
   readonly reference?: string | null;
+  /**
+   * Makes a retried submission replay rather than write a second document
+   * (spec §50, migration 0063). Required, so typecheck names any caller that
+   * forgets it.
+   */
+  readonly idempotencyKey: string;
 }): Promise<ServiceResult> {
   const context = await requirePermission('service.payments.collect');
   const supabase = await createSupabaseServerClient();
@@ -429,6 +435,7 @@ export async function recordServicePayment(input: {
     p_amount: input.amount,
     p_payment_mode: input.mode,
     p_reference: input.reference?.trim() || null,
+    p_idempotency_key: input.idempotencyKey,
   });
 
   if (error) {
@@ -777,7 +784,11 @@ export async function getCounterInvoices(params: {
   });
 }
 
-export async function createCounterInvoice(customerId?: string | null): Promise<ServiceResult> {
+export async function createCounterInvoice(
+  customerId: string | null | undefined,
+  /** Spec §50: a double-click must not open two counter invoices. */
+  idempotencyKey: string,
+): Promise<ServiceResult> {
   const context = await requirePermission('inventory.counter_sale.create');
   const supabase = await createSupabaseServerClient();
 
@@ -788,6 +799,7 @@ export async function createCounterInvoice(customerId?: string | null): Promise<
   const { data, error } = await supabase.rpc('create_counter_invoice', {
     p_branch_id: context.activeBranch.id,
     p_customer_id: customerId || null,
+    p_idempotency_key: idempotencyKey,
   });
 
   if (error) {

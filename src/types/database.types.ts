@@ -266,6 +266,7 @@ type BookingsRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  idempotency_key: string | null;
 };
 
 type BookingsRowInsert = Insertable<BookingsRow, 'dealer_id' | 'branch_id' | 'booking_number' | 'customer_id' | 'model_id'>;
@@ -752,6 +753,7 @@ type FinanceTransactionsRow = {
   journal_entry_id: string | null;
   created_at: string;
   created_by: string | null;
+  idempotency_key: string | null;
 };
 
 type FinanceTransactionsRowInsert = Insertable<FinanceTransactionsRow, 'dealer_id' | 'branch_id' | 'finance_company_id' | 'transaction_type'>;
@@ -1250,6 +1252,7 @@ type ServicePaymentsRow = {
   status: 'RECEIVED' | 'REVERSED';
   created_at: string;
   created_by: string | null;
+  idempotency_key: string | null;
 };
 
 type ServicePaymentsRowInsert = Insertable<ServicePaymentsRow, 'dealer_id' | 'invoice_id' | 'receipt_number' | 'amount' | 'payment_mode'>;
@@ -3420,11 +3423,11 @@ export interface Database {
         Returns: undefined;
       };
       create_booking_with_advance: {
-        Args: { p_customer_id: string; p_model_id: string; p_branch_id: string; p_booking_amount: number; p_advance_amount: number; p_payment_mode: string; p_variant_id?: string | null; p_vehicle_id?: string | null; p_expected_delivery?: string | null; p_sales_executive_id?: string | null; p_reference?: string | null; p_notes?: string | null };
+        Args: { p_customer_id: string; p_model_id: string; p_branch_id: string; p_booking_amount: number; p_advance_amount: number; p_payment_mode: string; p_variant_id?: string | null; p_vehicle_id?: string | null; p_expected_delivery?: string | null; p_sales_executive_id?: string | null; p_reference?: string | null; p_notes?: string | null; p_idempotency_key?: string | null };
         Returns: { booking_id: string; booking_number: string; receipt_number: string; journal_entry_id: string }[];
       };
       create_counter_invoice: {
-        Args: { p_branch_id: string; p_customer_id?: string | null; p_invoice_date?: string | null };
+        Args: { p_branch_id: string; p_customer_id?: string | null; p_invoice_date?: string | null; p_idempotency_key?: string | null };
         Returns: { invoice_id: string; invoice_number: string }[];
       };
       create_finance_application: {
@@ -3644,11 +3647,11 @@ export interface Database {
         Returns: { receipt_number: string; journal_entry_id: string }[];
       };
       record_service_payment: {
-        Args: { p_invoice_id: string; p_amount: number; p_payment_mode?: string | null; p_reference?: string | null; p_date?: string | null };
+        Args: { p_invoice_id: string; p_amount: number; p_payment_mode?: string | null; p_reference?: string | null; p_date?: string | null; p_idempotency_key?: string | null };
         Returns: { payment_id: string; receipt_number: string; balance_due: string }[];
       };
       record_trade_advance: {
-        Args: { p_finance_company_id: string; p_branch_id: string; p_type: string; p_amount: number; p_bank_account_id?: string | null; p_date?: string | null; p_narration?: string | null; p_reference?: string | null };
+        Args: { p_finance_company_id: string; p_branch_id: string; p_type: string; p_amount: number; p_bank_account_id?: string | null; p_date?: string | null; p_narration?: string | null; p_reference?: string | null; p_idempotency_key?: string | null };
         Returns: { transaction_id: number; journal_entry_id: string }[];
       };
       refund_booking_advance: {

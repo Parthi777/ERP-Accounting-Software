@@ -201,6 +201,12 @@ export interface CreateBookingInput {
   readonly expected_delivery?: string;
   readonly sales_executive_id?: string;
   readonly notes?: string;
+  /**
+   * Makes a retried submission replay rather than write a second document
+   * (spec §50, migration 0063). Required, so typecheck names any caller that
+   * forgets it.
+   */
+  readonly idempotencyKey: string;
 }
 
 export interface BookingResult {
@@ -241,6 +247,7 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     p_sales_executive_id: input.sales_executive_id || null,
     p_reference: input.reference || null,
     p_notes: input.notes || null,
+    p_idempotency_key: input.idempotencyKey,
   });
 
   if (error) {

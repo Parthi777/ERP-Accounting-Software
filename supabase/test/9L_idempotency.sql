@@ -273,3 +273,155 @@ begin
     'the key is stored on the sale, so the unique index from 0020 finally guards something'
   );
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 0063 — the rest of the money surface
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── Booking with advance: two document numbers must not be drawn twice ─────
+do $$
+declare
+  v_dealer uuid;
+  v_branch uuid;
+  v_cust   uuid;
+  v_model  uuid;
+  v_b1     uuid;
+  v_b2     uuid;
+  v_bn1    text;
+  v_bn2    text;
+  v_rn1    text;
+  v_rn2    text;
+  v_seq_b  bigint;
+  v_seq_a  bigint;
+  v_count  int;
+begin
+  select id into v_dealer from public.dealers  where code = 'SBM';
+  select id into v_branch from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_cust   from public.customers where dealer_id = v_dealer limit 1;
+  select id into v_model  from public.vehicle_models where dealer_id = v_dealer limit 1;
+
+  select last_number into v_seq_b from public.document_sequences
+   where dealer_id = v_dealer and doc_type = 'BOOKING' order by financial_year desc limit 1;
+
+  select booking_id, booking_number, receipt_number into v_b1, v_bn1, v_rn1
+    from public.create_booking_with_advance(
+      v_cust, v_model, v_branch, 5000, 1000, 'CASH',
+      null, null, null, null, null, null, 'test-booking-key-1');
+
+  select booking_id, booking_number, receipt_number into v_b2, v_bn2, v_rn2
+    from public.create_booking_with_advance(
+      v_cust, v_model, v_branch, 5000, 1000, 'CASH',
+      null, null, null, null, null, null, 'test-booking-key-1');
+
+  perform app_test.assert_equals(v_b2, v_b1, 'a retried booking replays the same booking');
+  perform app_test.assert_equals(v_bn2, v_bn1, 'and the same booking number');
+  perform app_test.assert_equals(v_rn2, v_rn1, 'and the same receipt number');
+
+  select count(*) into v_count from public.booking_payments where booking_id = v_b1;
+  perform app_test.assert_equals(v_count, 1, 'and took the advance once, not twice');
+
+  select last_number into v_seq_a from public.document_sequences
+   where dealer_id = v_dealer and doc_type = 'BOOKING' order by financial_year desc limit 1;
+  perform app_test.assert_equals(
+    v_seq_a - v_seq_b, 1::bigint,
+    'the replay drew no second booking number'
+  );
+end $$;
+
+-- ── Advance refund: the case where half a guard was worse than none ────────
+--
+-- The journal key here was already deterministic, so app.post_journal replayed
+-- the entry — and the function then wrote a SECOND cash row against it. The
+-- refund showed twice in the cash book and once in the ledger, which is the
+-- worst place for an error to land: over-reported on the day sheet, invisible to
+-- the trial balance that would have caught it.
+do $$
+declare
+  v_dealer uuid;
+  v_branch uuid;
+  v_cust   uuid;
+  v_model  uuid;
+  v_book   uuid;
+  v_e1     uuid;
+  v_e2     uuid;
+  v_cash   int;
+begin
+  select id into v_dealer from public.dealers  where code = 'SBM';
+  select id into v_branch from public.branches where dealer_id = v_dealer and code = 'MAIN';
+  select id into v_cust   from public.customers where dealer_id = v_dealer limit 1;
+  select id into v_model  from public.vehicle_models where dealer_id = v_dealer limit 1;
+
+  select booking_id into v_book
+    from public.create_booking_with_advance(
+      v_cust, v_model, v_branch, 8000, 2000, 'CASH',
+      null, null, null, null, null, null, 'test-refund-setup');
+
+  update public.bookings
+     set status = 'CANCELLED', cancelled_reason = 'Test: refunding the advance'
+   where id = v_book;
+
+  select journal_entry_id into v_e1
+    from public.refund_booking_advance(v_book, 2000, 'CASH', 'Customer changed their mind', v_branch);
+  select journal_entry_id into v_e2
+    from public.refund_booking_advance(v_book, 2000, 'CASH', 'Customer changed their mind', v_branch);
+
+  perform app_test.assert_equals(v_e2, v_e1, 'a retried refund replays the same journal');
+
+  select count(*) into v_cash from public.cash_transactions
+   where journal_entry_id = v_e1;
+  perform app_test.assert_equals(
+    v_cash, 1,
+    'and writes one cash row, not a second against the replayed journal'
+  );
+end $$;
+
+-- ── Counter invoice, service receipt and trade advance ─────────────────────
+do $$
+declare
+  v_dealer  uuid;
+  v_branch  uuid;
+  v_i1      uuid;
+  v_i2      uuid;
+  v_n1      text;
+  v_n2      text;
+  v_company uuid;
+  v_bank    uuid;
+  v_t1      bigint;
+  v_t2      bigint;
+  v_count   int;
+begin
+  select id into v_dealer from public.dealers  where code = 'SBM';
+  select id into v_branch from public.branches where dealer_id = v_dealer and code = 'MAIN';
+
+  select invoice_id, invoice_number into v_i1, v_n1
+    from public.create_counter_invoice(v_branch, null, current_date, 'test-counter-key-1');
+  select invoice_id, invoice_number into v_i2, v_n2
+    from public.create_counter_invoice(v_branch, null, current_date, 'test-counter-key-1');
+
+  perform app_test.assert_equals(v_i2, v_i1, 'a retried counter invoice replays');
+  perform app_test.assert_equals(v_n2, v_n1, 'and keeps its invoice number');
+
+  -- Trade advance: a finance company ledger is reconciled against the
+  -- financier's own statement, so a duplicate is an argument with someone who
+  -- has the money.
+  select id into v_company from public.finance_companies where dealer_id = v_dealer limit 1;
+  -- ADVANCE_RECEIVED insists on the account the money arrived in: an advance
+  -- with no bank account is money nobody can trace.
+  select id into v_bank from public.bank_accounts
+   where dealer_id = v_dealer and status = 'ACTIVE' limit 1;
+
+  select transaction_id into v_t1
+    from public.record_trade_advance(
+      v_company, v_branch, 'ADVANCE_RECEIVED', 50000, v_bank, current_date,
+      'Idempotent advance', 'TA-IDEM', 'test-trade-key-1');
+  select transaction_id into v_t2
+    from public.record_trade_advance(
+      v_company, v_branch, 'ADVANCE_RECEIVED', 50000, v_bank, current_date,
+      'Idempotent advance', 'TA-IDEM', 'test-trade-key-1');
+
+  perform app_test.assert_equals(v_t2, v_t1, 'a retried trade advance replays');
+
+  select count(*) into v_count from public.finance_transactions
+   where dealer_id = v_dealer and idempotency_key = 'test-trade-key-1';
+  perform app_test.assert_equals(v_count, 1, 'one finance ledger row carries that key');
+end $$;

@@ -88,6 +88,7 @@ export async function recordServicePaymentAction(input: {
   amount: number;
   mode: string;
   reference?: string | null;
+  idempotencyKey: string;
 }): Promise<service.ServiceResult> {
   try {
     const result = await service.recordServicePayment(input);
@@ -99,10 +100,11 @@ export async function recordServicePaymentAction(input: {
 }
 
 export async function createCounterInvoiceAction(
-  customerId?: string | null,
+  customerId: string | null | undefined,
+  idempotencyKey: string,
 ): Promise<service.ServiceResult> {
   try {
-    const result = await service.createCounterInvoice(customerId);
+    const result = await service.createCounterInvoice(customerId, idempotencyKey);
     if (result.ok) {
       revalidatePath('/inventory/counter-sales');
       revalidatePath('/inventory/ledger');

@@ -15,6 +15,7 @@ import {
   removeServiceLineAction,
 } from '@/server/services/service/service-actions';
 import type { ServiceInvoiceDetail } from '@/server/services/service/service-service';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 
 interface Item {
   readonly id: string;
@@ -73,6 +74,8 @@ export function ServiceInvoiceEditor({
   const draft = invoice.status === 'DRAFT';
   const posted = invoice.status === 'POSTED';
   const needsItem = lineType === 'SPARE' || lineType === 'ACCESSORY';
+
+  const idempotency = useIdempotencyKey(`service-payment:${invoice.id}`);
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string; message?: string }>, after?: () => void) => {
     setError(null);
@@ -382,8 +385,12 @@ export function ServiceInvoiceEditor({
                         amount: Number(amount),
                         mode,
                         reference: reference || null,
+                        idempotencyKey: idempotency.key(),
                       }),
-                    () => { setDialog(null); setAmount(''); setReference(''); },
+                    () => {
+                      idempotency.renew();
+                      setDialog(null); setAmount(''); setReference('');
+                    },
                   )
                 }>
                 {pending && <Loader2 className="animate-spin" aria-hidden />}

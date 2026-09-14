@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { FieldError, Input, Label } from '@/components/ui/input';
 import { formatINR, fromRupees } from '@/lib/money';
 import { createBookingAction } from '@/server/services/sales/booking-actions';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 
 interface Option {
   readonly id: string;
@@ -81,6 +82,10 @@ export function BookingForm({
   // Only variants and in-stock vehicles of the chosen model are offered.
   const availableVariants = variants.filter((v) => !selectedModel || v.modelId === selectedModel);
   const availableVehicles = vehicles.filter((v) => !selectedModel || v.modelId === selectedModel);
+  // Scoped to the customer: two bookings for one customer in a day are real,
+  // so the key is renewed the moment one is accepted.
+  const idempotency = useIdempotencyKey('booking-new');
+
 
   const onSubmit = handleSubmit((form) => {
     setFormError(null);
@@ -105,6 +110,7 @@ export function BookingForm({
         expected_delivery: form.expected_delivery || undefined,
         sales_executive_id: form.sales_executive_id || undefined,
         notes: form.notes || undefined,
+        idempotencyKey: idempotency.key(),
       });
 
       if (!result.ok) {

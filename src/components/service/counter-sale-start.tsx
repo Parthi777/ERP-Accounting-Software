@@ -7,6 +7,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/input';
 import { createCounterInvoiceAction } from '@/server/services/service/service-actions';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 
 /**
  * Starting an over-the-counter sale — spec §33.
@@ -28,14 +29,19 @@ export function CounterSaleStart({
   const [error, setError] = React.useState<string | null>(null);
   const [customerId, setCustomerId] = React.useState('');
 
+  // A double-click here used to open two counter invoices, each with its own
+  // number from the COUNTER_INVOICE sequence.
+  const idempotency = useIdempotencyKey('counter-sale-start');
+
   const submit = () => {
     setError(null);
     startTransition(async () => {
-      const result = await createCounterInvoiceAction(customerId || null);
+      const result = await createCounterInvoiceAction(customerId || null, idempotency.key());
       if (!result.ok || !result.id) {
         setError(result.error ?? 'The counter sale could not be started.');
         return;
       }
+      idempotency.renew();
       setOpen(false);
       setCustomerId('');
       router.push(`/inventory/counter-sales/${result.id}`);
