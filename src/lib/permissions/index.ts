@@ -94,7 +94,11 @@ function scrub(value: unknown, permissions: PermissionSet): unknown {
 
   const result: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-    const required = RESTRICTED_FIELDS[key];
+    // Object.hasOwn, not a bare index: RESTRICTED_FIELDS is a plain object, so
+    // `RESTRICTED_FIELDS['constructor']` resolves through Object.prototype and
+    // returns a function — truthy, never held as a permission, and therefore a
+    // field silently dropped for every session whatever they hold.
+    const required = Object.hasOwn(RESTRICTED_FIELDS, key) ? RESTRICTED_FIELDS[key] : undefined;
     if (required && !permissions.has(required)) {
       continue;
     }
