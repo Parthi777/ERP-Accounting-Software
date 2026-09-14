@@ -71,6 +71,7 @@ export const PERMISSIONS = [
   { code: 'customers.create', module: 'customers', description: 'Create a customer' },
   { code: 'customers.edit', module: 'customers', description: 'Edit customer details' },
   { code: 'customers.view_ledger', module: 'customers', description: 'View customer ledger and outstanding' },
+  { code: 'customers.import', module: 'customers', description: 'Bulk-import customers from CSV' },
 
   // ── Vehicles ──────────────────────────────────────────────────────────────
   { code: 'vehicles.stock.view', module: 'vehicles', description: 'View chassis-level vehicle stock' },

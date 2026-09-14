@@ -124,6 +124,7 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Customer Ledger', href: '/customers/ledger', permission: 'customers.view_ledger', status: 'ready', phase: 5 },
       { label: 'Vehicle History', href: '/customers/vehicles', permission: 'customers.view', status: 'ready', phase: 2 },
       { label: 'Service History', href: '/customers/service', permission: 'service.history.view', status: 'ready', phase: 6 },
+      { label: 'Import Customers', href: '/customers/upload', permission: 'customers.import', status: 'ready' },
     ],
   },
   {

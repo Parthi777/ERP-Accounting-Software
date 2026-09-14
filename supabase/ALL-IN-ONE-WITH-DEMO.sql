@@ -20592,6 +20592,7 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('customers.create',                'customers',  'Create a customer', false),
   ('customers.edit',                  'customers',  'Edit customer details', false),
   ('customers.view_ledger',           'customers',  'View customer ledger and outstanding', false),
+  ('customers.import',                'customers',  'Bulk-import customers from CSV', false),
 
   ('vehicles.stock.view',             'vehicles',   'View chassis-level vehicle stock', false),
   ('vehicles.stock.upload',           'vehicles',   'Upload vehicle stock from CSV/Excel', false),
@@ -20765,7 +20766,7 @@ select r.id, p.code
           'sales.view', 'sales.verify', 'sales.approve', 'sales.post', 'sales.cancel',
           'sales.return', 'sales.view_cost',
           'bookings.view', 'bookings.cancel', 'bookings.refund',
-          'customers.view', 'customers.view_ledger',
+          'customers.view', 'customers.view_ledger', 'customers.import',
           'service.jobcards.view', 'service.history.view',
           'admin.audit.view', 'admin.settings.view', 'admin.settings.manage',
           'admin.branches.view', 'admin.users.view',
