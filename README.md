@@ -96,6 +96,8 @@ catalogue, the system roles and the audit trail.
 | `npm run types:generate` | Regenerates `src/types/database.types.ts` from the migrations |
 | `npm run db:verify` | Applies migrations, seeds and integrity tests to a throwaway local database |
 | `scripts/apply-to-supabase.sh` | Applies migrations and seeds to a live database via `DATABASE_URL` |
+| `scripts/set-database-url.sh` | Tests a database password and writes a working `DATABASE_URL` into `.env.local` |
+| `scripts/post-migration-check.sql` | Read-only: confirms a migration landed on a live database |
 | `npm run check:bundle` | Fails if `ALL-IN-ONE.sql` has drifted from the migrations on disk |
 | `npm run check:schema-version` | Fails if the expected schema version lags the migrations, or a migration does not stamp itself |
 | `scripts/create-platform-admin.sql` | Grants an existing login platform administration, so it can onboard dealers |
