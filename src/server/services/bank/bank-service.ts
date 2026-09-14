@@ -183,6 +183,13 @@ export interface BankTransactionInput {
   readonly reference?: string | null;
   readonly utr?: string | null;
   readonly instrument?: string | null;
+  /**
+   * Makes a retried submission replay rather than write a second entry
+   * (spec §50, migration 0061). Required so typecheck names any call site that
+   * forgets it — a bank book that doubles on a double-click reconciles against
+   * a statement that will not.
+   */
+  readonly idempotencyKey: string;
 }
 
 export async function recordBankTransaction(input: BankTransactionInput): Promise<BankResult> {
@@ -209,6 +216,7 @@ export async function recordBankTransaction(input: BankTransactionInput): Promis
     p_reference: input.reference?.trim() || null,
     p_utr: input.utr?.trim() || null,
     p_instrument: input.instrument?.trim() || null,
+    p_idempotency_key: input.idempotencyKey,
   });
 
   if (error) {

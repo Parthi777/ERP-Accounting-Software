@@ -14,6 +14,7 @@ import {
   recordPaymentAction,
   transitionSaleAction,
 } from '@/server/services/sales/sale-actions';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 
 type Action = 'submit' | 'verify' | 'approve' | 'reject' | 'cancel';
 
@@ -46,8 +47,16 @@ export function SaleWorkflow({
   const [receivedBy, setReceivedBy] = React.useState('');
   const [odometer, setOdometer] = React.useState('');
   const [remarks, setRemarks] = React.useState('');
+  // One key per sale: a second instalment against the same invoice is a
+  // genuinely new receipt, so the key is renewed as soon as one is taken.
+  const idempotency = useIdempotencyKey(`sale-payment:${saleId}`);
 
-  const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
+
+  const run = (
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+    /** Runs only once the server has confirmed — see the payment button. */
+    afterSuccess?: () => void,
+  ) => {
     setError(null);
     startTransition(async () => {
       const result = await fn();
@@ -55,6 +64,7 @@ export function SaleWorkflow({
         setError(result.error ?? 'That action could not be completed.');
         return;
       }
+      afterSuccess?.();
       setDialog(null);
       setReason('');
       setAmount('');
@@ -216,7 +226,18 @@ export function SaleWorkflow({
                 <div className="mt-4 flex justify-end gap-2">
                   <Button variant="secondary" size="sm" onClick={() => setDialog(null)} disabled={pending}>Cancel</Button>
                   <Button size="sm" disabled={pending || !(Number(amount) > 0)}
-                    onClick={() => run(() => recordPaymentAction(saleId, Number(amount), mode, reference || undefined))}>
+                    onClick={() =>
+                      run(
+                        () =>
+                          recordPaymentAction(
+                            saleId, Number(amount), mode, reference || undefined, idempotency.key(),
+                          ),
+                        // Renewed only after the server took it. A retry of a
+                        // failed attempt must carry the same key, or it is not a
+                        // retry — it is a second receipt.
+                        idempotency.renew,
+                      )
+                    }>
                     {pending && <Loader2 className="animate-spin" aria-hidden />}
                     Record payment
                   </Button>

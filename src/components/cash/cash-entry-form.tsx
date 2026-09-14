@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { add, formatINR, fromRupees, paise, subtract } from '@/lib/money';
 import { recordCashAction } from '@/server/services/cash/cash-actions';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 
 interface Account {
   readonly id: string;
@@ -55,6 +56,10 @@ export function CashEntryForm({
   const [customerId, setCustomerId] = React.useState('');
   const [reference, setReference] = React.useState('');
 
+  // Scoped to the branch and business date: two tabs on different days are two
+  // different entries and must not share a key.
+  const idempotency = useIdempotencyKey(`cash-entry:${businessDate}`);
+
   const isReceipt = direction === 'RECEIPT';
   const value = Number(amount) || 0;
   const opening = paise(currentBalance);
@@ -81,12 +86,17 @@ export function CashEntryForm({
         customerId: customerId || null,
         reference: reference.trim() || null,
         date: businessDate,
+        idempotencyKey: idempotency.key(),
       });
 
       if (!result.ok) {
         setError(result.error ?? 'The entry could not be recorded.');
         return;
       }
+      // Only after the server confirmed. Renewing on the way out would give a
+      // retry of a failed submission a fresh key, which is the case the key
+      // exists for.
+      idempotency.renew();
       setAmount('');
       setParticular('');
       setReference('');

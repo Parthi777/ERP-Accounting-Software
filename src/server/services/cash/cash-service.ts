@@ -219,6 +219,16 @@ export interface CashTransactionInput {
   readonly customerId?: string | null;
   readonly reference?: string | null;
   readonly date: string;
+  /**
+   * Makes a retried submission replay rather than write a second entry
+   * (spec §50, migration 0061).
+   *
+   * Required, not optional. Optional would mean the next form to call this
+   * silently forgets it and the cash book doubles on a double-click; required
+   * means `npm run typecheck` names every call site that has not supplied one.
+   * Mint it with `useIdempotencyKey()` in the form.
+   */
+  readonly idempotencyKey: string;
 }
 
 export async function recordCashTransaction(input: CashTransactionInput): Promise<CashResult> {
@@ -249,6 +259,7 @@ export async function recordCashTransaction(input: CashTransactionInput): Promis
     p_customer_id: input.customerId || null,
     p_reference: input.reference?.trim() || null,
     p_date: input.date,
+    p_idempotency_key: input.idempotencyKey,
   });
 
   if (error) {

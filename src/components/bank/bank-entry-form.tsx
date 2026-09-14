@@ -8,6 +8,7 @@ import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { recordBankTransactionAction } from '@/server/services/bank/bank-actions';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 
 interface Account {
   readonly id: string;
@@ -46,6 +47,9 @@ export function BankEntryForm({
   const [reference, setReference] = React.useState('');
   const [utr, setUtr] = React.useState('');
 
+  // Scoped to the account and date: two tabs on two accounts are two entries.
+  const idempotency = useIdempotencyKey(`bank-entry:${bankAccountId}:${date}`);
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
@@ -66,12 +70,15 @@ export function BankEntryForm({
         date,
         reference: reference.trim() || null,
         utr: utr.trim() || null,
+        idempotencyKey: idempotency.key(),
       });
 
       if (!result.ok) {
         setError(result.error ?? 'The entry could not be recorded.');
         return;
       }
+      // Only on confirmed success: a retry of a failure must reuse the key.
+      idempotency.renew();
       setNotice(result.message ?? 'Recorded.');
       setAmount('');
       setParticular('');

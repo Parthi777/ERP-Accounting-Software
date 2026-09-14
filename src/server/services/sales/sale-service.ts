@@ -378,7 +378,18 @@ export async function recordPayment(
   saleId: string,
   amount: number,
   mode: string,
-  reference?: string,
+  reference: string | undefined,
+  /**
+   * Makes a retried submission replay rather than write a second receipt
+   * (spec §50, migration 0061).
+   *
+   * Positional and required, so every caller is named by `npm run typecheck`.
+   * This is the endpoint that had no protection whatever: a POSTED sale accepts
+   * payments repeatedly by design — a customer may pay in instalments — which is
+   * exactly why a resubmission is indistinguishable from a second instalment
+   * without a key to tell them apart.
+   */
+  idempotencyKey: string,
 ): Promise<SaleResult> {
   const context = await requirePermission('sales.create');
   const supabase = await createSupabaseServerClient();
@@ -393,6 +404,7 @@ export async function recordPayment(
     p_payment_mode: mode,
     p_reference: reference ?? null,
     p_finance_company_id: null,
+    p_idempotency_key: idempotencyKey,
   });
 
   if (error) {

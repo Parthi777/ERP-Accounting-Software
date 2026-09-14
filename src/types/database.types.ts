@@ -221,6 +221,7 @@ type BankTransactionsRow = {
   created_by: string | null;
   supplier_id: string | null;
   customer_id: string | null;
+  idempotency_key: string | null;
 };
 
 type BankTransactionsRowInsert = Insertable<BankTransactionsRow, 'dealer_id' | 'bank_account_id' | 'direction' | 'amount' | 'particular'>;
@@ -356,6 +357,7 @@ type CashTransactionsRow = {
   created_at: string;
   created_by: string | null;
   supplier_id: string | null;
+  idempotency_key: string | null;
 };
 
 type CashTransactionsRowInsert = Insertable<CashTransactionsRow, 'dealer_id' | 'branch_id' | 'cash_account_id' | 'direction' | 'amount' | 'particular'>;
@@ -1116,6 +1118,7 @@ type SalePaymentsRow = {
   status: 'RECEIVED' | 'REVERSED';
   created_at: string;
   created_by: string | null;
+  idempotency_key: string | null;
 };
 
 type SalePaymentsRowInsert = Insertable<SalePaymentsRow, 'dealer_id' | 'sale_id' | 'receipt_number' | 'amount' | 'payment_mode'>;
@@ -3621,11 +3624,11 @@ export interface Database {
         Returns: undefined;
       };
       record_bank_transaction: {
-        Args: { p_bank_account_id: string; p_direction: string; p_amount: number; p_particular: string; p_account_id: string; p_date?: string | null; p_reference?: string | null; p_utr?: string | null; p_instrument?: string | null; p_customer_id?: string | null; p_supplier_id?: string | null };
+        Args: { p_bank_account_id: string; p_direction: string; p_amount: number; p_particular: string; p_account_id: string; p_date?: string | null; p_reference?: string | null; p_utr?: string | null; p_instrument?: string | null; p_customer_id?: string | null; p_supplier_id?: string | null; p_idempotency_key?: string | null };
         Returns: { transaction_id: number; journal_entry_id: string; balance_after: string }[];
       };
       record_cash_transaction: {
-        Args: { p_branch_id: string; p_direction: string; p_amount: number; p_particular: string; p_account_id: string; p_customer_id?: string | null; p_reference?: string | null; p_date?: string | null; p_supplier_id?: string | null };
+        Args: { p_branch_id: string; p_direction: string; p_amount: number; p_particular: string; p_account_id: string; p_customer_id?: string | null; p_reference?: string | null; p_date?: string | null; p_supplier_id?: string | null; p_idempotency_key?: string | null };
         Returns: { transaction_id: number; journal_entry_id: string; balance_after: string }[];
       };
       record_einvoice_request: {
@@ -3637,7 +3640,7 @@ export interface Database {
         Returns: undefined;
       };
       record_sale_payment: {
-        Args: { p_sale_id: string; p_amount: number; p_payment_mode: string; p_reference?: string | null; p_finance_company_id?: string | null };
+        Args: { p_sale_id: string; p_amount: number; p_payment_mode: string; p_reference?: string | null; p_finance_company_id?: string | null; p_idempotency_key?: string | null };
         Returns: { receipt_number: string; journal_entry_id: string }[];
       };
       record_service_payment: {

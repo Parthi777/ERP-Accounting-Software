@@ -37,10 +37,11 @@ export async function postSaleAction(id: string): Promise<service.SaleResult> {
 }
 
 export async function recordPaymentAction(
-  saleId: string, amount: number, mode: string, reference?: string,
+  saleId: string, amount: number, mode: string, reference: string | undefined,
+  idempotencyKey: string,
 ): Promise<service.SaleResult> {
   try {
-    const result = await service.recordPayment(saleId, amount, mode, reference);
+    const result = await service.recordPayment(saleId, amount, mode, reference, idempotencyKey);
     if (result.ok) refresh(saleId);
     return result;
   } catch (error) {
