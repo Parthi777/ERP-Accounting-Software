@@ -201,3 +201,75 @@ begin
     v_count, 2, 'and that is two rows across two tenants, not one shared row'
   );
 end $$;
+
+-- ── A sale draft must not burn an invoice number on a retry ───────────────
+--
+-- sales_vehicle_active_key already stopped the duplicate sale. It did so after
+-- next_document_number had issued an invoice number and the rollback had thrown
+-- it away — leaving a gap in the GST series, which is a question to answer at
+-- filing time rather than a cosmetic blemish.
+do $$
+declare
+  v_dealer   uuid;
+  v_customer uuid;
+  v_vehicle  uuid;
+  v_sale1    uuid;
+  v_sale2    uuid;
+  v_num1     text;
+  v_num2     text;
+  v_seq_before bigint;
+  v_seq_after  bigint;
+  v_count    int;
+begin
+  select id into v_dealer from public.dealers where code = 'SBM';
+  select id into v_customer from public.customers where dealer_id = v_dealer limit 1;
+
+  select v.id into v_vehicle
+    from public.vehicles v
+   where v.dealer_id = v_dealer
+     and v.status = 'IN_STOCK'
+     and not exists (select 1 from public.sales s
+                      where s.vehicle_id = v.id and s.status <> 'CANCELLED')
+   order by v.chassis_no
+   limit 1;
+
+  if v_vehicle is null or v_customer is null then
+    raise notice '  -- no unsold vehicle available; skipping the sale-draft checks';
+    return;
+  end if;
+
+  select last_number into v_seq_before from public.document_sequences
+   where dealer_id = v_dealer and doc_type = 'VEHICLE_INVOICE'
+   order by financial_year desc limit 1;
+
+  select sale_id, invoice_number into v_sale1, v_num1
+    from public.create_vehicle_sale_draft(
+      v_customer, v_vehicle, current_date, null, null, 0, null, 'test-draft-key-1');
+
+  select sale_id, invoice_number into v_sale2, v_num2
+    from public.create_vehicle_sale_draft(
+      v_customer, v_vehicle, current_date, null, null, 0, null, 'test-draft-key-1');
+
+  perform app_test.assert_equals(v_sale2, v_sale1, 'a retried sale draft replays the same sale');
+  perform app_test.assert_equals(v_num2, v_num1, 'and the same invoice number');
+
+  select count(*) into v_count from public.sales
+   where dealer_id = v_dealer and idempotency_key = 'test-draft-key-1';
+  perform app_test.assert_equals(v_count, 1, 'one sale carries that key');
+
+  select last_number into v_seq_after from public.document_sequences
+   where dealer_id = v_dealer and doc_type = 'VEHICLE_INVOICE'
+   order by financial_year desc limit 1;
+
+  perform app_test.assert_equals(
+    v_seq_after - v_seq_before, 1::bigint,
+    'the replay drew no second invoice number — no gap in the GST series'
+  );
+
+  -- The column has existed since 0020 and was null on every row until 0062.
+  perform app_test.assert_equals(
+    (select idempotency_key from public.sales where id = v_sale1),
+    'test-draft-key-1',
+    'the key is stored on the sale, so the unique index from 0020 finally guards something'
+  );
+end $$;

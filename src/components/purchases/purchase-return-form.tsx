@@ -6,6 +6,7 @@ import { Loader2, Undo2 } from 'lucide-react';
 
 import type { ReturnableLine } from '@/server/services/purchases/purchase-return-service';
 import { postPurchaseReturnAction } from '@/server/services/purchases/purchase-return-actions';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
@@ -20,9 +21,9 @@ import { add, applyRate, formatINR, multiply, ZERO, type Paise } from '@/lib/mon
  * The figures below are the browser's estimate; the server recomputes every one
  * of them from the bill before anything is written.
  *
- * The idempotency key is minted once when the form mounts, so a double-click or
- * a retried submission returns the note the first one wrote instead of sending
- * the goods back twice (spec §50).
+ * The idempotency key is minted once per bill and held in sessionStorage, so a
+ * double-click, a retried submission or a page refresh mid-submit all return the
+ * note the first one wrote instead of sending the goods back twice (spec §50).
  */
 export function PurchaseReturnForm({
   billId,
@@ -45,7 +46,12 @@ export function PurchaseReturnForm({
   const [reason, setReason] = React.useState('');
   const [supplierRef, setSupplierRef] = React.useState('');
   const [returnDate, setReturnDate] = React.useState(() => new Date().toISOString().slice(0, 10));
-  const [key, setKey] = React.useState(() => crypto.randomUUID());
+
+  // Was an inline useState(() => crypto.randomUUID()). The hook is a strict
+  // upgrade on both counts: the key now survives a page refresh, and it no
+  // longer needs a secure context, so the form still submits from a counter PC
+  // reaching the app over plain http.
+  const idempotency = useIdempotencyKey(`purchase-return:${billId}`);
 
   const returnable = lines.filter((line) => line.returnableQuantity > 0);
 
@@ -79,7 +85,7 @@ export function PurchaseReturnForm({
     setQuantities({});
     setReason('');
     setSupplierRef('');
-    setKey(crypto.randomUUID());
+    idempotency.renew();
   };
 
   const submit = () => {
@@ -92,7 +98,7 @@ export function PurchaseReturnForm({
         reason,
         returnDate,
         supplierRef,
-        idempotencyKey: key,
+        idempotencyKey: idempotency.key(),
       });
       if (!result.ok) {
         setError(result.error ?? 'The note could not be posted.');

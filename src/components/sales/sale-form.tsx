@@ -10,6 +10,7 @@ import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { createSaleDraftAction } from '@/server/services/sales/sale-actions';
+import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
 
 interface Option {
   readonly id: string;
@@ -68,6 +69,10 @@ export function SaleForm({
 
   const values = useWatch({ control });
 
+  // Scoped to the booking when there is one, so drafting from the same booking
+  // in two tabs cannot produce two invoices; otherwise to this form's mount.
+  const idempotency = useIdempotencyKey(`sale-draft:${booking?.id ?? 'new'}`);
+
   const onSubmit = handleSubmit((form) => {
     setFormError(null);
     if (!form.customer_id) return setFormError('Choose a customer.');
@@ -82,12 +87,15 @@ export function SaleForm({
         sales_executive_id: form.sales_executive_id || undefined,
         discount: Number(form.discount) || 0,
         notes: form.notes || undefined,
+        idempotencyKey: idempotency.key(),
       });
 
       if (!result.ok) {
         setFormError(result.error ?? 'The invoice could not be drafted.');
         return;
       }
+      // The draft exists now; a later invoice from this screen is a new one.
+      idempotency.renew();
       router.push(`/sales/${result.id}`);
       router.refresh();
     });

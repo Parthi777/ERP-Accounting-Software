@@ -3444,7 +3444,7 @@ export interface Database {
         Returns: { invoice_id: string; invoice_number: string }[];
       };
       create_vehicle_sale_draft: {
-        Args: { p_customer_id: string; p_vehicle_id: string; p_invoice_date?: string | null; p_booking_id?: string | null; p_sales_executive_id?: string | null; p_discount?: number | null; p_notes?: string | null };
+        Args: { p_customer_id: string; p_vehicle_id: string; p_invoice_date?: string | null; p_booking_id?: string | null; p_sales_executive_id?: string | null; p_discount?: number | null; p_notes?: string | null; p_idempotency_key?: string | null };
         Returns: { sale_id: string; invoice_number: string; total_amount: string }[];
       };
       customer_ledger: {

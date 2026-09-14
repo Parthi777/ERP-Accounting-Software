@@ -478,6 +478,15 @@ export interface CreateSaleInput {
   readonly sales_executive_id?: string;
   readonly discount?: number;
   readonly notes?: string;
+  /**
+   * Makes a retried submission replay the draft it made rather than draw a
+   * second invoice number (spec §50, migration 0062).
+   *
+   * Required. `sales.idempotency_key` and its unique index have existed since
+   * 0020 and nothing ever wrote them, which is how the gap survived this long —
+   * the guarantee read as handled.
+   */
+  readonly idempotencyKey: string;
 }
 
 /**
@@ -498,6 +507,7 @@ export async function createSaleDraft(input: CreateSaleInput): Promise<SaleResul
     p_sales_executive_id: input.sales_executive_id ?? null,
     p_discount: input.discount ?? 0,
     p_notes: input.notes ?? null,
+    p_idempotency_key: input.idempotencyKey,
   });
 
   if (error) {
