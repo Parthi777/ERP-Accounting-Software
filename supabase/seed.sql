@@ -470,6 +470,7 @@ begin
       ('3000', 'Equity',                    'EQUITY',    'CREDIT', true,  null,   false),
       ('3100', 'Share Capital',             'EQUITY',    'CREDIT', false, '3000', false),
       ('3200', 'Retained Earnings',         'EQUITY',    'CREDIT', false, '3000', false),
+      ('3300', 'Opening Balance Equity',  'EQUITY',    'CREDIT', false, '3000', false),
 
       ('4000', 'Income',                    'INCOME',    'CREDIT', true,  null,   false),
       ('4100', 'Vehicle Sales',             'INCOME',    'CREDIT', false, '4000', true),

@@ -208,3 +208,34 @@ actually grants.
 
 **Health check fails on first deploy.** The build itself failed — check the Railway build log. The
 health endpoint does not depend on Supabase.
+
+## Cutting a dealer over from an existing system
+
+Order matters, because each step depends on the one before it. Doing balances
+before masters means party codes that resolve to nothing.
+
+1. **Masters.** Customers → **Import Customers**, then Masters → **Import
+   Suppliers**. Leave `customer_code` / `supplier_code` blank to have IDs issued,
+   or fill them in to keep the ones the dealer already uses — worth doing when
+   old invoices and paper records carry them, since renumbering makes every
+   historical document unfindable by the number printed on it.
+2. **Opening stock.** Vehicles → **Stock Upload** for chassis-level stock,
+   Inventory → **Stock Upload** for accessories and spares.
+3. **Opening balances.** Accounting → **Opening Balances**, once for customers
+   and once for suppliers, dated to the day before trading starts here. Each
+   upload posts one journal against 3300 Opening Balance Equity.
+4. **Reconcile before going live:**
+   - Trial balance balances, and 3300 equals the net of what was imported.
+   - Per-party ledgers match the old system — spot-check the largest debtors and
+     creditors rather than all of them.
+   - Stock value on the inventory report matches the physical count.
+5. **Clear 3300** into retained earnings once the figures are agreed. A non-zero
+   3300 is a useful signal that the reconciliation is unfinished.
+
+**Dry-run the whole sequence against a throwaway dealer first.** Provision one
+from Administration → Dealers, run every step, then remove it with
+`public.purge_dealer()`. A cut-over rehearsed once is a cut-over that does not
+have to be reversed in front of the dealer.
+
+If a step does go wrong: each import is one document. Reverse the journal
+(Accounting → Journal Entries), fix the file, and upload again.

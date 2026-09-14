@@ -3594,6 +3594,10 @@ export interface Database {
         Args: { p_settlement_id: string; p_bank_account_id: string };
         Returns: string;
       };
+      post_opening_balances: {
+        Args: { p_party_type: string; p_rows: Json; p_as_on?: string | null; p_narration?: string | null; p_idempotency_key?: string | null };
+        Returns: { journal_entry_id: string; parties: number; total: string }[];
+      };
       post_purchase_bill: {
         Args: { p_bill_id: string; p_idempotency_key?: string | null };
         Returns: string;
