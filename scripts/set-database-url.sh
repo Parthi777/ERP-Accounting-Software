@@ -61,32 +61,111 @@ else
   echo
 fi
 
+# A password pasted from a browser very often arrives with a trailing space or
+# newline, and Postgres treats those as part of it — which fails identically to
+# a genuinely wrong password and is invisible on screen.
+PW_RAW="$PW"
+PW="$(printf '%s' "$PW" | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+
 [ -n "$PW" ] || { red "No password entered."; exit 1; }
 
-# ── Test before writing ──────────────────────────────────────────────────────
-blue "==> Testing the connection"
-if ! OUT=$(PGPASSWORD="$PW" psql --no-psqlrc -tA \
-            -h "$HOST" -p "$PORT" -U "postgres.${REF}" -d postgres \
+if [ "$PW" != "$PW_RAW" ]; then
+  blue "==> Trimmed surrounding whitespace from the pasted password"
+fi
+printf '    password: %d characters\n' "${#PW}"
+
+# ── Find a route that actually authenticates ─────────────────────────────────
+#
+# There is more than one way into a Supabase database and which one works is not
+# a matter of taste:
+#
+#   direct   db.<ref>.supabase.co:5432 as `postgres`
+#            IPv6-only since Supabase moved direct connections off IPv4. Fine
+#            from a machine with IPv6; unreachable from one without, and the
+#            IPv4 add-on is the paid way round that.
+#
+#   pooler   aws-N-<region>.pooler.supabase.com as `postgres.<ref>`
+#            IPv4, and the username *must* carry the project ref. There are two
+#            generations, aws-0 and aws-1, and a project lives on exactly one of
+#            them. Connecting to the wrong generation with a perfectly good
+#            password fails as "password authentication failed", because that
+#            pooler has never heard of the tenant — which is why this script
+#            tries rather than assumes.
+#
+# 5432 is session mode, 6543 transaction mode. Both authenticate the same way;
+# transaction mode is the one to use from a serverless host.
+CANDIDATES=(
+  "db.${REF}.supabase.co|5432|postgres|direct (IPv6 only)"
+  "aws-0-ap-south-1.pooler.supabase.com|5432|postgres.${REF}|pooler aws-0, session"
+  "aws-0-ap-south-1.pooler.supabase.com|6543|postgres.${REF}|pooler aws-0, transaction"
+  "aws-1-ap-south-1.pooler.supabase.com|5432|postgres.${REF}|pooler aws-1, session"
+  "aws-1-ap-south-1.pooler.supabase.com|6543|postgres.${REF}|pooler aws-1, transaction"
+)
+
+# Whatever is already configured goes first: if it works, nothing moves.
+if [ -n "$HOST" ]; then
+  CANDIDATES=("${HOST}|${PORT}|postgres.${REF}|currently configured" "${CANDIDATES[@]}")
+fi
+
+blue "==> Trying each route"
+FOUND_HOST=""; FOUND_PORT=""; FOUND_USER=""
+
+for entry in "${CANDIDATES[@]}"; do
+  IFS='|' read -r c_host c_port c_user c_label <<< "$entry"
+  printf '    %-34s ' "$c_label"
+
+  # Without a timeout a route with no network path hangs for the OS default,
+  # and there are five of them to get through.
+  if OUT=$(PGCONNECT_TIMEOUT=8 PGPASSWORD="$PW" psql --no-psqlrc -tA \
+            -h "$c_host" -p "$c_port" -U "$c_user" -d postgres \
             -c 'select 1' 2>&1); then
-  red "Connection failed. .env.local has NOT been changed."
-  printf '  %s\n' "$(printf '%s' "$OUT" | head -1)"
+    green "connected"
+    FOUND_HOST="$c_host"; FOUND_PORT="$c_port"; FOUND_USER="$c_user"
+    break
+  fi
+
+  # The distinction matters: a refused password is a different problem from a
+  # host that cannot be reached, and saying which saves a round of guessing.
+  case "$OUT" in
+    *"password authentication failed"*) echo "password refused" ;;
+    *"could not translate"*|*"Network is unreachable"*|*"No route to host"*) echo "unreachable from here" ;;
+    *"timeout"*|*"timed out"*)          echo "timed out" ;;
+    *"Tenant or user not found"*)       echo "wrong pooler for this project" ;;
+    *"Connection refused"*)             echo "port closed" ;;
+    *)
+      # Prefer the server's own FATAL text; fall back to the first line, with
+      # the psql preamble and the host echo stripped so the reason is visible.
+      MSG=$(printf '%s' "$OUT" | sed -nE 's/.*FATAL: *(.*)/\1/p' | head -1)
+      [ -n "$MSG" ] || MSG=$(printf '%s' "$OUT" | tr '\n' ' ' \
+                             | sed -E 's/psql: error: *//; s/connection to server at [^ ]+ \([^)]*\), port [0-9]+ failed: *//')
+      echo "${MSG:0:58}" ;;
+  esac
+done
+
+if [ -z "$FOUND_HOST" ]; then
+  red "No route authenticated. .env.local has NOT been changed."
   echo
-  echo "  If it says password authentication failed, reset the password at"
-  echo "  Supabase → Project Settings → Database, and remember to update it on"
-  echo "  Railway too — the reset invalidates the old one everywhere."
+  echo "  Every route was tried with the password you entered, so if all of them"
+  echo "  say 'password refused', the password is wrong — reset it at"
+  echo "  Supabase → Project Settings → Database and try again."
+  echo
+  echo "  If they say 'unreachable from here', this machine has no route: the"
+  echo "  direct host is IPv6-only, and the pooler needs outbound 5432/6543."
   exit 1
 fi
-green "    connected"
+
+HOST="$FOUND_HOST"; PORT="$FOUND_PORT"; PG_USER="$FOUND_USER"
+blue "==> Using ${PG_USER}@${HOST}:${PORT}"
 
 # What the database says about itself, which is the reason to have psql at all.
-VERSION=$(PGPASSWORD="$PW" psql --no-psqlrc -tA -h "$HOST" -p "$PORT" \
-            -U "postgres.${REF}" -d postgres \
+VERSION=$(PGCONNECT_TIMEOUT=8 PGPASSWORD="$PW" psql --no-psqlrc -tA -h "$HOST" -p "$PORT" \
+            -U "$PG_USER" -d postgres \
             -c "select coalesce(max(version), 'not recorded') from public.schema_migrations" 2>/dev/null || echo 'no schema_migrations table')
 blue "==> Schema version: ${VERSION}"
 
 # ── Write, keeping a backup ──────────────────────────────────────────────────
 # .gitignore already covers .env*.bak, so the copy cannot be committed.
-URL="postgresql://postgres.${REF}:$(printf '%s' "$PW" | sed -e 's/[\/&:@?#%]/\\&/g')@${HOST}:${PORT}/postgres"
+URL="postgresql://${PG_USER}:$(printf '%s' "$PW" | python3 -c 'import sys,urllib.parse;sys.stdout.write(urllib.parse.quote(sys.stdin.read(), safe=""))')@${HOST}:${PORT}/postgres"
 cp "$ENV_FILE" "$ENV_FILE.bak"
 
 if grep -qE '^DATABASE_URL=' "$ENV_FILE"; then
