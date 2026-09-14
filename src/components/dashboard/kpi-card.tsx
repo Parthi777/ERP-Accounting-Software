@@ -4,7 +4,6 @@ import { Lock } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { Panel } from '@/components/ui/panel';
-import { Badge } from '@/components/ui/badge';
 import type { Kpi } from '@/server/services/dashboard/dashboard-service';
 
 /**
@@ -40,17 +39,15 @@ export function KpiCard({
   readonly detail?: string;
   readonly className?: string;
 }) {
-  const pending = kpi.status === 'awaiting_module';
-  const palette = TONES[pending ? 'muted' : tone];
+  const palette = TONES[tone];
 
   return (
     <Panel
-      interactive={!pending}
+      interactive
       className={cn(
         // The accent bar is the card's left border, so it runs the full height
         // whatever the content does. overflow-hidden keeps it inside the radius.
         'relative flex flex-col gap-2.5 overflow-hidden rounded-2xl p-[18px] pl-[22px]',
-        pending && 'opacity-80',
         className,
       )}
     >
@@ -78,34 +75,19 @@ export function KpiCard({
         )}
       </div>
 
-      {pending ? (
-        <p className="text-2xl font-bold tracking-tight text-ink-300" aria-label="Not yet available">
-          —
-        </p>
-      ) : (
-        <p
-          className={cn(
-            'numeric text-left text-[26px] font-bold leading-none tracking-tight',
-            palette.figure,
-          )}
-        >
-          {kpi.display}
-        </p>
-      )}
+      <p
+        className={cn(
+          'numeric text-left text-[26px] font-bold leading-none tracking-tight',
+          palette.figure,
+        )}
+      >
+        {kpi.display}
+      </p>
 
-      {!pending && detail && (
+      {detail && (
         <p className="truncate text-[11px] text-ink-500" title={detail}>
           {detail}
         </p>
-      )}
-
-      {pending && (
-        <div className="flex items-center gap-2">
-          <Badge variant="neutral">Phase {kpi.phase ?? '—'}</Badge>
-          <span className="truncate text-[11px] text-ink-400" title={kpi.note}>
-            {kpi.note}
-          </span>
-        </div>
       )}
     </Panel>
   );
@@ -121,12 +103,11 @@ export type KpiTone = 'brand' | 'positive' | 'warning' | 'danger' | 'accent' | '
  * reserved for the tiles that are a queue of work, where the figure being large
  * genuinely is the point.
  */
-const TONES: Record<KpiTone | 'muted', { bar: string; chip: string; figure: string }> = {
+const TONES: Record<KpiTone, { bar: string; chip: string; figure: string }> = {
   brand:    { bar: 'bg-brand-500',    chip: 'bg-brand-50 text-brand-600',       figure: 'text-ink-900' },
   positive: { bar: 'bg-positive-500', chip: 'bg-positive-50 text-positive-600', figure: 'text-positive-700' },
   warning:  { bar: 'bg-warning-500',  chip: 'bg-warning-50 text-warning-600',   figure: 'text-ink-900' },
   danger:   { bar: 'bg-danger-500',   chip: 'bg-danger-50 text-danger-600',     figure: 'text-danger-600' },
   accent:   { bar: 'bg-accent-500',   chip: 'bg-accent-50 text-accent-600',     figure: 'text-ink-900' },
   info:     { bar: 'bg-sky-400',      chip: 'bg-sky-50 text-sky-600',           figure: 'text-ink-900' },
-  muted:    { bar: 'bg-ink-200',      chip: 'bg-ink-100 text-ink-400',          figure: 'text-ink-300' },
 };

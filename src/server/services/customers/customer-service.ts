@@ -6,6 +6,7 @@ import { AppError, NotFoundError, ValidationError } from '@/server/errors';
 import { customerSchema, type CustomerInput } from '@/lib/validation/customer';
 import * as repository from '@/server/repositories/customer-repository';
 import { recordAudit } from '@/server/services/audit/record-audit';
+import { fromDb, type Paise } from '@/lib/money';
 
 export type { Customer, CustomerListResult, CustomerStats } from '@/server/repositories/customer-repository';
 export { CUSTOMERS_PAGE_SIZE } from '@/server/repositories/customer-repository';
@@ -241,3 +242,53 @@ export async function getCustomerOptions(limit = 500): Promise<CustomerOption[]>
 }
 
 export { ValidationError };
+
+/**
+ * Customer 360 (spec §11) — one query behind the whole panel.
+ *
+ * This replaces a hardcoded array of six literals that rendered as dashed empty
+ * boxes badged "P4"/"P5"/"P6" under the subtitle "Fills in as each module is
+ * built". Every one of those phases had shipped; it was the only place in the
+ * product where invented data reached a screen.
+ */
+export interface Customer360 {
+  readonly bookingCount: number;
+  readonly bookingAdvance: Paise;
+  readonly saleCount: number;
+  readonly saleValue: Paise;
+  readonly paidAmount: Paise;
+  readonly outstanding: Paise;
+  readonly financeCount: number;
+  readonly financeAmount: Paise;
+  readonly serviceCount: number;
+  readonly serviceValue: Paise;
+  readonly vehicleCount: number;
+  readonly lastActivity: string | null;
+}
+
+export async function getCustomer360(customerId: string): Promise<Customer360> {
+  await requirePermission('customers.view');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.rpc('customer_360', { p_customer_id: customerId });
+
+  if (error) {
+    throw new Error(`Failed to load the customer summary: ${error.message}`);
+  }
+
+  const row = data?.[0];
+  return {
+    bookingCount: Number(row?.booking_count ?? 0),
+    bookingAdvance: fromDb(row?.booking_advance),
+    saleCount: Number(row?.sale_count ?? 0),
+    saleValue: fromDb(row?.sale_value),
+    paidAmount: fromDb(row?.paid_amount),
+    outstanding: fromDb(row?.outstanding),
+    financeCount: Number(row?.finance_count ?? 0),
+    financeAmount: fromDb(row?.finance_amount),
+    serviceCount: Number(row?.service_count ?? 0),
+    serviceValue: fromDb(row?.service_value),
+    vehicleCount: Number(row?.vehicle_count ?? 0),
+    lastActivity: row?.last_activity ?? null,
+  };
+}

@@ -233,7 +233,7 @@ const RPC = new Set([
   // List totals — spec §51. Figures that describe the period rather than the
   // page the screen happened to draw.
   'finance_applications_list', 'finance_application_totals', 'service_invoice_totals',
-  'bank_unreconciled_counts',
+  'bank_unreconciled_counts', 'dashboard_unit_counts', 'customer_360',
   // Transfers, adjustments and returns — spec §21, §34, §35.
   'dispatch_vehicle_transfer', 'receive_vehicle_transfer', 'transfer_inventory_stock',
   'adjust_inventory_stock', 'return_vehicle_sale',

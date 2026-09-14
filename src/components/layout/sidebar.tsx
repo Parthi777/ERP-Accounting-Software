@@ -171,14 +171,6 @@ export function Sidebar({ sections, dealerName, user, branches, activeBranchId, 
                             )}
                           >
                             <span className="truncate">{item.label}</span>
-                            {item.status === 'planned' && (
-                              <span
-                                className="shrink-0 rounded bg-ink-100 px-1 text-[10px] font-medium text-ink-400"
-                                title={`Arrives in phase ${item.phase ?? '—'}`}
-                              >
-                                P{item.phase ?? '?'}
-                              </span>
-                            )}
                           </Link>
                         </li>
                       );

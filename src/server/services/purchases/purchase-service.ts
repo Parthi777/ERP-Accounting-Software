@@ -602,3 +602,41 @@ export async function cancelPurchaseBill(
         : 'The draft was discarded. Its chassis are available to bill again.',
   };
 }
+
+/**
+ * The GST rates configured in this dealer's tax master, for the purchase bill
+ * editor's rate picker.
+ *
+ * It used to offer a hardcoded `[0, 5, 12, 18, 28]`, which contradicts spec §16
+ * — "never hard-code GST rates in UI logic" — and is stated as a rule in
+ * 0014_tax_and_hsn.sql itself. A dealer who configures a rate the array does not
+ * list cannot enter the bill they were actually issued, and a rate that changes
+ * changes nowhere.
+ *
+ * Distinct rates rather than tax codes, because a purchase line records a
+ * percentage and splits it into CGST/SGST or IGST itself: a purchase is evidence
+ * of someone else's invoice, so the code on it is the supplier's, not ours.
+ */
+export async function getPurchaseGstRates(): Promise<number[]> {
+  await requirePermission('purchases.view');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase
+    .from('tax_codes')
+    // total_rate is generated as cgst + sgst + cess, which is the headline
+    // percentage a supplier's invoice quotes; igst_rate carries the same figure
+    // for an inter-state bill. Either way it is one number to the buyer.
+    .select('total_rate, igst_rate')
+    .eq('status', 'ACTIVE')
+    .order('total_rate');
+
+  if (error) {
+    throw new Error(`Failed to load GST rates: ${error.message}`);
+  }
+
+  const rates = new Set<number>([0]);
+  for (const row of data ?? []) {
+    rates.add(Number(row.total_rate) || Number(row.igst_rate));
+  }
+  return [...rates].sort((a, b) => a - b);
+}

@@ -8,6 +8,7 @@ import {
   type LedgerBalance,
 } from '@/server/repositories/ledger-repository';
 import { requirePermission, type TenantContext } from '@/server/auth/tenant-context';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 /**
  * Dashboard KPIs — spec §10, §43.
@@ -16,30 +17,30 @@ import { requirePermission, type TenantContext } from '@/server/auth/tenant-cont
  *
  *  1. Every figure marked `ready` is computed from posted double-entry journals
  *     through `account_balances()`. Nothing is invented to fill a card.
- *  2. A KPI whose source module is not built yet reports `awaiting_module` with
- *     no value at all. Spec §61 is explicit that fake accounting behaviour must
- *     not be used to make the UI look finished — a card that says "Phase 4"
- *     is more useful than a plausible number that means nothing.
+ *  2. Nothing is invented to fill a card. Spec §61 forbids fake accounting
+ *     behaviour used to make the UI look finished.
  *
  * Unit counts (vehicles sold, bookings taken, deliveries made) genuinely cannot
- * come from a ledger — a journal records value, not units — so they wait for the
- * sales, booking and inventory modules. Value KPIs come from the ledger today.
+ * come from a ledger — a journal records value, not units — so they come from
+ * `dashboard_unit_counts()` (0064) instead.
+ *
+ * Until 0064 those seven tiles rendered dimmed, badged with the phase that would
+ * deliver them. That was honest when written and had been wrong for months: the
+ * phases had all shipped, so the dashboard was telling a dealer that modules
+ * they used daily had not arrived. Which is the same failure as a fake number,
+ * pointed the other way.
  */
 
-export type KpiStatus = 'ready' | 'awaiting_module';
 export type KpiFormat = 'currency' | 'currency_short' | 'number' | 'percent';
 
 export interface Kpi {
   readonly key: string;
   readonly label: string;
-  readonly status: KpiStatus;
+  readonly status: 'ready';
   /** Rendered text. Absent when the module has not been built. */
   readonly display: string | null;
   readonly raw: number | null;
   readonly format: KpiFormat;
-  /** Development phase from spec §56 that will deliver this figure. */
-  readonly phase?: number;
-  readonly note?: string;
   /** Cost/margin/profit figures, withheld unless the session holds the permission. */
   readonly sensitive?: boolean;
 }
@@ -98,15 +99,62 @@ export interface DashboardQuery {
   readonly branchId: string | null;
 }
 
+interface UnitCounts {
+  readonly vehicleSalesUnits: number;
+  readonly bookings: number;
+  readonly deliveries: number;
+  readonly vehicleStockQty: number;
+  readonly accessoryStockQty: number;
+  readonly spareStockQty: number;
+  readonly financeUnits: number;
+}
+
+/**
+ * The seven counts a ledger cannot produce (0064).
+ *
+ * One round trip for all of them. Seven separate count queries on every
+ * dashboard load would be seven cross-region trips, which on this deployment is
+ * the dominant cost of rendering the page.
+ */
+async function getUnitCounts(period: {
+  readonly from: string;
+  readonly to: string;
+  readonly branchId: string | null;
+}): Promise<UnitCounts> {
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.rpc('dashboard_unit_counts', {
+    p_from: period.from,
+    p_to: period.to,
+    p_branch_id: period.branchId,
+  });
+
+  if (error) {
+    throw new Error(`Failed to load the dashboard counts: ${error.message}`);
+  }
+
+  const row = data?.[0];
+  return {
+    vehicleSalesUnits: Number(row?.vehicle_sales_units ?? 0),
+    bookings: Number(row?.bookings ?? 0),
+    deliveries: Number(row?.deliveries ?? 0),
+    vehicleStockQty: Number(row?.vehicle_stock_qty ?? 0),
+    accessoryStockQty: Number(row?.accessory_stock_qty ?? 0),
+    spareStockQty: Number(row?.spare_stock_qty ?? 0),
+    financeUnits: Number(row?.finance_units ?? 0),
+  };
+}
+
 export async function getDashboard(query: DashboardQuery): Promise<DashboardData> {
   const context = await requirePermission('dashboard.view');
   const canSeeMargin = context.permissions.has('dashboard.view_margin' satisfies Permission);
 
   const period = { from: query.from, to: query.to, branchId: resolveBranch(context, query.branchId) };
 
-  const [balances, trend] = await Promise.all([
+  const [balances, trend, units] = await Promise.all([
     getAccountBalances(period),
     getDailyRevenue(period, REVENUE_CODES),
+    getUnitCounts(period),
   ]);
 
   const byCode = new Map(balances.map((balance) => [balance.code, balance]));
@@ -135,28 +183,23 @@ export async function getDashboard(query: DashboardQuery): Promise<DashboardData
 
   // ── Row 1: the six headline cards from the mockup ─────────────────────────
   const primary: Kpi[] = [
-    awaiting('vehicle_sales_units', 'Vehicle Sales', 'number', 4,
-      'Unit counts arrive with the vehicle sales module.'),
+    counted('vehicle_sales_units', 'Vehicle Sales', units.vehicleSalesUnits),
     ready('vehicle_sales_value', 'Vehicle Sales Value', vehicleRevenue, 'currency_short'),
-    awaiting('bookings', 'Bookings', 'number', 4, 'Booking counts arrive with the booking module.'),
+    counted('bookings', 'Bookings', units.bookings),
     ready('booking_advance', 'Booking Advance', closing(ACCOUNTS.customerAdvances), 'currency_short'),
-    awaiting('deliveries', 'Deliveries', 'number', 4, 'Delivery counts arrive with the sales module.'),
+    counted('deliveries', 'Deliveries', units.deliveries),
     ready('service_revenue', 'Service Revenue', serviceRevenue, 'currency_short'),
   ];
 
   // ── Row 2: stock and finance ──────────────────────────────────────────────
   const secondary: Kpi[] = [
-    awaiting('vehicle_stock_qty', 'Vehicle Stock (Qty)', 'number', 2,
-      'Chassis-level stock arrives with the vehicle inventory module.'),
+    counted('vehicle_stock_qty', 'Vehicle Stock (Qty)', units.vehicleStockQty),
     ready('vehicle_stock_value', 'Vehicle Stock Value', closing(ACCOUNTS.vehicleStock), 'currency_short'),
-    awaiting('accessory_stock_qty', 'Accessories Stock (Qty)', 'number', 3,
-      'Item-level stock arrives with the inventory module.'),
+    counted('accessory_stock_qty', 'Accessories Stock (Qty)', units.accessoryStockQty),
     ready('accessory_stock_value', 'Accessories Stock Value', closing(ACCOUNTS.accessoryStock), 'currency_short'),
-    awaiting('spare_stock_qty', 'Spare Stock (Qty)', 'number', 3,
-      'Item-level stock arrives with the inventory module.'),
+    counted('spare_stock_qty', 'Spare Stock (Qty)', units.spareStockQty),
     ready('spare_stock_value', 'Spare Stock Value', closing(ACCOUNTS.spareStock), 'currency_short'),
-    awaiting('finance_units', 'Finance Units', 'number', 4,
-      'Finance unit counts arrive with the HP sales module.'),
+    counted('finance_units', 'Finance Units', units.financeUnits),
     ready('finance_amount', 'Finance Amount', closing(ACCOUNTS.financeReceivable), 'currency_short'),
   ];
 
@@ -239,8 +282,22 @@ function sensitive(
   };
 }
 
-function awaiting(key: string, label: string, format: KpiFormat, phase: number, note: string): Kpi {
-  return { key, label, status: 'awaiting_module', display: null, raw: null, format, phase, note };
+/**
+ * A unit count — vehicles, bookings, items on a shelf.
+ *
+ * Separate from `ready()` because that one takes Paise and renders money. These
+ * are counts, and passing a count through the money formatter would print ₹8.00
+ * for eight vehicles in stock.
+ */
+function counted(key: string, label: string, value: number): Kpi {
+  return {
+    key,
+    label,
+    status: 'ready',
+    display: new Intl.NumberFormat('en-IN').format(value),
+    raw: value,
+    format: 'number',
+  };
 }
 
 function render(value: Paise, format: KpiFormat): string {

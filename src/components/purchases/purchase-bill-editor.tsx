@@ -38,11 +38,14 @@ export function PurchaseBillEditor({
   bill,
   unbilledVehicles,
   items,
+  gstRates,
   can,
 }: {
   readonly bill: PurchaseBill;
   readonly unbilledVehicles: readonly UnbilledVehicle[];
   readonly items: readonly { id: string; label: string; type: PurchaseLineType; standardCost: number }[];
+  /** From the dealer's tax master (spec §16) — never a list written in here. */
+  readonly gstRates: readonly number[];
   readonly can: { readonly edit: boolean; readonly post: boolean; readonly cancel: boolean };
 }) {
   const router = useRouter();
@@ -89,6 +92,7 @@ export function PurchaseBillEditor({
           billId={bill.id}
           unbilledVehicles={unbilledVehicles}
           items={items}
+          gstRates={gstRates}
           pending={pending}
           onAdd={(input) => run(() => addPurchaseLineAction(input))}
         />
@@ -155,19 +159,18 @@ export function PurchaseBillEditor({
   );
 }
 
-/** Standard GST splits a dealer actually buys at. */
-const GST_RATES = [0, 5, 12, 18, 28];
-
 function AddLine({
   billId,
   unbilledVehicles,
   items,
+  gstRates,
   pending,
   onAdd,
 }: {
   readonly billId: string;
   readonly unbilledVehicles: readonly UnbilledVehicle[];
   readonly items: readonly { id: string; label: string; type: PurchaseLineType; standardCost: number }[];
+  readonly gstRates: readonly number[];
   readonly pending: boolean;
   readonly onAdd: (input: {
     billId: string;
@@ -322,7 +325,7 @@ function AddLine({
           <Label htmlFor="line-gst" className="mb-1.5 block">GST</Label>
           <select id="line-gst" value={gst} onChange={(e) => setGst(Number(e.target.value))}
             className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
-            {GST_RATES.map((r) => <option key={r} value={r}>{r}%</option>)}
+            {gstRates.map((r) => <option key={r} value={r}>{r}%</option>)}
           </select>
           <label className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-500">
             <input type="checkbox" checked={interState} onChange={(e) => setInterState(e.target.checked)} />

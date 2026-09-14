@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, ChevronRight, CircleHelp, LogOut, Menu, Search } from 'lucide-react';
+import { ChevronRight, CircleHelp, LogOut, Menu, Search } from 'lucide-react';
 
 import { initials } from '@/lib/format';
 import { breadcrumbsFor } from '@/config/navigation';
@@ -85,20 +85,11 @@ export function Header({ user, dealerName, sections, onToggleSidebar }: HeaderPr
             className="flex h-9 items-center gap-2 rounded-xl border border-ink-200 bg-white px-3 text-sm text-ink-400 shadow-sm transition-colors hover:border-brand-200 hover:text-ink-600 sm:w-64"
           >
             <Search className="size-4 shrink-0" aria-hidden />
-            <span className="hidden flex-1 text-left sm:block">Search anything…</span>
+            <span className="hidden flex-1 text-left sm:block">Jump to a page…</span>
             <kbd className="hidden rounded border border-ink-200 bg-ink-50 px-1.5 font-sans text-[10px] font-medium text-ink-500 sm:block">
               ⌘K
             </kbd>
           </button>
-
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label="Notifications"
-            className="relative rounded-xl"
-          >
-            <Bell />
-          </Button>
 
           <Button variant="secondary" size="icon" aria-label="Help" className="hidden rounded-xl sm:inline-flex">
             <CircleHelp />

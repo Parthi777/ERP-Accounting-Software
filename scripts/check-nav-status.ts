@@ -43,7 +43,14 @@ function parseNav(): NavEntry[] {
   return entries;
 }
 
-/** A route is built when its page exists and is not a placeholder. */
+/**
+ * A route is built when its page exists and is not a placeholder.
+ *
+ * No page renders <ModulePlaceholder> any more and the component itself is gone,
+ * so in practice this now catches the other half: a sidebar entry pointing at a
+ * route with no page at all. The placeholder branch is kept because the check is
+ * cheap and the next unbuilt module should not have to reinvent the guard.
+ */
 function isBuilt(href: string): { exists: boolean; built: boolean } {
   const page = join(root, 'src', 'app', '(app)', href === '/' ? '' : href, 'page.tsx');
   if (!existsSync(page)) {

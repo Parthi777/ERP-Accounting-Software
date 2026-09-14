@@ -3,13 +3,14 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, Pencil } from 'lucide-react';
 
-import { getCustomer } from '@/server/services/customers/customer-service';
+import { getCustomer, getCustomer360 } from '@/server/services/customers/customer-service';
 import { requireTenantContext } from '@/server/auth/tenant-context';
 import { NotFoundError } from '@/server/errors';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatDate, formatDateTime, formatMobile } from '@/lib/format';
+import { formatINR, type Paise } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Customer' };
 export const dynamic = 'force-dynamic';
@@ -20,21 +21,7 @@ const STATUS_TONE: Record<string, 'positive' | 'neutral' | 'danger'> = {
   BLOCKED: 'danger',
 };
 
-/**
- * Customer 360 (spec §11).
- *
- * Identity is real. The related sections — bookings, sales, payments, finance,
- * service — name the module that will fill them rather than showing an empty
- * table that reads as broken.
- */
-const RELATED = [
-  { label: 'Bookings', phase: 4, note: 'Booking history and advances' },
-  { label: 'Vehicle Sales', phase: 4, note: 'Invoices, chassis and delivery' },
-  { label: 'Payments', phase: 5, note: 'Receipts and outstanding' },
-  { label: 'Finance', phase: 4, note: 'HP applications and disbursement' },
-  { label: 'Service', phase: 6, note: 'Job cards and service invoices' },
-  { label: 'Ledger', phase: 5, note: 'Running account from the general ledger' },
-];
+
 
 export default async function CustomerDetailPage({
   params,
@@ -53,6 +40,8 @@ export default async function CustomerDetailPage({
     }
     throw error;
   }
+
+  const summary = await getCustomer360(customer.id);
 
   const canEdit = context.permissions.has('customers.edit');
   const branch = context.accessibleBranches.find((b) => b.id === customer.origin_branch_id);
@@ -138,27 +127,117 @@ export default async function CustomerDetailPage({
           <PanelHeader>
             <div>
               <PanelTitle>Customer 360</PanelTitle>
-              <p className="text-xs text-ink-500">Fills in as each module is built</p>
+              <p className="text-xs text-ink-500">
+                {summary.lastActivity
+                  ? `Last activity ${formatDate(summary.lastActivity)}`
+                  : 'No transactions yet'}
+              </p>
             </div>
           </PanelHeader>
           <PanelContent>
-            <ul className="space-y-2">
-              {RELATED.map((item) => (
-                <li
-                  key={item.label}
-                  className="flex items-start justify-between gap-2 rounded-lg border border-dashed border-ink-200 px-3 py-2"
-                >
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-ink-600">{item.label}</span>
-                    <span className="block text-xs text-ink-400">{item.note}</span>
-                  </span>
-                  <Badge variant="neutral">P{item.phase}</Badge>
-                </li>
-              ))}
+            <ul className="space-y-1.5">
+              <Related
+                label="Bookings"
+                count={summary.bookingCount}
+                value={summary.bookingAdvance}
+                valueLabel="advance held"
+                href={`/bookings?q=${encodeURIComponent(customer.customer_code)}`}
+              />
+              <Related
+                label="Vehicle sales"
+                count={summary.saleCount}
+                value={summary.saleValue}
+                valueLabel="invoiced"
+                href={`/sales?q=${encodeURIComponent(customer.customer_code)}`}
+              />
+              <Related
+                label="Payments"
+                count={null}
+                value={summary.paidAmount}
+                valueLabel="received"
+                href={`/customers/ledger?customer=${customer.id}`}
+              />
+              <Related
+                label="Finance"
+                count={summary.financeCount}
+                value={summary.financeAmount}
+                valueLabel="financed"
+                href={`/finance/hp-sales?q=${encodeURIComponent(customer.customer_code)}`}
+              />
+              <Related
+                label="Service"
+                count={summary.serviceCount}
+                value={summary.serviceValue}
+                valueLabel="billed"
+                href={`/customers/service?customer=${customer.id}`}
+              />
+              <Related
+                label="Vehicles"
+                count={summary.vehicleCount}
+                value={null}
+                href={`/customers/vehicles?customer=${customer.id}`}
+              />
             </ul>
+
+            {/* The one figure that is a balance rather than a total, so it is
+                separated from the list and takes its colour from its sign. */}
+            <div className="mt-3 flex items-center justify-between rounded-lg border border-ink-200 bg-ink-50 px-3 py-2">
+              <span className="text-sm font-medium text-ink-700">Outstanding</span>
+              <span
+                className={`numeric text-sm font-semibold ${
+                  summary.outstanding > 0 ? 'text-warning-700' : 'text-ink-700'
+                }`}
+              >
+                {formatINR(summary.outstanding)}
+              </span>
+            </div>
+            <p className="mt-1.5 text-[11px] text-ink-400">
+              From the customer&rsquo;s ledger account, so it always agrees with the ledger screen.
+            </p>
           </PanelContent>
         </Panel>
       </div>
     </div>
+  );
+}
+
+/**
+ * One line of the Customer 360 panel.
+ *
+ * Every row links through to the screen that holds the detail — spec §43 asks
+ * that every number be drillable, and a summary you cannot open is a claim
+ * rather than a record.
+ */
+function Related({
+  label,
+  count,
+  value,
+  valueLabel,
+  href,
+}: {
+  readonly label: string;
+  readonly count: number | null;
+  readonly value: Paise | null;
+  readonly valueLabel?: string;
+  readonly href: string;
+}) {
+  return (
+    <li>
+      <Link
+        href={href}
+        className="flex items-center justify-between gap-2 rounded-lg border border-ink-200 px-3 py-2 transition-colors hover:border-brand-300 hover:bg-brand-50/50"
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-ink-700">{label}</span>
+          {value !== null && (
+            <span className="block text-xs text-ink-500">
+              <span className="numeric">{formatINR(value)}</span>
+              {valueLabel ? ` ${valueLabel}` : ''}
+            </span>
+          )}
+        </span>
+        {count !== null && <Badge variant={count > 0 ? 'info' : 'neutral'}>{count}</Badge>}
+      </Link>
+    </li>
   );
 }

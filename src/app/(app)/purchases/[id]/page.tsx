@@ -6,7 +6,7 @@ import { ArrowLeft, Lock } from 'lucide-react';
 import {
   getPurchaseBill,
   getPurchasePickers,
-  getUnbilledVehicles,
+  getUnbilledVehicles,  getPurchaseGstRates,
 } from '@/server/services/purchases/purchase-service';
 import {
   getReturnableLines,
@@ -48,7 +48,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
   // Only a draft can gain lines, so the pickers are only worth loading for one;
   // only a posted bill can be returned against, so the same holds there.
-  const [vehicles, pickers, returnable, notes] = await Promise.all([
+  const [vehicles, pickers, returnable, notes, gstRates] = await Promise.all([
     bill.status === 'DRAFT' && can.edit
       ? getUnbilledVehicles({ branchId: bill.branchId })
       : Promise.resolve([]),
@@ -59,6 +59,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       ? getReturnableLines(bill.id)
       : Promise.resolve([]),
     bill.status === 'DRAFT' ? Promise.resolve([]) : getReturnsForBill(bill.id),
+    // From the tax master, never a list written into the editor (spec §16).
+    bill.status === 'DRAFT' && can.edit ? getPurchaseGstRates() : Promise.resolve([]),
   ]);
 
   // Reversed notes took nothing back, so they do not count against the bill.
@@ -101,6 +103,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <PurchaseBillEditor
+            gstRates={gstRates}
             bill={bill}
             unbilledVehicles={vehicles}
             items={pickers.items}

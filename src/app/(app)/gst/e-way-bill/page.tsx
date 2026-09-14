@@ -97,7 +97,7 @@ export default async function Page() {
     <>
       <PageHeader
         title="E-way bills"
-        description="Movement documents raised against invoices and stock transfers (spec §40)."
+        description="Movement documents against invoices and stock transfers (spec §40). Generation is not yet wired to the sale and transfer screens."
         count={rows.length}
         action={
           <Button variant="secondary" size="sm" asChild>
@@ -120,7 +120,7 @@ export default async function Page() {
         columns={columns}
         rows={rows}
         getRowKey={(row) => row.id}
-        emptyMessage="No e-way bills raised yet. They are queued from a sale or a stock transfer."
+        emptyMessage="No e-way bills. Generating them from a sale or a stock transfer is not wired up yet — until it is, rows here can only be created directly in the database."
         caption="E-way bills"
       />
     </>

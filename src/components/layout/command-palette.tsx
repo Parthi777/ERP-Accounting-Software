@@ -51,7 +51,7 @@ export function CommandPalette({
             <Search className="size-4 shrink-0 text-ink-400" aria-hidden />
             <Command.Input
               autoFocus
-              placeholder="Search pages, customers, invoices…"
+              placeholder="Jump to a page…"
               className="h-12 flex-1 bg-transparent text-sm text-ink-900 outline-none placeholder:text-ink-400"
             />
             <kbd className="rounded border border-ink-200 bg-white/60 px-1.5 py-0.5 font-sans text-[10px] text-ink-500">
@@ -81,7 +81,7 @@ export function CommandPalette({
                   <PaletteItem
                     key={item.href}
                     label={item.label}
-                    hint={item.status === 'planned' ? `Phase ${item.phase ?? '—'}` : 'Go to'}
+                    hint="Go to"
                     onSelect={() => go(item.href)}
                   />
                 ))}

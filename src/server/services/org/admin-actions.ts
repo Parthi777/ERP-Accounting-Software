@@ -92,11 +92,20 @@ export async function resetUserPasswordAction(
   }
 }
 
-/** One tenant's branches, for the platform admin's console. */
+/**
+ * One tenant's branches, for the platform admin's console.
+ *
+ * The fallback stays — a dialog that throws is worse than one that opens empty —
+ * but the error is logged rather than swallowed. Spec §55 forbids failing
+ * silently, and a bare `catch {}` here made a permission problem, a dropped
+ * connection and a genuinely branch-less tenant all render identically as "no
+ * branches", with nothing anywhere to tell them apart.
+ */
 export async function getDealerBranchesAction(dealerId: string) {
   try {
     return await service.getDealerBranches(dealerId);
-  } catch {
+  } catch (error) {
+    console.error('[admin] branches for tenant %s failed', dealerId, toAppError(error).message);
     return [];
   }
 }
@@ -105,7 +114,8 @@ export async function getDealerBranchesAction(dealerId: string) {
 export async function getUserDetailAction(userId: string) {
   try {
     return await service.getUserDetail(userId);
-  } catch {
+  } catch (error) {
+    console.error('[admin] user detail %s failed', userId, toAppError(error).message);
     return null;
   }
 }
@@ -113,7 +123,8 @@ export async function getUserDetailAction(userId: string) {
 export async function getRoleDetailAction(roleId: string) {
   try {
     return await service.getRoleDetail(roleId);
-  } catch {
+  } catch (error) {
+    console.error('[admin] role detail %s failed', roleId, toAppError(error).message);
     return null;
   }
 }

@@ -14,9 +14,13 @@ import { isConfigured, submitToIrp } from '@/server/services/gst/irp-client';
  * file and what the portal said, and never lets a portal failure disturb an
  * accounting transaction that has already happened.
  *
- * Nothing here calls the GST portal. Until real IRP credentials are configured,
- * generating an e-invoice means queueing it — and the screens say so rather than
- * inventing an IRN that would look real and reconcile to nothing.
+ * `submitEinvoice()` below does call the portal, through irp-client.ts — which
+ * is the only file that knows the portal exists, so swapping GSP is a change to
+ * that file and nothing above it. Everything else here queues and reports.
+ *
+ * Without IRP credentials configured, submission returns NOT_CONFIGURED and the
+ * invoice stays queued. The screens say so rather than inventing an IRN that
+ * would look real and reconcile to nothing.
  */
 
 export interface GstrSection {

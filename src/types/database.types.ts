@@ -3450,6 +3450,10 @@ export interface Database {
         Args: { p_customer_id: string; p_vehicle_id: string; p_invoice_date?: string | null; p_booking_id?: string | null; p_sales_executive_id?: string | null; p_discount?: number | null; p_notes?: string | null; p_idempotency_key?: string | null };
         Returns: { sale_id: string; invoice_number: string; total_amount: string }[];
       };
+      customer_360: {
+        Args: { p_customer_id: string };
+        Returns: { booking_count: number; booking_advance: string; sale_count: number; sale_value: string; paid_amount: string; outstanding: string; finance_count: number; finance_amount: string; service_count: number; service_value: string; vehicle_count: number; last_activity: string }[];
+      };
       customer_ledger: {
         Args: { p_customer_id: string; p_from: string; p_to: string };
         Returns: { entry_date: string; entry_number: string; narration: string; debit: string; credit: string; running_balance: string }[];
@@ -3461,6 +3465,10 @@ export interface Database {
       customer_service_summary: {
         Args: { p_customer_id?: string | null; p_branch_id?: string | null };
         Returns: { customer_id: string; customer_code: string; customer_name: string; mobile: string; vehicle_count: number; visit_count: number; first_visit: string; last_visit: string; days_since_last: number; lifetime_value: string; open_jobs: number }[];
+      };
+      dashboard_unit_counts: {
+        Args: { p_from: string; p_to: string; p_branch_id?: string | null };
+        Returns: { vehicle_sales_units: number; bookings: number; deliveries: number; vehicle_stock_qty: number; accessory_stock_qty: string; spare_stock_qty: string; finance_units: number }[];
       };
       dealer_readiness: {
         Args: { p_dealer_id: string };
