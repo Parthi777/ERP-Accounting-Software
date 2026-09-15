@@ -207,6 +207,7 @@ export const NAVIGATION: readonly NavSection[] = [
     items: [
       { label: 'Chart of Accounts', href: '/accounting/chart-of-accounts', permission: 'accounting.coa.view', status: 'ready' },
       { label: 'Journal Entries', href: '/accounting/journals', permission: 'accounting.journals.view', status: 'ready' },
+      { label: 'New Journal Entry', href: '/accounting/journals/new', permission: 'accounting.journals.post', status: 'ready' },
       { label: 'Opening Balances', href: '/accounting/opening-balances', permission: 'accounting.journals.post', status: 'ready' },
       { label: 'Customer Ledger', href: '/accounting/customer-ledger', permission: 'accounting.ledgers.view', status: 'ready', phase: 5 },
       { label: 'Supplier Ledger', href: '/accounting/supplier-ledger', permission: 'accounting.ledgers.view', status: 'ready', phase: 5 },

@@ -16,4 +16,4 @@
  * the migrations directory because the standalone build does not ship that
  * directory — the value has to be baked in at build time.
  */
-export const EXPECTED_SCHEMA_VERSION = '0068';
+export const EXPECTED_SCHEMA_VERSION = '0069';

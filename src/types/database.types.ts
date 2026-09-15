@@ -3606,6 +3606,10 @@ export interface Database {
         Args: { p_settlement_id: string; p_bank_account_id: string };
         Returns: string;
       };
+      post_manual_journal: {
+        Args: { p_entry_date: string; p_narration: string; p_lines: Json; p_branch_id?: string | null; p_idempotency_key?: string | null };
+        Returns: { journal_entry_id: string; entry_number: string }[];
+      };
       post_opening_balances: {
         Args: { p_party_type: string; p_rows: Json; p_as_on?: string | null; p_narration?: string | null; p_idempotency_key?: string | null; p_dealer_id?: string | null };
         Returns: { journal_entry_id: string; parties: number; total: string }[];
@@ -3717,6 +3721,10 @@ export interface Database {
       returnable_purchase_lines: {
         Args: { p_bill_id: string };
         Returns: { bill_line_id: string; line_number: number; line_type: string; description: string; source: string; chassis_no: string; item_code: string; vehicle_status: string; billed_quantity: string; returned_quantity: string; returnable_quantity: string; unit_rate: string; cgst_rate: string; sgst_rate: string; igst_rate: string }[];
+      };
+      reverse_journal_entry: {
+        Args: { p_journal_entry_id: string; p_reason: string; p_reversal_date?: string | null };
+        Returns: { journal_entry_id: string; entry_number: string }[];
       };
       sales_summary: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null; p_group_by?: string | null };

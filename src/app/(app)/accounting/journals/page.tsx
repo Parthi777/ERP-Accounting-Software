@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -100,7 +101,16 @@ export default async function JournalsPage({
         title="Journal Entries"
         description="Every module posts into this one ledger. A posted entry is immutable; corrections are reversals."
         count={rows.length}
-        action={<ExportButtons report="journal-register" />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report="journal-register" />
+            {context.permissions.has('accounting.journals.post') && (
+              <Button size="sm" asChild>
+                <Link href="/accounting/journals/new"><Plus aria-hidden />New entry</Link>
+              </Button>
+            )}
+          </div>
+        }
       />
 
       <Panel className="mb-4 p-3">

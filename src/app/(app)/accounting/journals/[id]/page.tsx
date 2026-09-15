@@ -4,8 +4,10 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, Lock } from 'lucide-react';
 
 import { getJournalDetail } from '@/server/services/accounting/accounting-service';
+import { requireTenantContext } from '@/server/auth/tenant-context';
 import { Panel, PanelContent, PanelHeader, PanelTitle, SolidPanel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
+import { JournalReverseAction } from '@/components/accounting/journal-reverse-action';
 import { Button } from '@/components/ui/button';
 import { add, formatINR, fromDb, ZERO, type Paise } from '@/lib/money';
 import { formatDate, formatDateTime } from '@/lib/format';
@@ -19,6 +21,7 @@ export default async function JournalDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const context = await requireTenantContext();
   const detail = await getJournalDetail(id);
 
   if (!detail) {
@@ -51,12 +54,18 @@ export default async function JournalDetailPage({
           </div>
           <p className="mt-0.5 text-sm text-ink-500">{entry.narration ?? 'No narration'}</p>
         </div>
-        {entry.status !== 'DRAFT' && (
-          <span className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-ink-50 px-3 py-1.5 text-xs text-ink-600">
-            <Lock className="size-3.5" aria-hidden />
-            Immutable — corrections are posted as reversals
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {entry.status !== 'DRAFT' && (
+            <span className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-ink-50 px-3 py-1.5 text-xs text-ink-600">
+              <Lock className="size-3.5" aria-hidden />
+              Immutable — corrections are posted as reversals
+            </span>
+          )}
+          {/* The action that sentence has always described and nothing offered. */}
+          {entry.status === 'POSTED' && context.permissions.has('accounting.journals.reverse') && (
+            <JournalReverseAction journalId={entry.id} entryNumber={entry.entry_number} />
+          )}
+        </div>
       </div>
 
       <SolidPanel className="mb-4 overflow-hidden">
