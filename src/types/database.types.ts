@@ -3595,7 +3595,7 @@ export interface Database {
         Returns: string;
       };
       post_opening_balances: {
-        Args: { p_party_type: string; p_rows: Json; p_as_on?: string | null; p_narration?: string | null; p_idempotency_key?: string | null };
+        Args: { p_party_type: string; p_rows: Json; p_as_on?: string | null; p_narration?: string | null; p_idempotency_key?: string | null; p_dealer_id?: string | null };
         Returns: { journal_entry_id: string; parties: number; total: string }[];
       };
       post_purchase_bill: {

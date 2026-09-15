@@ -19,6 +19,21 @@
 
 \echo '--- opening balances ---'
 
+-- Since 0067 the tenant is never guessed: a session with no dealer of its own
+-- must name one, and only a platform administrator may. That is the shape a real
+-- cut-over has — provisioning is platform work — so the test adopts it rather
+-- than running as an unauthenticated owner.
+insert into auth.users (id, email)
+values ('99999999-9999-4999-8999-999999999999', 'platform@example.com')
+on conflict (id) do nothing;
+
+insert into public.user_profiles (id, dealer_id, full_name, email, is_platform_admin, status)
+values ('99999999-9999-4999-8999-999999999999', null, 'Platform Admin',
+        'platform@example.com', true, 'ACTIVE')
+on conflict (id) do update set is_platform_admin = true, dealer_id = null;
+
+select app_test.login('99999999-9999-4999-8999-999999999999');
+
 do $$
 declare
   v_dealer  uuid;
@@ -54,7 +69,7 @@ begin
       ),
       date '2026-04-01',
       'Cut-over from the old system',
-      'test-opening-customers');
+      'test-opening-customers', v_dealer);
 
   perform app_test.assert_equals(v_parties, 2, 'both parties became lines');
 
@@ -107,7 +122,7 @@ begin
         jsonb_build_object('party_code', v_c1, 'amount', 12500),
         jsonb_build_object('party_code', v_c2, 'amount', -3000)
       ),
-      date '2026-04-01', null, 'test-opening-customers');
+      date '2026-04-01', null, 'test-opening-customers', v_dealer);
 
   perform app_test.assert_equals(
     v_entry2, v_entry, 'running the cut-over twice replays the same journal'
@@ -126,7 +141,7 @@ begin
   perform app_test.assert_raises(
     format($q$select public.post_opening_balances('CUSTOMER',
              jsonb_build_array(jsonb_build_object('party_code', 'NO-SUCH-CODE', 'amount', 100)),
-             %L)$q$, date '2026-04-01'),
+             %L, null, null, %L)$q$, date '2026-04-01', v_dealer),
     'an unknown party code rejects the whole file'
   );
 
@@ -134,7 +149,7 @@ begin
   perform app_test.assert_raises(
     format($q$select public.post_opening_balances('CUSTOMER',
              jsonb_build_array(jsonb_build_object('party_code', %L, 'amount', 0)),
-             %L)$q$, v_c1, date '2026-04-01'),
+             %L, null, null, %L)$q$, v_c1, date '2026-04-01', v_dealer),
     'a file of nothing but zeros posts nothing'
   );
 
@@ -166,7 +181,7 @@ begin
     from public.post_opening_balances(
       'SUPPLIER',
       jsonb_build_array(jsonb_build_object('party_code', v_code, 'amount', -8000)),
-      date '2026-04-01', null, 'test-opening-suppliers');
+      date '2026-04-01', null, 'test-opening-suppliers', v_dealer);
 
   select sum(debit), sum(credit) into v_debit, v_credit
     from public.journal_entry_lines where journal_entry_id = v_entry;
@@ -190,3 +205,81 @@ begin
     v_ok, true, 'the dealer ledger still balances after a cut-over (spec §22)'
   );
 end $$;
+
+-- ── The tenant is never guessed (0067) ────────────────────────────────────
+--
+-- 0066 resolved it with `select id from dealers limit 1`, which is true under
+-- RLS and false for a platform administrator, who bypasses RLS and sees every
+-- tenant. A platform admin running a cut-over would have posted one dealer's
+-- balances into another dealer's ledger, and nothing in the entry would look
+-- wrong afterwards. A rehearsal found it; this keeps it found.
+do $$
+declare
+  v_sbm    uuid;
+  v_other  uuid;
+  v_code   text;
+  v_before int;
+  v_after  int;
+begin
+  select id into v_sbm from public.dealers where code = 'SBM';
+  select id into v_other from public.dealers where code <> 'SBM' order by code limit 1;
+
+  if v_other is null then
+    raise notice '  -- only one dealer here; skipping the cross-tenant checks';
+    return;
+  end if;
+
+  select customer_code into v_code from public.customers
+   where dealer_id = v_sbm order by customer_code limit 1;
+
+  -- Running as the table owner, app.current_dealer_id() is null — the same shape
+  -- a platform admin presents. Without a named tenant it must refuse rather than
+  -- pick one.
+  perform app_test.assert_raises(
+    format($q$select public.post_opening_balances('CUSTOMER',
+             jsonb_build_array(jsonb_build_object('party_code', %L, 'amount', 1000)),
+             current_date)$q$, v_code),
+    'a session with no tenant of its own must name the dealer'
+  );
+
+  -- And naming it works, landing in that dealer and no other.
+  select count(*) into v_before from public.journal_entries where dealer_id = v_other;
+
+  perform public.post_opening_balances(
+    'CUSTOMER',
+    jsonb_build_array(jsonb_build_object('party_code', v_code, 'amount', 1000)),
+    current_date, null, 'test-tenant-named', v_sbm);
+
+  select count(*) into v_after from public.journal_entries where dealer_id = v_other;
+  perform app_test.assert_equals(
+    v_after, v_before,
+    'and posts nothing into the dealer it was not told about'
+  );
+end $$;
+
+-- ── A dealer session cannot name someone else ─────────────────────────────
+set role authenticated;
+select app_test.login('11111111-1111-4111-8111-111111111111');
+
+do $$
+declare v_other uuid; v_code text;
+begin
+  -- Chosen from outside RLS before the role switch would hide it.
+  select id into v_other from public.dealers where code <> 'SBM' order by code limit 1;
+  select customer_code into v_code from public.customers order by customer_code limit 1;
+
+  if v_other is null or v_code is null then
+    raise notice '  -- not enough tenants here; skipping';
+    return;
+  end if;
+
+  perform app_test.assert_raises(
+    format($q$select public.post_opening_balances('CUSTOMER',
+             jsonb_build_array(jsonb_build_object('party_code', %L, 'amount', 1000)),
+             current_date, null, null, %L)$q$, v_code, v_other),
+    'a dealer session naming another tenant is refused'
+  );
+end $$;
+
+select app_test.logout();
+reset role;

@@ -232,10 +232,22 @@ before masters means party codes that resolve to nothing.
 5. **Clear 3300** into retained earnings once the figures are agreed. A non-zero
    3300 is a useful signal that the reconciliation is unfinished.
 
-**Dry-run the whole sequence against a throwaway dealer first.** Provision one
-from Administration → Dealers, run every step, then remove it with
-`public.purge_dealer()`. A cut-over rehearsed once is a cut-over that does not
-have to be reversed in front of the dealer.
+**Dry-run the whole sequence against a throwaway dealer first.** Provision one from
+Administration → Dealers and run every step. `scripts/dry-run-cutover.sql` does exactly that
+against a throwaway *database*, if you would rather rehearse without touching the live one.
+
+**End the rehearsal by closing the tenant, not purging it.** `public.purge_dealer()` refuses once
+anything is POSTED — a posted ledger is a statutory record — so once the rehearsal reaches opening
+balances the only way out is `update public.dealers set status = 'CLOSED'`. Purge works only if you
+stop before posting.
+
+Two preconditions that are easy to miss, because both fail at the moment of onboarding:
+
+- Provisioning is **platform-admin** work, and the incoming owner's **Supabase Auth account must
+  already exist** — `provision_dealer` refuses to create a tenant nobody can sign into.
+- A cut-over rehearsed once is a cut-over that does not have to be reversed in front of the dealer.
+  The first run of the script above found three defects; none of them would have appeared in any
+  unit test, because each was about the order things happen in.
 
 If a step does go wrong: each import is one document. Reverse the journal
 (Accounting → Journal Entries), fix the file, and upload again.
