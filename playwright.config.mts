@@ -35,6 +35,34 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   reporter: [['list']],
+
+  /**
+   * One retry.
+   *
+   * These screens are server-rendered against a Supabase instance in another
+   * region, and the suite opens eighty of them in sequence. A page that takes
+   * four seconds normally occasionally takes twenty, and without a retry the
+   * run reports a different two or three "failures" every time — which trains
+   * everyone to ignore the result, the worst outcome for a test suite.
+   *
+   * A failure that survives a retry is worth looking at. The inventory report
+   * 500 did.
+   */
+  retries: 1,
+
+  projects: [
+    // No session: runs anywhere, writes nothing.
+    { name: 'smoke', testMatch: /smoke\.spec\.ts/ },
+
+    // Signs in once; the rest reuse the stored session.
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'authed',
+      testMatch: /screens\.spec\.ts/,
+      dependencies: ['setup'],
+      use: { storageState: 'test-results/.auth/session.json' },
+    },
+  ],
   timeout: 60_000,
   expect: { timeout: 15_000 },
 

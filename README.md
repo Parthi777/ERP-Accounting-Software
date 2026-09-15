@@ -91,7 +91,8 @@ catalogue, the system roles and the audit trail.
 | `npm run build` | Production build (standalone output for Railway) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint, including the architectural boundary rule |
-| `npm test` | Vitest — 98 unit assertions over money, redaction, parsing and the IRP client |
+| `npm test` | Vitest — 105 unit assertions over money, redaction, parsing and the GST clients |
+| `npm run test:e2e` | Playwright — opens every screen in a browser. Needs `E2E_EMAIL` / `E2E_PASSWORD` |
 | `npm run check:permissions` | Fails if the TS permission registry and SQL seed disagree |
 | `npm run check:nav` | Fails if a sidebar entry's status disagrees with whether its page is built |
 | `npm run db:incremental` | Bundles only the migrations a database is missing |

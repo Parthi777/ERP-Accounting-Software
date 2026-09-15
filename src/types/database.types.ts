@@ -3771,7 +3771,7 @@ export interface Database {
         Returns: undefined;
       };
       vehicle_stock_report: {
-        Args: { p_branch_id?: string | null };
+        Args: { p_branch_id?: string | null; p_status?: string | null };
         Returns: { vehicle_id: string; chassis_no: string; engine_no: string; brand: string; model_name: string; variant_name: string; branch_name: string; status: string; stock_date: string; age_days: number; age_bucket: string; purchase_cost: string }[];
       };
     };
