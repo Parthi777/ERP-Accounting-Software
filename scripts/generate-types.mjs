@@ -231,6 +231,9 @@ const RPC = new Set([
   'gstr1_summary', 'gst_document_register', 'queue_einvoice', 'record_einvoice_result',
   'gst_input_summary',
   'queue_eway_bill', 'einvoice_queue',
+  // E-way bills — spec §40.
+  'eway_bill_required', 'eway_expected_validity', 'eway_bill_payload',
+  'record_eway_request', 'record_eway_result',
   // MIS — spec §41, §43.
   'finance_summary', 'branch_performance', 'margin_report', 'consolidated_mis',
   'inventory_movement_report',

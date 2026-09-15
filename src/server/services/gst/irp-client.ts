@@ -61,6 +61,22 @@ export type IrpOutcome =
 /** Ten seconds: long enough for the portal on a bad day, short enough that a queue does not stall. */
 const TIMEOUT_MS = 10_000;
 
+export type EwayOutcome =
+  | {
+      readonly ok: true;
+      readonly ewayBillNumber: string;
+      /** The portal decides validity; Rule 138 only says what to expect. */
+      readonly validUntil: string | null;
+      readonly raw: unknown;
+    }
+  | {
+      readonly ok: false;
+      readonly message: string;
+      readonly code: string | null;
+      readonly raw: unknown;
+      readonly retryable: boolean;
+    };
+
 export function irpConfig(): IrpConfig | null {
   const env = serverEnv();
   const baseUrl = env.GST_API_BASE_URL?.trim();
@@ -123,6 +139,49 @@ function readString(source: unknown, ...keys: readonly string[]): string | null 
 }
 
 /**
+ * The first leg, shared by both filings.
+ *
+ * The portal issues one token for everything, so an e-way bill authenticates
+ * exactly as an e-invoice does. Returning the failure already shaped as an
+ * outcome keeps the credential handling in one place — the two filings used to
+ * be one function and the duplication was the obvious way to add the second.
+ */
+async function authenticate(
+  config: IrpConfig,
+): Promise<{ ok: true; token: string } | { ok: false; failure: IrpOutcome & { ok: false } }> {
+  const auth = await postJson(
+    `${config.baseUrl}/auth`,
+    {
+      UserName: config.username,
+      Password: config.password,
+      AppKey: config.clientId,
+      ForceRefreshAccessToken: false,
+    },
+    { 'client-id': config.clientId, 'client-secret': config.clientSecret },
+  );
+
+  const token =
+    readString(auth.json, 'AuthToken', 'authToken', 'token') ??
+    readString((auth.json as { Data?: unknown } | null)?.Data, 'AuthToken', 'authToken');
+
+  if (auth.status >= 400 || !token) {
+    return {
+      ok: false,
+      failure: {
+        ok: false,
+        message: 'The GST provider rejected the credentials.',
+        code: readString(auth.json, 'ErrorCode', 'errorCode') ?? `HTTP_${auth.status}`,
+        raw: auth.json,
+        // A 5xx during auth is the portal's problem, not the credentials'.
+        retryable: auth.status >= 500,
+      },
+    };
+  }
+
+  return { ok: true, token };
+}
+
+/**
  * Authenticates and submits one invoice.
  *
  * Returns an outcome for every path, including transport failure. Callers record
@@ -144,32 +203,9 @@ export async function submitToIrp(payload: unknown): Promise<IrpOutcome> {
   }
 
   try {
-    // ── Authenticate ────────────────────────────────────────────────────────
-    const auth = await postJson(
-      `${config.baseUrl}/auth`,
-      {
-        UserName: config.username,
-        Password: config.password,
-        AppKey: config.clientId,
-        ForceRefreshAccessToken: false,
-      },
-      { 'client-id': config.clientId, 'client-secret': config.clientSecret },
-    );
-
-    const token =
-      readString(auth.json, 'AuthToken', 'authToken', 'token') ??
-      readString((auth.json as { Data?: unknown } | null)?.Data, 'AuthToken', 'authToken');
-
-    if (auth.status >= 400 || !token) {
-      return {
-        ok: false,
-        message: 'The e-invoice provider rejected the credentials.',
-        code: readString(auth.json, 'ErrorCode', 'errorCode') ?? `HTTP_${auth.status}`,
-        raw: auth.json,
-        // A 5xx during auth is the portal's problem, not the credentials'.
-        retryable: auth.status >= 500,
-      };
-    }
+    const auth = await authenticate(config);
+    if (!auth.ok) return auth.failure;
+    const token = auth.token;
 
     // ── Submit ──────────────────────────────────────────────────────────────
     const response = await postJson(`${config.baseUrl}/invoice`, payload, {
@@ -227,6 +263,81 @@ export async function submitToIrp(payload: unknown): Promise<IrpOutcome> {
       message: timedOut
         ? 'The e-invoice provider did not respond in time. The invoice is unchanged; try again.'
         : 'The e-invoice provider could not be reached. The invoice is unchanged; try again.',
+      code: timedOut ? 'TIMEOUT' : 'NETWORK',
+      raw: { error: error instanceof Error ? error.message : String(error) },
+      retryable: true,
+    };
+  }
+}
+
+/**
+ * Authenticates and files one e-way bill.
+ *
+ * The same shape as submitToIrp and for the same reasons: it returns an outcome
+ * on every path including transport failure, and never throws into a request
+ * handler. A vehicle is usually waiting when this runs, so the operator needs an
+ * answer rather than an error page.
+ *
+ * Spec §40: a portal failure must not disturb the accounting transaction. The
+ * sale stays posted and the bill stays retryable — the goods simply cannot move
+ * until the number arrives.
+ */
+export async function submitEwayBill(payload: unknown): Promise<EwayOutcome> {
+  const config = irpConfig();
+
+  if (!config) {
+    return {
+      ok: false,
+      message:
+        'No GST provider is configured. Set GST_API_BASE_URL and the API credentials to file with the portal.',
+      code: 'NOT_CONFIGURED',
+      raw: null,
+      retryable: false,
+    };
+  }
+
+  try {
+    const auth = await authenticate(config);
+    if (!auth.ok) {
+      const { message, code, raw, retryable } = auth.failure;
+      return { ok: false, message, code, raw, retryable };
+    }
+
+    const response = await postJson(`${config.baseUrl}/ewaybill`, payload, {
+      'client-id': config.clientId,
+      'client-secret': config.clientSecret,
+      authorization: `Bearer ${auth.token}`,
+      ...(config.gstin ? { gstin: config.gstin } : {}),
+    });
+
+    const body = response.json as { Data?: unknown } | null;
+    const data = body?.Data ?? body;
+
+    const number = readString(data, 'ewayBillNo', 'EwbNo', 'ewbNo', 'EwayBillNo');
+    const validUntil = readString(data, 'validUpto', 'ValidUpto', 'ewayBillDate');
+
+    if (response.status < 400 && number) {
+      return { ok: true, ewayBillNumber: number, validUntil, raw: response.json };
+    }
+
+    return {
+      ok: false,
+      message:
+        readString(data, 'ErrorMessage', 'errorMessage', 'message', 'Desc') ??
+        `The portal refused the e-way bill (HTTP ${response.status}).`,
+      code: readString(data, 'ErrorCode', 'errorCode') ?? `HTTP_${response.status}`,
+      raw: response.json,
+      // 4xx means the consignment details are wrong; resending them unchanged
+      // fails again. 5xx is the portal, and the same request will go through.
+      retryable: response.status >= 500,
+    };
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === 'TimeoutError';
+    return {
+      ok: false,
+      message: timedOut
+        ? 'The portal did not respond in time. Nothing was filed; try again.'
+        : 'The portal could not be reached. Nothing was filed; try again.',
       code: timedOut ? 'TIMEOUT' : 'NETWORK',
       raw: { error: error instanceof Error ? error.message : String(error) },
       retryable: true,

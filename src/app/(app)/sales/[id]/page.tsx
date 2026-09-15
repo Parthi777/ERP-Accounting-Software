@@ -9,6 +9,8 @@ import { Panel, PanelContent, PanelHeader, PanelTitle, SolidPanel } from '@/comp
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SaleProgress, SaleWorkflow } from '@/components/sales/sale-workflow';
+import { EwayBillPanel } from '@/components/gst/eway-bill-panel';
+import { getEwayRequirement } from '@/server/services/gst/gst-service';
 import { formatINR, percentageOf } from '@/lib/money';
 import { formatDate, formatMobile, formatPercent } from '@/lib/format';
 
@@ -29,6 +31,13 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   if (!sale) {
     notFound();
   }
+
+  // Only for a sale that has actually been posted: an e-way bill accompanies
+  // goods that are moving, and nothing moves against a draft.
+  const eway =
+    sale.status === 'POSTED' || sale.status === 'DELIVERED'
+      ? await getEwayRequirement(sale.id)
+      : null;
 
   const can = {
     submit: context.permissions.has('sales.submit'),
@@ -98,6 +107,16 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
       <div className="mb-4">
         <SaleWorkflow saleId={sale.id} status={sale.status} balanceDue={sale.balanceAmount} can={can} />
       </div>
+
+      {eway && (
+        <div className="mb-4">
+          <EwayBillPanel
+            saleId={sale.id}
+            requirement={eway}
+            canFile={context.permissions.has('gst.einvoice.generate')}
+          />
+        </div>
+      )}
 
       {verifying && can.verify && (
         <Panel className="mb-4 p-4">

@@ -3510,6 +3510,18 @@ export interface Database {
         Args: { p_branch_id: string; p_date?: string | null };
         Returns: string;
       };
+      eway_bill_payload: {
+        Args: { p_eway_id: string };
+        Returns: unknown;
+      };
+      eway_bill_required: {
+        Args: { p_document_type: string; p_document_id: string };
+        Returns: { required: boolean; consignment_value: string; threshold: string; interstate: boolean }[];
+      };
+      eway_expected_validity: {
+        Args: { p_distance_km: number; p_from?: string | null };
+        Returns: unknown;
+      };
       finance_application_totals: {
         Args: { p_status?: string | null; p_branch_id?: string | null; p_q?: string | null };
         Returns: { applications: number; approved: number; pending: number; rejected: number; loan_amount: string; disbursed_amount: string; pending_amount: string; commission_amount: string }[];
@@ -3652,6 +3664,14 @@ export interface Database {
       };
       record_einvoice_result: {
         Args: { p_einvoice_id: string; p_status: string; p_irn?: string | null; p_ack_number?: string | null; p_ack_date?: string | null; p_qr_code?: string | null; p_error_code?: string | null; p_error?: string | null; p_response?: Json | null };
+        Returns: undefined;
+      };
+      record_eway_request: {
+        Args: { p_eway_id: string; p_payload: Json };
+        Returns: undefined;
+      };
+      record_eway_result: {
+        Args: { p_eway_id: string; p_status: string; p_number?: string | null; p_valid_until?: string | null; p_error?: string | null; p_response?: Json | null };
         Returns: undefined;
       };
       record_sale_payment: {

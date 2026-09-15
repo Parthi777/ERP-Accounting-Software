@@ -245,3 +245,106 @@ describe('submitToIrp', () => {
     }
   });
 });
+
+describe('submitEwayBill', () => {
+  it('reports NOT_CONFIGURED without touching the network', async () => {
+    const calls = mockFetch();
+    const { submitEwayBill } = await load();
+
+    const outcome = await submitEwayBill({ docNo: 'INV-1' });
+
+    expect(outcome).toMatchObject({ ok: false, code: 'NOT_CONFIGURED', retryable: false });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('authenticates on the same token, then posts to /ewaybill', async () => {
+    const calls = mockFetch(
+      { status: 200, body: { Data: { AuthToken: 'tok-ew' } } },
+      { status: 200, body: { Data: { ewayBillNo: '181234567890', validUpto: '02/04/2026 10:00' } } },
+    );
+    const { submitEwayBill } = await load(CREDENTIALS);
+
+    const outcome = await submitEwayBill({ docNo: 'INV-1' });
+
+    expect(calls[0]!.url).toBe('https://irp.example.test/api/auth');
+    expect(calls[1]!.url).toBe('https://irp.example.test/api/ewaybill');
+    expect((calls[1]!.init.headers as Record<string, string>).authorization).toBe('Bearer tok-ew');
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      ewayBillNumber: '181234567890',
+      validUntil: '02/04/2026 10:00',
+    });
+  });
+
+  it('reads the bill number under any of the names the portal uses', async () => {
+    for (const key of ['ewayBillNo', 'EwbNo', 'ewbNo', 'EwayBillNo']) {
+      mockFetch(
+        { status: 200, body: { AuthToken: 'tok' } },
+        { status: 200, body: { [key]: 991122 } },
+      );
+      const { submitEwayBill } = await load(CREDENTIALS);
+      const outcome = await submitEwayBill({});
+      expect(outcome, `key: ${key}`).toMatchObject({ ok: true, ewayBillNumber: '991122' });
+    }
+  });
+
+  /**
+   * The distinction the retry queue runs on: 4xx means the consignment details
+   * are wrong and resending them unchanged fails again; 5xx means the portal is
+   * unwell and the same request will go through later. A vehicle is usually
+   * waiting, so telling the two apart is the difference between "fix the vehicle
+   * number" and "wait two minutes".
+   */
+  it('separates a bad consignment from an unwell portal', async () => {
+    mockFetch(
+      { status: 200, body: { AuthToken: 'tok' } },
+      { status: 400, body: { errorMessage: 'Invalid vehicle number format', errorCode: '107' } },
+    );
+    const { submitEwayBill: bad } = await load(CREDENTIALS);
+    expect(await bad({})).toMatchObject({ ok: false, retryable: false, code: '107' });
+
+    mockFetch({ status: 200, body: { AuthToken: 'tok' } }, { status: 503, body: {} });
+    const { submitEwayBill: down } = await load(CREDENTIALS);
+    expect(await down({})).toMatchObject({ ok: false, retryable: true });
+  });
+
+  it('classifies timeout and transport failure as retryable', async () => {
+    vi.stubGlobal('fetch', async () => {
+      const error = new Error('timed out');
+      error.name = 'TimeoutError';
+      throw error;
+    });
+    const { submitEwayBill: onTimeout } = await load(CREDENTIALS);
+    expect(await onTimeout({})).toMatchObject({ ok: false, code: 'TIMEOUT', retryable: true });
+
+    vi.stubGlobal('fetch', async () => { throw new TypeError('fetch failed'); });
+    const { submitEwayBill: onNetwork } = await load(CREDENTIALS);
+    expect(await onNetwork({})).toMatchObject({ ok: false, code: 'NETWORK', retryable: true });
+  });
+
+  /**
+   * A 200 with no bill number is not a success. Treating it as one would mark a
+   * consignment as cleared to move when the portal never issued anything, which
+   * is the one outcome that puts a vehicle on the road unlawfully.
+   */
+  it('refuses a 200 that carries no bill number', async () => {
+    mockFetch(
+      { status: 200, body: { AuthToken: 'tok' } },
+      { status: 200, body: { Data: { status: 'accepted' } } },
+    );
+    const { submitEwayBill } = await load(CREDENTIALS);
+    expect(await submitEwayBill({})).toMatchObject({ ok: false });
+  });
+
+  it('never rejects, whatever the portal does', async () => {
+    for (const disaster of [
+      () => { throw new Error('boom'); },
+      async () => { throw new Error('async boom'); },
+    ]) {
+      vi.stubGlobal('fetch', disaster);
+      const { submitEwayBill } = await load(CREDENTIALS);
+      await expect(submitEwayBill({})).resolves.toMatchObject({ ok: false });
+    }
+  });
+});
