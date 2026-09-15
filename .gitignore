@@ -46,3 +46,8 @@ yarn-error.log*
 # supabase local
 supabase/.branches/
 supabase/.temp/
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/

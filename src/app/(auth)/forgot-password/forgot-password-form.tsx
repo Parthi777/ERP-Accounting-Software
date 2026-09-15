@@ -43,7 +43,9 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+    // See login-form.tsx. An email address rather than a password, but the same class of leak and the
+    // same one-word fix.
+    <form onSubmit={onSubmit} method="post" className="space-y-4" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>
         <Input

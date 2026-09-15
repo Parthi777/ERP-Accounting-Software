@@ -55,7 +55,12 @@ export function LoginForm({ nextPath }: { readonly nextPath: string }) {
   });
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+    // method="post" is not decoration. Until React hydrates, a click falls
+    // through to the browser's own submit — and a form with no method GETs,
+    // which puts the password in the URL, the history, the referrer and every
+    // access log between here and the server. POST keeps it in the body on the
+    // one request that escapes the handler.
+    <form onSubmit={onSubmit} method="post" className="space-y-4" noValidate>
       {formError && (
         <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
           {formError}

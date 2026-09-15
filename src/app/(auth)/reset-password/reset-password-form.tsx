@@ -47,7 +47,9 @@ export function ResetPasswordForm() {
   });
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+    // See login-form.tsx. This one carries a new password, so the same pre-hydration GET would put it
+    // in the URL.
+    <form onSubmit={onSubmit} method="post" className="space-y-4" noValidate>
       {formError && (
         <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
           {formError}

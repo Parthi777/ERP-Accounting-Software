@@ -29,6 +29,8 @@ export default defineConfig({
     // are type-checked by `npm run typecheck` for free, and Next only bundles
     // what a route imports — a test file never reaches the standalone output.
     include: ['src/**/*.test.ts'],
+    // e2e/ belongs to Playwright; Vitest must not try to run those.
+    exclude: ['e2e/**', 'node_modules/**'],
     clearMocks: true,
   },
 });
