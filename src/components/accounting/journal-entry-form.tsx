@@ -41,14 +41,33 @@ const blank = (key: number): Line => ({ key, accountId: '', debit: '', credit: '
  * reversal and a replacement, which is what the detail screen offers — see the
  * note in journal-entry-service.ts.
  */
-export function JournalEntryForm({ accounts }: { readonly accounts: readonly AccountOption[] }) {
+export function JournalEntryForm({
+  accounts,
+  defaultAccountId,
+  afterPost = 'navigate',
+  onDone,
+}: {
+  readonly accounts: readonly AccountOption[];
+  /** Pre-fills the first line — used when entering from an account's ledger. */
+  readonly defaultAccountId?: string;
+  /**
+   * 'navigate' opens the new entry; 'stay' refreshes in place, which is what an
+   * inline panel on a ledger wants — the point of entering there is to see the
+   * line appear in the ledger you were already reading.
+   */
+  readonly afterPost?: 'navigate' | 'stay';
+  readonly onDone?: () => void;
+}) {
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
 
   const [entryDate, setEntryDate] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [narration, setNarration] = React.useState('');
-  const [lines, setLines] = React.useState<Line[]>([blank(1), blank(2)]);
+  const [lines, setLines] = React.useState<Line[]>(() => [
+    { ...blank(1), accountId: defaultAccountId ?? '' },
+    blank(2),
+  ]);
   const nextKey = React.useRef(3);
 
   const idempotency = useIdempotencyKey('manual-journal');
@@ -93,8 +112,19 @@ export function JournalEntryForm({ accounts }: { readonly accounts: readonly Acc
         return;
       }
       idempotency.renew();
-      router.push(`/accounting/journals/${result.id}`);
+
+      if (afterPost === 'navigate') {
+        router.push(`/accounting/journals/${result.id}`);
+        router.refresh();
+        return;
+      }
+
+      // Reset for the next line rather than clearing to nothing: someone adding
+      // entries against one account is usually adding several.
+      setLines([{ ...blank(nextKey.current++), accountId: defaultAccountId ?? '' }, blank(nextKey.current++)]);
+      setNarration('');
       router.refresh();
+      onDone?.();
     });
   };
 

@@ -3358,6 +3358,14 @@ export interface Database {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { account_id: string; account_code: string; account_name: string; account_type: string; normal_balance: string; period_debit: string; period_credit: string; closing_debit: string; closing_credit: string; period_movement: string; closing_balance: string }[];
       };
+      account_ledger: {
+        Args: { p_account_id: string; p_from: string; p_to: string; p_branch_id?: string | null };
+        Returns: { journal_entry_id: string; entry_date: string; entry_number: string; source_module: string; status: string; narration: string; contra: string; debit: string; credit: string; running_balance: string }[];
+      };
+      account_ledger_opening: {
+        Args: { p_account_id: string; p_as_on: string };
+        Returns: unknown;
+      };
       add_service_line: {
         Args: { p_invoice_id: string; p_line_type: string; p_description: string; p_quantity: number; p_unit_rate: number; p_item_id?: string | null; p_tax_code?: string | null; p_discount?: number | null };
         Returns: string;

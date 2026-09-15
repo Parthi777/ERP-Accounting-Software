@@ -249,6 +249,7 @@ const RPC = new Set([
   'customer_ledger_opening', 'party_ledger', 'party_ledger_opening',
   // Manual entry and reversal — spec §9, §23.
   'post_manual_journal', 'reverse_journal_entry',
+  'account_ledger', 'account_ledger_opening',
   // Bill-wise settlement — spec §41.
   'party_open_items', 'allocate_party_payment',
   // Purchases — spec §24, §41.

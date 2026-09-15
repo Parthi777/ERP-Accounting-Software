@@ -3,7 +3,7 @@ import 'server-only';
 import { requirePermission } from '@/server/auth/tenant-context';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { recordAudit } from '@/server/services/audit/record-audit';
-import { toDb, type Paise } from '@/lib/money';
+import { fromDb, toDb, type Paise } from '@/lib/money';
 
 /**
  * Journal entries a person writes, and the only sanctioned way to correct one —
@@ -218,4 +218,98 @@ function describeJournalError(message: string): string {
     return 'That date falls in a closed accounting period.';
   }
   return message;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The ledger of one account — spec §41, §43
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AccountLedgerLine {
+  readonly journalEntryId: string;
+  readonly entryDate: string;
+  readonly entryNumber: string;
+  readonly sourceModule: string;
+  readonly status: string;
+  readonly narration: string | null;
+  /** What sat on the other side of the entry. */
+  readonly contra: string | null;
+  readonly debit: Paise;
+  readonly credit: Paise;
+  readonly runningBalance: Paise;
+}
+
+export interface AccountLedger {
+  readonly account: { id: string; code: string; name: string; type: string } | null;
+  readonly opening: Paise;
+  readonly debit: Paise;
+  readonly credit: Paise;
+  readonly closing: Paise;
+  readonly lines: readonly AccountLedgerLine[];
+}
+
+/**
+ * What moved through one account, with the contra account named.
+ *
+ * "Why is Bank Charges 4,150 this month" had no answer on any screen before
+ * this: the trial balance gives the total and stops, and the chart of accounts
+ * is a list of names. Spec §43 asks that every number be drillable to the
+ * transaction, and for accounts that are not a party or a bank, none was.
+ */
+export async function getAccountLedger(params: {
+  readonly accountId: string;
+  readonly from: string;
+  readonly to: string;
+  readonly branchId?: string | null;
+}): Promise<AccountLedger> {
+  await requirePermission('accounting.ledgers.view');
+  const supabase = await createSupabaseServerClient();
+
+  const [{ data: account }, { data: opening }, { data: rows, error }] = await Promise.all([
+    supabase
+      .from('chart_of_accounts')
+      .select('id, code, name, account_type')
+      .eq('id', params.accountId)
+      .maybeSingle(),
+    supabase.rpc('account_ledger_opening', { p_account_id: params.accountId, p_as_on: params.from }),
+    supabase.rpc('account_ledger', {
+      p_account_id: params.accountId,
+      p_from: params.from,
+      p_to: params.to,
+      p_branch_id: params.branchId ?? null,
+    }),
+  ]);
+
+  if (error) {
+    throw new Error(`Failed to load the account ledger: ${error.message}`);
+  }
+
+  const lines: AccountLedgerLine[] = (rows ?? []).map((r) => ({
+    journalEntryId: r.journal_entry_id,
+    entryDate: r.entry_date,
+    entryNumber: r.entry_number,
+    sourceModule: r.source_module,
+    status: r.status,
+    narration: r.narration,
+    contra: r.contra,
+    debit: fromDb(r.debit),
+    credit: fromDb(r.credit),
+    runningBalance: fromDb(r.running_balance),
+  }));
+
+  const openingBalance = fromDb(opening as never);
+  const debit = lines.reduce((sum, l) => sum + l.debit, 0) as Paise;
+  const credit = lines.reduce((sum, l) => sum + l.credit, 0) as Paise;
+
+  return {
+    account: account
+      ? { id: account.id, code: account.code, name: account.name, type: account.account_type }
+      : null,
+    opening: openingBalance,
+    debit,
+    credit,
+    // Taken from the last row rather than recomputed, so the summary and the
+    // table can never disagree about where the account ended.
+    closing: (lines.at(-1)?.runningBalance ?? openingBalance) as Paise,
+    lines,
+  };
 }

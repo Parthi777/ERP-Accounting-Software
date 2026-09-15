@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { getChartOfAccounts, type ChartAccount } from '@/server/services/accounting/accounting-service';
@@ -21,7 +22,19 @@ const columns: Column<ChartAccount>[] = [
   {
     key: 'code',
     header: 'Code',
-    render: (row) => <span className="font-mono text-xs text-ink-600">{row.code}</span>,
+    // Drillable: spec §43 asks that every number reach its transactions, and a
+    // chart of accounts that cannot be opened is a list of names.
+    render: (row) =>
+      row.isGroup ? (
+        <span className="font-mono text-xs text-ink-400">{row.code}</span>
+      ) : (
+        <Link
+          href={`/accounting/ledger?account=${row.id}`}
+          className="font-mono text-xs text-brand-700 hover:underline"
+        >
+          {row.code}
+        </Link>
+      ),
   },
   {
     key: 'name',

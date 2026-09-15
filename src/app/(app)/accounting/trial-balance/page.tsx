@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { getTrialBalance } from '@/server/services/accounting/accounting-service';
@@ -71,7 +72,15 @@ export default async function TrialBalancePage({
               ) : (
                 rows.map((row) => (
                   <tr key={row.code} className="border-t border-ink-100 hover:bg-brand-50/40">
-                    <td className="px-4 py-2 font-mono text-xs text-ink-600">{row.code}</td>
+                    <td className="px-4 py-2 font-mono text-xs">
+                      {/* Every figure drillable to its transactions (spec §43). */}
+                      <Link
+                        href={`/accounting/ledger?code=${row.code}&to=${asOn}`}
+                        className="text-brand-700 hover:underline"
+                      >
+                        {row.code}
+                      </Link>
+                    </td>
                     <td className="px-4 py-2 text-ink-800">{row.name}</td>
                     <td className="px-4 py-2 text-xs text-ink-500">{row.type}</td>
                     <td className="numeric px-4 py-2">{row.debit === 0 ? '—' : formatINR(row.debit)}</td>
