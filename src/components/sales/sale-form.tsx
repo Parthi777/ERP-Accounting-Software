@@ -4,6 +4,8 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, useWatch } from 'react-hook-form';
+
+import { SearchSelect } from '@/components/forms/search-select';
 import { Loader2, Save } from 'lucide-react';
 
 import { Panel } from '@/components/ui/panel';
@@ -56,6 +58,7 @@ export function SaleForm({
     register,
     handleSubmit,
     control,
+    setValue,
   } = useForm<FormValues>({
     defaultValues: {
       customer_id: booking?.customerId ?? '',
@@ -129,22 +132,31 @@ export function SaleForm({
             <Label htmlFor="customer_id" className="mb-1.5 block">
               Customer<span className="ml-0.5 text-danger-600">*</span>
             </Label>
-            <select id="customer_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('customer_id')}>
-              <option value="">Choose a customer</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
+            <SearchSelect
+              id="customer_id"
+              name="customer_id"
+              options={customers}
+              defaultValue={booking?.customerId ?? ''}
+              placeholder="Search by name, customer ID or mobile…"
+              onChange={(id) => setValue('customer_id', id)}
+            />
+
           </div>
 
           <div className="sm:col-span-2">
             <Label htmlFor="vehicle_id" className="mb-1.5 block">
               Vehicle<span className="ml-0.5 text-danger-600">*</span>
             </Label>
-            <select id="vehicle_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('vehicle_id')}>
-              <option value="">Choose a chassis</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>{v.label}{v.sub ? ` — ${v.sub}` : ''}</option>
-              ))}
-            </select>
+            <SearchSelect
+              id="vehicle_id"
+              name="vehicle_id"
+              options={vehicles.map((v) => ({
+                id: v.id,
+                label: v.sub ? `${v.label} — ${v.sub}` : v.label,
+              }))}
+              placeholder="Search by chassis, model or colour…"
+              onChange={(id) => setValue('vehicle_id', id)}
+            />
             <p className="mt-1 text-xs text-ink-400">
               Selecting a vehicle reserves it immediately, so two cashiers cannot invoice the same chassis.
             </p>

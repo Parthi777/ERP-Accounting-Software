@@ -10,6 +10,7 @@ import { Input, Label } from '@/components/ui/input';
 import { add, formatINR, fromRupees, paise, subtract } from '@/lib/money';
 import { recordCashAction } from '@/server/services/cash/cash-actions';
 import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
+import { SearchSelect } from '@/components/forms/search-select';
 
 interface Account {
   readonly id: string;
@@ -165,13 +166,14 @@ export function CashEntryForm({
             <Label htmlFor="account" className="mb-1.5 block">
               {isReceipt ? 'Received against' : 'Paid towards'}<span className="ml-0.5 text-danger-600">*</span>
             </Label>
-            <select id="account" value={accountId} onChange={(e) => setAccountId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
-              <option value="">Choose an account</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
-              ))}
-            </select>
+            <SearchSelect
+              id="account"
+              name="account"
+              options={accounts.map((a) => ({ id: a.id, label: `${a.code} · ${a.name}` }))}
+              defaultValue={accountId}
+              placeholder="Search the chart of accounts…"
+              onChange={setAccountId}
+            />
             <p className="mt-1 text-xs text-ink-400">
               Cash is {isReceipt ? 'debited' : 'credited'} automatically; this is the other side of the entry.
             </p>
@@ -179,11 +181,14 @@ export function CashEntryForm({
 
           <div className="sm:col-span-2">
             <Label htmlFor="customer" className="mb-1.5 block">Customer</Label>
-            <select id="customer" value={customerId} onChange={(e) => setCustomerId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
-              <option value="">Not linked to a customer</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
+            <SearchSelect
+              id="customer"
+              name="customer"
+              options={customers}
+              defaultValue={customerId}
+              placeholder="Not linked to a customer"
+              onChange={setCustomerId}
+            />
           </div>
         </div>
 

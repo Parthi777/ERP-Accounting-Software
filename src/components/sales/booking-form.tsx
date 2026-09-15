@@ -4,6 +4,8 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, useWatch } from 'react-hook-form';
+
+import { SearchSelect } from '@/components/forms/search-select';
 import { Loader2, Save } from 'lucide-react';
 
 import { Panel } from '@/components/ui/panel';
@@ -65,6 +67,7 @@ export function BookingForm({
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({
     defaultValues: {
@@ -139,10 +142,13 @@ export function BookingForm({
             <Label htmlFor="customer_id" className="mb-1.5 block">
               Customer<span className="ml-0.5 text-danger-600">*</span>
             </Label>
-            <select id="customer_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('customer_id')}>
-              <option value="">Choose a customer</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
+            <SearchSelect
+              id="customer_id"
+              name="customer_id"
+              options={customers}
+              placeholder="Search by name, customer ID or mobile…"
+              onChange={(id) => setValue('customer_id', id)}
+            />
             <p className="mt-1 text-xs text-ink-400">
               Not listed?{' '}
               <Link href="/customers/new" className="text-brand-600 hover:underline">Create the customer first</Link>.
@@ -169,12 +175,16 @@ export function BookingForm({
 
           <div className="sm:col-span-2">
             <Label htmlFor="vehicle_id" className="mb-1.5 block">Reserve a specific chassis</Label>
-            <select id="vehicle_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('vehicle_id')}>
-              <option value="">No — book against the model</option>
-              {availableVehicles.map((v) => (
-                <option key={v.id} value={v.id}>{v.label}{v.sub ? ` · ${v.sub}` : ''}</option>
-              ))}
-            </select>
+            <SearchSelect
+              id="vehicle_id"
+              name="vehicle_id"
+              options={availableVehicles.map((v) => ({
+                id: v.id,
+                label: v.sub ? `${v.label} · ${v.sub}` : v.label,
+              }))}
+              placeholder="No — book against the model"
+              onChange={(id) => setValue('vehicle_id', id)}
+            />
             <p className="mt-1 text-xs text-ink-400">
               Reserving takes that vehicle out of available stock immediately.
             </p>

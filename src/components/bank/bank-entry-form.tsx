@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { recordBankTransactionAction } from '@/server/services/bank/bank-actions';
 import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
+import { SearchSelect } from '@/components/forms/search-select';
 
 interface Account {
   readonly id: string;
@@ -161,11 +162,14 @@ export function BankEntryForm({
             {direction === 'RECEIPT' ? 'Received against' : 'Paid towards'}
             <span className="ml-0.5 text-danger-600">*</span>
           </Label>
-          <select id="bank-account" value={accountId} onChange={(e) => setAccountId(e.target.value)}
-            className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
-            <option value="">Choose an account</option>
-            {accounts.map((a) => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
-          </select>
+          <SearchSelect
+            id="bank-account"
+            name="bank-account"
+            options={accounts.map((a) => ({ id: a.id, label: `${a.code} · ${a.name}` }))}
+            defaultValue={accountId}
+            placeholder="Search the chart of accounts…"
+            onChange={setAccountId}
+          />
         </div>
 
         <div className="sm:col-span-2">

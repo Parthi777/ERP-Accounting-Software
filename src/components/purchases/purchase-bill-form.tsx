@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
+import { SearchSelect } from '@/components/forms/search-select';
 import { createPurchaseBillAction } from '@/server/services/purchases/purchase-actions';
 
 /**
@@ -86,13 +87,14 @@ export function PurchaseBillForm({
             <Label htmlFor="supplier" className="mb-1.5 block">
               Supplier<span className="ml-0.5 text-danger-600">*</span>
             </Label>
-            <select
-              id="supplier" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
-            >
-              <option value="">Choose a supplier</option>
-              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
+            <SearchSelect
+              id="supplier"
+              name="supplier"
+              options={suppliers}
+              defaultValue={supplierId}
+              placeholder="Search suppliers by name or code…"
+              onChange={setSupplierId}
+            />
           </div>
 
           <div>

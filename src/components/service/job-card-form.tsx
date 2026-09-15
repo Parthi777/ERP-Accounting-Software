@@ -8,6 +8,7 @@ import { Loader2, Save } from 'lucide-react';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
+import { SearchSelect } from '@/components/forms/search-select';
 import { createJobCardAction } from '@/server/services/service/service-actions';
 
 interface Option {
@@ -97,11 +98,14 @@ export function JobCardForm({
             <Label htmlFor="customer" className="mb-1.5 block">
               Customer<span className="ml-0.5 text-danger-600">*</span>
             </Label>
-            <select id="customer" value={customerId} onChange={(e) => setCustomerId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
-              <option value="">Choose a customer</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
+            <SearchSelect
+              id="customer"
+              name="customer"
+              options={customers}
+              defaultValue={customerId}
+              placeholder="Search by name, customer ID or mobile…"
+              onChange={setCustomerId}
+            />
             <p className="mt-1 text-xs text-ink-400">
               Not listed?{' '}
               <Link href="/customers/new" className="text-brand-600 hover:underline">Create the customer first</Link>.

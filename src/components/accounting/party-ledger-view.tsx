@@ -6,6 +6,7 @@ import type {
   LedgerLine,
 } from '@/server/services/accounting/ledger-service';
 import { DataTable, type Column } from '@/components/data-table/data-table';
+import { SearchSelect } from '@/components/forms/search-select';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { formatINR, negate, type Paise } from '@/lib/money';
@@ -117,17 +118,16 @@ export function PartyLedgerView({
             <label htmlFor={paramName} className="mb-1.5 block text-xs font-medium text-ink-600">
               {labels.party}
             </label>
-            <select
+            {/* Typed, not scrolled: the list is every party the dealer has, and
+                a native select offers no way to find one among thousands. */}
+            <SearchSelect
               id={paramName}
               name={paramName}
               defaultValue={selectedId}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
-            >
-              <option value="">Choose a {lower}</option>
-              {options.map((o) => (
-                <option key={o.id} value={o.id}>{o.label}</option>
-              ))}
-            </select>
+              options={options}
+              placeholder={`Search ${lower}s by name, code or mobile…`}
+              submitOnSelect
+            />
           </div>
           <div>
             <label htmlFor="from" className="mb-1.5 block text-xs font-medium text-ink-600">From</label>
