@@ -35,7 +35,12 @@
 do $$
 declare
   -- ─────────────────────────────────────────────────────────────────────────
+  -- ─────────────────────────────────────────────────────────────────────────
   v_email text := 'parthi@dharani.in';       -- ← CHANGE THIS, then Run
+  -- ─────────────────────────────────────────────────────────────────────────
+  -- Edited rather than passed in: a psql variable cannot be interpolated inside
+  -- a dollar-quoted body, and the Supabase SQL Editor — which is where this file
+  -- is usually run — cannot pass one at all.
   -- ─────────────────────────────────────────────────────────────────────────
   v_uid   uuid;
   v_role  uuid;
@@ -56,7 +61,15 @@ begin
     (v_uid, null, 'Platform Administrator', lower(btrim(v_email)), true, true, 'ACTIVE')
   on conflict (id) do update
     set is_platform_admin = true,
-        status            = 'ACTIVE';
+        status            = 'ACTIVE',
+        -- Cleared, not left alone. Converting a login that is already attached to
+        -- a dealer is the ordinary case — someone looks around inside the demo
+        -- tenant before their own exists — and leaving dealer_id set produces
+        -- exactly the account this file's header warns against: one that bypasses
+        -- every RLS policy *and* belongs to a tenant, so every other dealer's
+        -- data appears inside its own screens.
+        dealer_id         = null,
+        has_all_branch_access = true;
 
   -- Two separate things, both needed. The ROLE puts Administration → Dealers in
   -- the sidebar (it carries the admin.* permissions); the FLAG is what makes
