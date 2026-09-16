@@ -58,6 +58,53 @@ export function watchForFailures(page: Page, baseURL: string | undefined): strin
   return failures;
 }
 
+/**
+ * The tenant these tests are allowed to write into.
+ *
+ * Stated by the operator, checked against the app before anything is written.
+ * Without this the only thing standing between `--project=flows` and a real
+ * dealer's ledger is a comment — and the default configuration points the wrong
+ * way: with E2E_BASE_URL unset, Playwright builds and starts the app from
+ * .env.local, which in this repo is production.
+ *
+ * A posted journal is immutable (spec §23) and a dealer that has posted cannot
+ * be purged, only closed. There is no undo, so the check is mechanical.
+ */
+export const WRITE_DEALER = process.env.E2E_WRITE_DEALER ?? '';
+
+/**
+ * Refuses to go on unless the signed-in tenant is the one named.
+ *
+ * Reads data-dealer-code off the app shell, which every authenticated page
+ * renders. A mis-set E2E_BASE_URL, a stale .env.local or a forgotten flag all
+ * land here rather than in someone's books.
+ */
+export async function assertWritableTenant(page: Page): Promise<void> {
+  if (!WRITE_DEALER) {
+    throw new Error(
+      'E2E_WRITE_DEALER is not set. Name the throwaway tenant these tests may write ' +
+        'into, e.g. E2E_WRITE_DEALER=SANDBOX. They must never run against a real dealer: ' +
+        'a posted journal cannot be deleted.',
+    );
+  }
+
+  await page.goto('/dashboard');
+  const shell = page.locator('[data-dealer-code]').first();
+  await expect(shell, 'the app shell never rendered — is the session valid?').toBeAttached({
+    timeout: 30_000,
+  });
+
+  const actual = (await shell.getAttribute('data-dealer-code')) ?? '';
+  if (actual !== WRITE_DEALER) {
+    throw new Error(
+      `Refusing to write. E2E_WRITE_DEALER is "${WRITE_DEALER}" but this app is signed ` +
+        `into "${actual || '(none)'}". Check E2E_BASE_URL and .env.local — with no ` +
+        'E2E_BASE_URL the suite builds and runs the app from .env.local, which is ' +
+        'usually production.',
+    );
+  }
+}
+
 /** Attach a CSV to a file input without writing a temporary file to disk. */
 export async function attachCsv(input: Locator, name: string, content: string): Promise<void> {
   await input.setInputFiles({ name, mimeType: 'text/csv', buffer: Buffer.from(content, 'utf8') });

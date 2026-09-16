@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { RUN, attachCsv, pick, today, watchForFailures } from './writes';
+import { RUN, assertWritableTenant, attachCsv, pick, today, watchForFailures } from './writes';
 
 /**
  * The write paths, driven through a browser.
@@ -14,11 +14,16 @@ import { RUN, attachCsv, pick, today, watchForFailures } from './writes';
  *
  * ── These tests write. Read this before pointing them anywhere ──────────────
  *
- * They are skipped unless E2E_ALLOW_WRITES=1, and they must only ever run
- * against a throwaway tenant. Some of what they do cannot be undone: a posted
- * journal is immutable by design (spec §23), and a dealer that has posted
- * journals cannot be purged, only closed. Running this against a real dealer
- * leaves permanent rows in their ledger.
+ * They are skipped unless E2E_ALLOW_WRITES=1, and they refuse to run unless
+ * E2E_WRITE_DEALER names the tenant the app is actually signed into. Some of
+ * what they do cannot be undone: a posted journal is immutable by design
+ * (spec §23), and a dealer that has posted journals cannot be purged, only
+ * closed. Running this against a real dealer leaves permanent rows in their
+ * ledger.
+ *
+ * The check is mechanical rather than advisory because the default points the
+ * wrong way: with E2E_BASE_URL unset, Playwright builds and starts the app from
+ * .env.local, which in this repo is production. See docs/testing-staging.md.
  *
  * Every row carries RUN, a per-run tag, so a second run neither collides with
  * the first nor has to guess which rows are its own.
@@ -31,6 +36,17 @@ test.describe('write paths', () => {
     !WRITES_ENABLED,
     'Writes are opt-in. Set E2E_ALLOW_WRITES=1, and only against a throwaway tenant.',
   );
+
+  // Before anything writes: confirm this is the tenant we were told to write
+  // into. The comment above is advice; this is the guard.
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    try {
+      await assertWritableTenant(page);
+    } finally {
+      await page.close();
+    }
+  });
 
   // Serial: these share one tenant and one cash day, and a failure part-way
   // through leaves state the later tests would misread. Attributing a cascade of

@@ -17,6 +17,7 @@ import type { BranchOption } from '@/components/layout/branch-switcher';
 export function AppShell({
   user,
   dealerName,
+  dealerCode,
   sections,
   branches,
   activeBranchId,
@@ -24,6 +25,16 @@ export function AppShell({
 }: {
   readonly user: { readonly name: string; readonly email: string; readonly roleLabel: string };
   readonly dealerName: string | null;
+  /**
+   * Stamped onto the shell as `data-dealer-code`.
+   *
+   * Anything driving this app through a browser can then tell whose books it is
+   * looking at before it writes to them. The write-path e2e suite refuses to run
+   * unless this matches the throwaway tenant it was told to use — a posted
+   * journal is immutable (spec §23), so "point it at the wrong environment" is a
+   * mistake with no undo, and a comment is not a guard.
+   */
+  readonly dealerCode: string | null;
   readonly sections: readonly NavSection[];
   readonly branches: readonly BranchOption[];
   readonly activeBranchId: string | null;
@@ -32,7 +43,7 @@ export function AppShell({
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh" data-dealer-code={dealerCode ?? ''}>
       <Sidebar
         sections={sections}
         dealerName={dealerName}

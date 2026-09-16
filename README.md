@@ -3,15 +3,18 @@
 Multi-tenant, accounting-first ERP for two-wheeler dealers. Built to the specification in
 [CLAUDE.md](CLAUDE.md).
 
-**Status: all eight phases built.** Every module in the specification has a working screen — 75
+**Status: all eight phases built.** Every module in the specification has a working screen — 80
 navigable routes, none of them placeholders. The foundation (tenancy, roles, audit, document
 numbering, the posting engine) is joined by masters, pricing with approval, vehicle and parts
 inventory, bookings and sales, service and counter sales, finance, cash and bank, GST, and the
 consolidated MIS.
 
-Verified by `npm run verify`: 66 migrations, 32 SQL test files and 800+ database assertions run
-against a throwaway PostgreSQL instance on every check, plus 98 Vitest assertions over the
-TypeScript that money passes through.
+Verified by `npm run verify`: 74 migrations and 41 SQL test files run against a throwaway
+PostgreSQL instance on every check, plus 105 Vitest assertions over the TypeScript that money
+passes through.
+
+These counts go stale the moment a migration lands, and nothing checks them — unlike the lists in
+`npm run check:lists`. Treat them as the shape of the thing, and `npm run verify` as the truth.
 
 ---
 
@@ -93,7 +96,7 @@ catalogue, the system roles and the audit trail.
 | `npm run lint` | ESLint, including the architectural boundary rule |
 | `npm test` | Vitest — 105 unit assertions over money, redaction, parsing and the GST clients |
 | `npm run test:e2e` | Playwright — opens every screen in a browser. Needs `E2E_EMAIL` / `E2E_PASSWORD` |
-| `npm run test:e2e -- --project=flows` | Playwright write paths — creates customers, imports a CSV, posts and reverses a journal, double-clicks a receipt, closes the cash day. Needs `E2E_ALLOW_WRITES=1` and a **throwaway tenant** |
+| `npm run test:e2e -- --project=flows` | Playwright write paths — creates customers, imports a CSV, posts and reverses a journal, double-clicks a receipt, closes the cash day. Needs `E2E_ALLOW_WRITES=1` and `E2E_WRITE_DEALER`, and a **throwaway tenant**. See [docs/testing-staging.md](docs/testing-staging.md) |
 | `npm run check:permissions` | Fails if the TS permission registry and SQL seed disagree |
 | `npm run check:nav` | Fails if a sidebar entry's status disagrees with whether its page is built |
 | `npm run db:incremental` | Bundles only the migrations a database is missing |
@@ -150,7 +153,7 @@ These are enforced by PostgreSQL, so no application bug can bypass them. Each is
 - **Safe document numbers.** Issued under a row lock in the database, never in the browser.
 - **Idempotency.** A duplicate business reference on a journal is rejected by a unique index.
 
-Run `npm run db:verify` to see every assertion execute — 703 of them, across 27 files.
+Run `npm run db:verify` to see every assertion execute.
 
 ---
 
@@ -188,6 +191,7 @@ See [docs/permissions.md](docs/permissions.md) for the role matrix.
 | [docs/deployment-railway.md](docs/deployment-railway.md) | Supabase provisioning, Railway deploy, env vars |
 | [docs/design-system.md](docs/design-system.md) | Glass tokens, when glass applies and when it does not |
 | [docs/permissions.md](docs/permissions.md) | Role × permission matrix |
+| [docs/testing-staging.md](docs/testing-staging.md) | Standing up a staging project, and running the write-path suite safely |
 
 ---
 

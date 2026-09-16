@@ -36,6 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         roleLabel: roleLabel(context.roles, context.isPlatformAdmin),
       }}
       dealerName={context.dealerName}
+      dealerCode={context.dealerCode}
       sections={sections}
       branches={context.accessibleBranches.map((branch) => ({
         id: branch.id,
