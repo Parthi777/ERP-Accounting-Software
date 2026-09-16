@@ -147,6 +147,8 @@ type BankAccountsRow = {
   status: 'ACTIVE' | 'INACTIVE' | 'CLOSED';
   created_at: string;
   updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
 };
 
 type BankAccountsRowInsert = Insertable<BankAccountsRow, 'dealer_id' | 'name' | 'bank_name' | 'account_number' | 'ledger_account_id'>;
@@ -3430,6 +3432,10 @@ export interface Database {
         Args: { p_sale_id: string; p_item_id: string; p_quantity: number; p_unit_rate: number };
         Returns: undefined;
       };
+      create_bank_account: {
+        Args: { p_name: string; p_bank_name: string; p_account_number: string; p_ifsc?: string | null; p_account_type?: string | null; p_branch_id?: string | null; p_opening_balance?: number | null; p_as_on?: string | null; p_idempotency_key?: string | null };
+        Returns: string;
+      };
       create_booking_with_advance: {
         Args: { p_customer_id: string; p_model_id: string; p_branch_id: string; p_booking_amount: number; p_advance_amount: number; p_payment_mode: string; p_variant_id?: string | null; p_vehicle_id?: string | null; p_expected_delivery?: string | null; p_sales_executive_id?: string | null; p_reference?: string | null; p_notes?: string | null; p_idempotency_key?: string | null };
         Returns: { booking_id: string; booking_number: string; receipt_number: string; journal_entry_id: string }[];
@@ -3769,6 +3775,10 @@ export interface Database {
       unmatch_bank_line: {
         Args: { p_statement_line_id: number };
         Returns: undefined;
+      };
+      update_bank_account: {
+        Args: { p_id: string; p_name?: string | null; p_bank_name?: string | null; p_ifsc?: string | null; p_account_type?: string | null; p_status?: string | null };
+        Returns: string;
       };
       vehicle_stock_report: {
         Args: { p_branch_id?: string | null; p_status?: string | null };

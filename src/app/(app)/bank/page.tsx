@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { BookOpen, FileUp, Scale } from 'lucide-react';
+import { BookOpen, FileUp, Pencil, Plus, Scale } from 'lucide-react';
 
 import { getBankAccounts, type BankAccountSummary } from '@/server/services/bank/bank-service';
 import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
@@ -78,9 +78,24 @@ const columns: Column<BankAccountSummary>[] = [
   },
 ];
 
+const manageColumn: Column<BankAccountSummary> = {
+  key: 'edit',
+  header: '',
+  render: (row) => (
+    <Link
+      href={`/bank/accounts/${row.id}/edit`}
+      className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"
+    >
+      <Pencil className="size-3" aria-hidden />
+      Edit
+    </Link>
+  ),
+};
+
 export default async function Page() {
   const context = await requirePermission('bank.accounts.view');
   const accounts = await getBankAccounts();
+  const canManage = hasPermission(context, 'bank.accounts.manage');
 
   const total = accounts
     .filter((a) => a.status === 'ACTIVE')
@@ -95,6 +110,11 @@ export default async function Page() {
         count={accounts.length}
         action={
           <div className="flex flex-wrap gap-2">
+            {canManage && (
+              <Button variant="secondary" size="sm" asChild>
+                <Link href="/bank/accounts/new"><Plus aria-hidden />New bank account</Link>
+              </Button>
+            )}
             {hasPermission(context, 'bank.statement.import') && (
               <Button variant="secondary" size="sm" asChild>
                 <Link href="/bank/import"><FileUp aria-hidden />Import statement</Link>
@@ -132,10 +152,14 @@ export default async function Page() {
       </div>
 
       <DataTable
-        columns={columns}
+        columns={canManage ? [...columns, manageColumn] : columns}
         rows={accounts}
         getRowKey={(row) => row.id}
-        emptyMessage="No bank accounts yet. An administrator can add them under Administration → Settings."
+        emptyMessage={
+          canManage
+            ? "No bank accounts yet. Add the first one to record receipts, import statements and reconcile."
+            : "No bank accounts yet. Someone with bank account permissions can add the first one."
+        }
         caption="Bank accounts"
       />
     </>

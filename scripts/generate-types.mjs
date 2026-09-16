@@ -224,6 +224,7 @@ const RPC = new Set([
   // Bank and reconciliation — spec §38, §39.
   'record_bank_transaction', 'import_bank_statement', 'suggest_bank_matches', 'match_bank_line',
   'unmatch_bank_line', 'ignore_bank_line', 'complete_bank_reconciliation', 'bank_book',
+  'create_bank_account', 'update_bank_account',
   // Service workshop — spec §32, §33.
   'create_job_card', 'create_service_invoice', 'add_service_line', 'remove_service_line',
   'post_service_invoice', 'record_service_payment', 'service_history',

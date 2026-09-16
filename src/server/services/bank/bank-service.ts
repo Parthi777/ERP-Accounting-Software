@@ -141,6 +141,144 @@ export async function getBankAccounts(): Promise<BankAccountSummary[]> {
   }));
 }
 
+export interface BankAccountInput {
+  readonly name: string;
+  readonly bankName: string;
+  readonly accountNumber: string;
+  readonly ifsc?: string | null;
+  readonly accountType: string;
+  readonly branchId?: string | null;
+  /** Rupees, as typed. Zero posts no journal. */
+  readonly openingBalance?: number;
+  readonly asOn?: string;
+}
+
+/**
+ * Creates a bank account, and posts its opening balance if it has one.
+ *
+ * The opening balance is not a column this writes and forgets: create_bank_account
+ * (0073) posts it against 3300 Opening Balance Equity in the same transaction, so
+ * the bank book and the trial balance cannot start the year disagreeing. The
+ * control account is resolved in the database from the chart of accounts — spec
+ * §22 keeps account ids out of anything the browser can reach.
+ */
+export async function createBankAccount(input: BankAccountInput): Promise<BankResult & { id?: string }> {
+  const context = await requirePermission('bank.accounts.manage');
+  const supabase = await createSupabaseServerClient();
+
+  if (!input.name.trim()) {
+    return { ok: false, error: 'Give the account a name you will recognise on a receipt.' };
+  }
+  if (!input.bankName.trim()) {
+    return { ok: false, error: 'Name the bank.' };
+  }
+  if (!input.accountNumber.trim()) {
+    return { ok: false, error: 'Enter the account number.' };
+  }
+
+  const { data, error } = await supabase.rpc('create_bank_account', {
+    p_name: input.name.trim(),
+    p_bank_name: input.bankName.trim(),
+    p_account_number: input.accountNumber.trim(),
+    p_ifsc: input.ifsc?.trim() || null,
+    p_account_type: input.accountType,
+    p_branch_id: input.branchId || null,
+    p_opening_balance: input.openingBalance ?? 0,
+    p_as_on: input.asOn ?? new Date().toISOString().slice(0, 10),
+  });
+
+  if (error) {
+    console.error('[bank] create account failed', error.message);
+    return { ok: false, error: describeBankError(error.message) };
+  }
+
+  const id = typeof data === 'string' ? data : String(data ?? '');
+
+  await recordAudit({
+    action: 'CREATE',
+    entityType: 'bank_accounts',
+    entityId: id,
+    dealerId: context.dealerId,
+    branchId: context.activeBranch?.id ?? null,
+    userId: context.userId,
+    userEmail: context.email,
+    newData: {
+      name: input.name,
+      bank_name: input.bankName,
+      account_number: input.accountNumber,
+      opening_balance: input.openingBalance ?? 0,
+    },
+  });
+
+  const opened = input.openingBalance ?? 0;
+  return {
+    ok: true,
+    id,
+    message: opened === 0
+      ? 'Bank account added.'
+      : `Bank account added, opening with ${formatINR(fromDb(opened))} posted to Opening Balance Equity.`,
+  };
+}
+
+/**
+ * Edits a bank account's descriptive fields.
+ *
+ * The opening balance is deliberately absent: by the time this can be called it
+ * is a posted journal, and a posted journal is corrected by reversal, not by
+ * editing the number it produced (spec §23).
+ */
+export async function updateBankAccount(
+  id: string,
+  input: Partial<Pick<BankAccountInput, 'name' | 'bankName' | 'ifsc' | 'accountType'>> & { readonly status?: string },
+): Promise<BankResult> {
+  const context = await requirePermission('bank.accounts.manage');
+  const supabase = await createSupabaseServerClient();
+
+  const { error } = await supabase.rpc('update_bank_account', {
+    p_id: id,
+    p_name: input.name?.trim() || null,
+    p_bank_name: input.bankName?.trim() || null,
+    p_ifsc: input.ifsc?.trim() ?? null,
+    p_account_type: input.accountType || null,
+    p_status: input.status || null,
+  });
+
+  if (error) {
+    console.error('[bank] update account failed', error.message);
+    return { ok: false, error: describeBankError(error.message) };
+  }
+
+  await recordAudit({
+    action: 'UPDATE',
+    entityType: 'bank_accounts',
+    entityId: id,
+    dealerId: context.dealerId,
+    branchId: context.activeBranch?.id ?? null,
+    userId: context.userId,
+    userEmail: context.email,
+    newData: { ...input },
+  });
+
+  return { ok: true, message: 'Bank account updated.' };
+}
+
+/** One account, for the edit screen. */
+export async function getBankAccount(id: string) {
+  await requirePermission('bank.accounts.view');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase
+    .from('bank_accounts')
+    .select('id, name, bank_name, account_number, ifsc, account_type, status, branch_id, opening_balance')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load bank account: ${error.message}`);
+  }
+  return data;
+}
+
 export async function getBankBook(params: {
   readonly bankAccountId: string;
   readonly from?: string | null;

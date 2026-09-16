@@ -15,6 +15,37 @@ function refreshBank() {
   revalidatePath('/dashboard');
 }
 
+export async function createBankAccountAction(
+  input: service.BankAccountInput,
+): Promise<service.BankResult & { id?: string }> {
+  try {
+    const result = await service.createBankAccount(input);
+    // The accounting screens too: an opening balance posts a journal, so the
+    // trial balance and the ledgers are stale the moment this succeeds.
+    if (result.ok) {
+      refreshBank();
+      revalidatePath('/accounting/trial-balance');
+      revalidatePath('/accounting/journals');
+    }
+    return result;
+  } catch (error) {
+    return { ok: false, error: toAppError(error).userMessage };
+  }
+}
+
+export async function updateBankAccountAction(
+  id: string,
+  input: Parameters<typeof service.updateBankAccount>[1],
+): Promise<service.BankResult> {
+  try {
+    const result = await service.updateBankAccount(id, input);
+    if (result.ok) refreshBank();
+    return result;
+  } catch (error) {
+    return { ok: false, error: toAppError(error).userMessage };
+  }
+}
+
 export async function recordBankTransactionAction(
   input: service.BankTransactionInput,
 ): Promise<service.BankResult> {
