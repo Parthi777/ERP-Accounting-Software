@@ -103,6 +103,7 @@ catalogue, the system roles and the audit trail.
 | `scripts/post-migration-check.sql` | Read-only: confirms a migration landed on a live database |
 | `npm run check:bundle` | Fails if `ALL-IN-ONE.sql` has drifted from the migrations on disk |
 | `npm run check:schema-version` | Fails if the expected schema version lags the migrations, or a migration does not stamp itself |
+| `npm run check:lists` | Fails if a hand-maintained list — the chart of accounts, `TRIGGER_FILLED`, the RPC set — has drifted from the database |
 | `scripts/create-platform-admin.sql` | Grants an existing login platform administration, so it can onboard dealers |
 | `scripts/link-auth-users.sql` | Links Supabase Auth accounts to profiles, roles and branch access |
 | `npm run verify` | All of the above, in order |

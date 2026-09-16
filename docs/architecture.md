@@ -147,6 +147,15 @@ than not displaying them.
    Then bump `EXPECTED_SCHEMA_VERSION` in `src/config/schema.ts` and regenerate the bundles with
    `bash scripts/build-all-in-one.sh`. `npm run check:schema-version` and `npm run check:bundle`
    fail the build if you forget either.
+
+   If the migration adds an account, a BEFORE INSERT trigger or a `public.` function, three
+   hand-maintained lists describe things the database already knows and none of them update
+   themselves: the chart of accounts (0056's `app.seed_chart_of_accounts`, later migrations that add
+   to it, and a second copy for the demo dealer in `supabase/seed.sql`), and `TRIGGER_FILLED` and the
+   RPC set in `scripts/generate-types.mjs`. `npm run check:lists` fails the build when one of them
+   drifts. All three have gone stale before — an account backfilled for existing dealers but not
+   added to the provisioning function leaves the *next* dealer missing it, which is how 3300 Opening
+   Balance Equity would have failed in front of a customer.
 3. Add a test in `supabase/test/` asserting isolation and the module's own integrity rules.
 4. Add a repository, then a service that checks permissions and redacts restricted fields.
 5. Replace the placeholder page; set `status: 'ready'` in `src/config/navigation.ts`.
