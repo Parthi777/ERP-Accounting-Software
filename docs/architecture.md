@@ -200,3 +200,52 @@ Three details worth knowing:
 
 Every successful export writes an `EXPORT` audit row (§46): who, which report,
 which filters, how many rows.
+
+## Tests, and what each layer can see
+
+Four layers, each covering what the one below it cannot:
+
+| Layer | Command | Covers |
+|---|---|---|
+| SQL | `npm run db:verify` | ~870 assertions: tenant isolation, double entry, immutability, idempotency, document numbering |
+| Unit | `npm test` | 105 assertions: money, redaction, CSV and statement parsing, the IRP client |
+| Screens | `npm run test:e2e` | every sidebar route opened under a real session, read-only |
+| Write paths | `npm run test:e2e -- --project=flows` | forms actually submitted — see below |
+
+The first three are safe to point anywhere. The fourth is not.
+
+### The write-path suite
+
+`e2e/flows.spec.ts` drives the paths a dealer touches: creating a customer,
+importing a CSV (including a bad row, to prove the import refuses rather than
+partially lands), posting a manual journal and reversing it, double-clicking a
+cash receipt, and closing the cash day.
+
+It exists because the other three layers, between them, never submit a form. A
+server action wired to the wrong argument, a picker whose hidden input is never
+written, a confirm button stuck disabled — none of that is visible from SQL, from
+a pure function, or from a page that is only ever read.
+
+**It must run against a throwaway tenant.** Every test is gated on
+`E2E_ALLOW_WRITES=1` and skips without it, because some of what it does cannot be
+undone: a posted journal is immutable (spec §23), and `purge_dealer` refuses once
+a dealer has posted journals — such a dealer can only be *closed*. A run against a
+real dealer therefore leaves permanent rows in their ledger.
+
+```bash
+# 1. Provision a dealer for the purpose (Administration → Dealers, or provision_dealer).
+# 2. Create a user in it, and use those credentials — not a real dealer's.
+E2E_EMAIL=… E2E_PASSWORD=… E2E_ALLOW_WRITES=1 \
+  npm run test:e2e -- --project=flows
+# 3. Close the dealer afterwards. Do not expect to purge it.
+```
+
+Rows created by a run carry a `RUN` tag (`E2E…`), so runs neither collide with
+each other nor leave rows that have to be identified by guesswork.
+
+Two caveats worth knowing before reading a pass as more than it is. The
+double-click test proves the behaviour a cashier can actually produce; the case
+idempotency keys really exist for — a network timeout and a client retry — cannot
+be staged from a click, and is covered in SQL by `9L_idempotency.sql`. And the
+day-close test skips when the day is already closed, which is what a second run
+on the same date will find.

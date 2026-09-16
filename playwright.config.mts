@@ -25,8 +25,15 @@ const here = process.cwd();
  *   authed     needs E2E_EMAIL / E2E_PASSWORD; navigates every route read-only
  *   flows      writes; refuses to run unless E2E_ALLOW_WRITES=1
  *
- * The default run is smoke + authed, so pointing this at a live database reads
- * and never writes.
+ * A bare `npx playwright test` runs all three, but `flows` skips every test
+ * unless E2E_ALLOW_WRITES=1 — so the default run reads and never writes, and
+ * still reports that a write suite exists rather than hiding it. The gate is the
+ * variable, not the project name.
+ *
+ * That gate is deliberate: some of what `flows` does cannot be undone. A posted
+ * journal is immutable (spec §23), and a dealer that has posted journals can
+ * only be closed, never purged. It belongs against a throwaway tenant and
+ * nowhere else.
  */
 export default defineConfig({
   testDir: join(here, 'e2e'),
@@ -59,6 +66,18 @@ export default defineConfig({
     {
       name: 'authed',
       testMatch: /screens\.spec\.ts/,
+      dependencies: ['setup'],
+      use: { storageState: 'test-results/.auth/session.json' },
+    },
+
+    // Writes. Runs only with the flag:
+    //   E2E_ALLOW_WRITES=1 npx playwright test --project=flows
+    // Without it every test in the project skips, so a run that forgets the
+    // flag reports skipped rather than quietly writing to whatever .env.local
+    // happens to point at.
+    {
+      name: 'flows',
+      testMatch: /flows\.spec\.ts/,
       dependencies: ['setup'],
       use: { storageState: 'test-results/.auth/session.json' },
     },

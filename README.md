@@ -93,6 +93,7 @@ catalogue, the system roles and the audit trail.
 | `npm run lint` | ESLint, including the architectural boundary rule |
 | `npm test` | Vitest — 105 unit assertions over money, redaction, parsing and the GST clients |
 | `npm run test:e2e` | Playwright — opens every screen in a browser. Needs `E2E_EMAIL` / `E2E_PASSWORD` |
+| `npm run test:e2e -- --project=flows` | Playwright write paths — creates customers, imports a CSV, posts and reverses a journal, double-clicks a receipt, closes the cash day. Needs `E2E_ALLOW_WRITES=1` and a **throwaway tenant** |
 | `npm run check:permissions` | Fails if the TS permission registry and SQL seed disagree |
 | `npm run check:nav` | Fails if a sidebar entry's status disagrees with whether its page is built |
 | `npm run db:incremental` | Bundles only the migrations a database is missing |
