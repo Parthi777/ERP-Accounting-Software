@@ -7,7 +7,7 @@
 --   * the document sent to the portal is built from the invoice, and its totals
 --     are the invoice's own — a payload that disagrees with the ledger would
 --     file a different sale from the one that happened;
---   * a buyer with no GSTIN files as B2C with the portal's URP marker, rather
+--   * a buyer with no GSTIN is refused rather than filed (0074), rather
 --     than as a malformed B2B;
 --   * what was sent is stored before the request leaves, so a lost reply still
 --     shows what was attempted;
@@ -182,9 +182,11 @@ begin
     format('select public.record_einvoice_request(%L, ''{}''::jsonb)', v_einv),
     'an already-filed document cannot be sent again');
 
-  -- ═══ B2C, and the service-invoice branch of the builder ═════════════════
-  -- A counter sale with no customer at all: the hardest case for the payload,
-  -- because every buyer field has to be filled from nothing.
+  -- ═══ A counter sale with no customer at all ═════════════════════════════
+  -- This used to assert that such a sale files as SupTyp 'B2C' under the URP
+  -- marker. It does not: 'B2C' is not one of the portal's SupTyp values, and
+  -- e-invoicing does not reach a B2C supply in the first place. 0074 refuses it,
+  -- and what is asserted here now is the refusal — see 9V for the rest.
   declare
     v_item    uuid;
     v_counter uuid;
@@ -204,18 +206,38 @@ begin
     perform public.add_service_line(v_counter, 'ACCESSORY', 'Tank pad', 2, 350, v_item);
     perform public.post_service_invoice(v_counter);
 
+    perform app_test.assert_raises(
+      format('select public.queue_einvoice(''SERVICE_INVOICE'', %L)', v_counter),
+      'a counter sale with no customer is not queued — it has no IRN to get');
+
+    perform app_test.assert_equals(
+      public.einvoice_blockers('SERVICE_INVOICE', v_counter) like '%B2C%', true,
+      'and the reason names the cause rather than leaving the portal to');
+
+    -- The service-invoice branch of the builder still needs covering, so give
+    -- the counter sale a registered buyer and file it properly.
+    declare
+      v_cust uuid;
+    begin
+      insert into public.customers
+        (dealer_id, name, mobile, gstin, address_line1, city, state_code, pincode)
+      values (v_dealer, 'Counter Registered Buyer', '9840091234', '33AABCC9876N1Z2',
+              '9 Mount Road', 'Chennai', '33', '600002')
+      returning id into v_cust;
+
+      update public.service_invoices set customer_id = v_cust where id = v_counter;
+    end;
+
     v_einv2 := public.queue_einvoice('SERVICE_INVOICE', v_counter);
     v_payload := public.einvoice_payload(v_einv2);
 
-    perform app_test.assert_equals(v_payload -> 'TranDtls' ->> 'SupTyp', 'B2C',
-      'a sale with no customer is a B2C supply');
-    perform app_test.assert_equals(v_payload -> 'BuyerDtls' ->> 'Gstin', 'URP',
-      'filed under the portal''s unregistered-person marker rather than a blank');
-    perform app_test.assert_equals(v_payload -> 'BuyerDtls' ->> 'LglNm', 'Cash customer',
-      'and named, because the portal will not accept an empty buyer');
+    perform app_test.assert_equals(v_payload -> 'TranDtls' ->> 'SupTyp', 'B2B',
+      'a registered buyer makes it a B2B supply, the only kind the IRP takes');
+    perform app_test.assert_equals(v_payload -> 'BuyerDtls' ->> 'Gstin', '33AABCC9876N1Z2',
+      'filed under the buyer''s own GSTIN');
     perform app_test.assert_equals(
       (v_payload -> 'BuyerDtls' ->> 'Stcd') is not null, true,
-      'with a place of supply, defaulted to the seller''s state');
+      'with a place of supply');
 
     perform app_test.assert_equals(
       jsonb_array_length(v_payload -> 'ItemList') >= 1, true,

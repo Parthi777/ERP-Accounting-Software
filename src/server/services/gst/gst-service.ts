@@ -77,6 +77,14 @@ export interface EinvoiceQueueRow {
   readonly ackNumber: string | null;
   readonly errorMessage: string | null;
   readonly attemptCount: number;
+  /**
+   * Why this document cannot be filed, or null when it can (0074).
+   *
+   * Decided in the database so the screen and the API cannot disagree about it.
+   * A B2C supply is the usual reason and the commonest case a dealer has: rule
+   * 48(4) does not reach it, so there is no IRN to be had.
+   */
+  readonly blockedReason: string | null;
 }
 
 export interface EwayBillRow {
@@ -274,6 +282,7 @@ export async function getEinvoiceQueue(params: {
     ackNumber: row.ack_number,
     errorMessage: row.error_message,
     attemptCount: Number(row.attempt_count),
+    blockedReason: row.blocked_reason,
   }));
 }
 

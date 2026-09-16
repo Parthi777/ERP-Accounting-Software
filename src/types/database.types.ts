@@ -3514,7 +3514,7 @@ export interface Database {
       };
       einvoice_queue: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
-        Returns: { einvoice_id: string; document_type: string; document_id: string; document_number: string; document_date: string; customer_name: string; gstin: string; invoice_value: string; status: string; irn: string; ack_number: string; error_message: string; attempt_count: number }[];
+        Returns: { einvoice_id: string; document_type: string; document_id: string; document_number: string; document_date: string; customer_name: string; gstin: string; invoice_value: string; status: string; irn: string; ack_number: string; error_message: string; attempt_count: number; blocked_reason: string }[];
       };
       employee_salary_on: {
         Args: { p_employee_id: string; p_as_on?: string | null };

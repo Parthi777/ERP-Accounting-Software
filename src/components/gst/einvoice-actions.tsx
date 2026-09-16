@@ -27,6 +27,7 @@ export function EinvoiceActions({
   canGenerate,
   canRetry,
   portalConfigured,
+  blockedReason,
 }: {
   readonly einvoiceId: string | null;
   readonly documentType: string;
@@ -37,6 +38,12 @@ export function EinvoiceActions({
   readonly canRetry: boolean;
   /** False when no provider is wired up, so filing is offered honestly. */
   readonly portalConfigured: boolean;
+  /**
+   * Why this document cannot be filed, from the database (0074). Most often a
+   * B2C supply, which e-invoicing does not reach at all — and for a two-wheeler
+   * dealer that is most of the day.
+   */
+  readonly blockedReason: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
@@ -44,6 +51,16 @@ export function EinvoiceActions({
 
   if (status === 'GENERATED') {
     return <span className="text-xs text-positive-700">Filed</span>;
+  }
+
+  // Said here rather than discovered at the portal. The button is absent, not
+  // disabled-looking-clickable, and the reason stands in its place (spec §55).
+  if (blockedReason) {
+    return (
+      <span className="block max-w-56 text-[11px] leading-snug text-ink-400" title={blockedReason}>
+        {blockedReason}
+      </span>
+    );
   }
 
   const retrying = status === 'FAILED';

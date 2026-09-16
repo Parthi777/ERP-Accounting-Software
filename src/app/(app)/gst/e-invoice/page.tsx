@@ -80,7 +80,7 @@ export default async function Page({
         <span>
           <span className="block">{row.customerName}</span>
           <span className="block font-mono text-[11px] text-ink-400">
-            {row.gstin ?? 'No GSTIN — B2C'}
+            {row.gstin ?? 'No GSTIN — B2C, not filed on the IRP'}
           </span>
         </span>
       ),
@@ -129,6 +129,7 @@ export default async function Page({
           canGenerate={canGenerate}
           canRetry={canRetry}
           portalConfigured={irp.configured}
+          blockedReason={row.blockedReason}
         />
       ),
     },
