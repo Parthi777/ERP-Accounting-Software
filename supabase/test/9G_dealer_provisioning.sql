@@ -75,9 +75,19 @@ begin
   perform app_test.assert_equals(v_count, 1,
     'the branch has a cash account, so the first counter receipt will not fail');
 
+  -- Against the canonical list rather than a number. A hand-written count is
+  -- exactly what let provisioning sit three series short of what the database
+  -- asks for — the count was right, the list was wrong, and this assertion
+  -- passed throughout (0072).
   select count(*)::int into v_count
-    from public.document_sequences where dealer_id = v_new;
-  perform app_test.assert_equals(v_count, 10, 'ten financial document series exist');
+    from app.required_document_series() s
+    left join public.document_sequences ds
+           on ds.dealer_id = v_new
+          and ds.doc_type = s.doc_type
+          and ds.branch_id is null
+   where ds.id is null;
+  perform app_test.assert_equals(v_count, 0,
+    'every financial document series the database asks for exists');
 
   select count(*)::int into v_count
     from public.accounting_periods where dealer_id = v_new and status = 'OPEN';

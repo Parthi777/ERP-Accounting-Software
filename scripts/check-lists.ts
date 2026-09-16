@@ -15,6 +15,10 @@
  *      TypeScript insert was forced to invent a supplier_code.
  *   3. The RPC set in the same file — the functions that reach the generated
  *      Database['public']['Functions'] types.
+ *   4. The document series a dealer is given (spec §45), against the doc_types
+ *      the database's own functions ask for. app.provision_dealer() sat three
+ *      short of that for sixteen migrations, so every tenant made through the
+ *      console could not transfer stock or finance a sale.
  *
  * The cost is not a stale file. A chart-of-accounts entry added for existing
  * dealers but not for new ones means the next dealer provisioned is missing an
@@ -304,12 +308,117 @@ function checkRpcAllowlist(problems: string[]): number {
   return allowed.size;
 }
 
+// -----------------------------------------------------------------------------
+// 4. Document series — every type asked for is a type something creates
+// -----------------------------------------------------------------------------
+/**
+ * The argument list of every `next_document_number(` call in a blob of SQL.
+ *
+ * Walks the parentheses rather than the line, because most call sites wrap and a
+ * line-based scan either misses the doc_type or picks up the next statement's.
+ */
+function documentNumberCallArgs(sql: string): string[] {
+  const calls: string[] = [];
+  const opener = /next_document_number\s*\(/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = opener.exec(sql)) !== null) {
+    let depth = 1;
+    let i = match.index + match[0].length;
+    const start = i;
+    while (i < sql.length && depth > 0) {
+      if (sql[i] === '(') depth += 1;
+      else if (sql[i] === ')') depth -= 1;
+      i += 1;
+    }
+    if (depth === 0) calls.push(sql.slice(start, i - 1));
+  }
+
+  return calls;
+}
+
+/**
+ * Doc types that create their own series on first use.
+ *
+ * The shape is a function body that both inserts into document_sequences and
+ * asks for a number of the same type — app.customers_assign_code() (0013) is the
+ * original. Detected structurally rather than listed, because a list of the
+ * lists that are exempt from the list check is how this drifts again.
+ *
+ * A backfill deliberately does not qualify. 0038 and 0039 both insert
+ * STOCK_TRANSFER, but each is conditional on rows that existed the day it ran,
+ * so neither reaches a dealer provisioned afterwards — which is precisely how
+ * the gap survived sixteen migrations.
+ */
+function selfProvisioningDocTypes(sql: string): Set<string> {
+  const types = new Set<string>();
+
+  for (const [body] of sql.matchAll(/create\s+or\s+replace\s+function[\s\S]*?\$\$;/gi)) {
+    if (!/insert\s+into\s+public\.document_sequences\b/i.test(body)) continue;
+
+    for (const args of documentNumberCallArgs(body)) {
+      const type = args.match(/'([A-Z][A-Z0-9_]{2,30})'/)?.[1];
+      if (type !== undefined && body.includes(`'${type}'`)) types.add(type);
+    }
+  }
+
+  return types;
+}
+
+function checkDocumentSeries(problems: string[]): number {
+  const all = migrations();
+  const sql = all.map((m) => m.sql).join('\n');
+
+  const requested = new Map<string, string>();
+  for (const { name, sql: text } of all) {
+    for (const args of documentNumberCallArgs(text)) {
+      // No literal means the call forwards a variable — the wrapper in 0028,
+      // or a caller that already took its type from one of these call sites.
+      const type = args.match(/'([A-Z][A-Z0-9_]{2,30})'/)?.[1];
+      if (type !== undefined && !requested.has(type)) requested.set(type, name);
+    }
+  }
+
+  // What a dealer is actually given: the canonical list, plus the identifier
+  // types that create their own series. Nothing else counts — a backfill is
+  // history, not provisioning.
+  const seeded = selfProvisioningDocTypes(sql);
+
+  // The canonical list itself (0072), read from the function body rather than
+  // row by row, since only its first row carries the `values` keyword.
+  const canonical = sql.match(
+    /create\s+or\s+replace\s+function\s+app\.required_document_series\s*\(\s*\)[\s\S]*?\$\$;/i,
+  );
+  if (!canonical) {
+    problems.push(
+      'document series:    app.required_document_series() was not found in any migration — ' +
+        'this check cannot tell which series are meant to exist',
+    );
+  } else {
+    for (const [, type] of canonical[0].matchAll(/'([A-Z][A-Z0-9_]{2,30})'/g)) {
+      if (type !== undefined) seeded.add(type);
+    }
+  }
+
+  for (const [type, where] of requested) {
+    if (!seeded.has(type)) {
+      problems.push(
+        `document series:    ${type} is requested by ${where} but no migration creates it — ` +
+          `add it to app.required_document_series() (0072) or give it a self-provisioning trigger`,
+      );
+    }
+  }
+
+  return requested.size;
+}
+
 function main(): void {
   const problems: string[] = [];
 
   const accounts = checkChartOfAccounts(problems);
   const triggerColumns = checkTriggerFilled(problems);
   const rpcs = checkRpcAllowlist(problems);
+  const series = checkDocumentSeries(problems);
 
   if (problems.length > 0) {
     console.error('\n  A hand-maintained list has drifted from what it describes:\n');
@@ -320,7 +429,8 @@ function main(): void {
 
   console.log(
     `  ✓ Hand-maintained lists agree with the database (${accounts} accounts in all three ` +
-      `copies, ${triggerColumns} trigger-filled columns, ${rpcs} RPCs).`,
+      `copies, ${triggerColumns} trigger-filled columns, ${rpcs} RPCs, ` +
+      `${series} document series).`,
   );
 }
 
