@@ -13,7 +13,7 @@ import {
   CUSTOMER_SETTLEMENT_LABELS,
 } from '@/components/accounting/party-settlement';
 import { ExportButtons } from '@/components/export/export-buttons';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Customer ledger' };
 export const dynamic = 'force-dynamic';
@@ -23,9 +23,9 @@ export default async function Page({
 }: {
   searchParams: Promise<{ customer?: string; from?: string; to?: string }>;
 }) {
-  await requirePermission('accounting.ledgers.view');
+  const context = await requirePermission('accounting.ledgers.view');
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const customerId = params.customer ?? '';
 
   const [customers, ledger, settlement] = await Promise.all([

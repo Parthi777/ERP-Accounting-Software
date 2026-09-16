@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/data-table/data-table';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { formatINR } from '@/lib/money';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Consolidated MIS' };
@@ -27,9 +27,9 @@ export default async function Page({
 }: {
   searchParams: Promise<{ from?: string; to?: string }>;
 }) {
-  await requirePermission('reports.consolidated.view');
+  const context = await requirePermission('reports.consolidated.view');
   const params = await searchParams;
-  const range = monthRange(params.from, params.to);
+  const range = rangeInYear(context.activeFinancialYear, params.from, params.to);
 
   const rows = await getConsolidatedMis({ from: range.from, to: range.to });
 

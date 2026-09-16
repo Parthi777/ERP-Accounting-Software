@@ -10,7 +10,7 @@ import { SearchSelect } from '@/components/forms/search-select';
 import { PageHeader } from '@/components/data-table/data-table';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Account ledger' };
 export const dynamic = 'force-dynamic';
@@ -32,7 +32,7 @@ export default async function AccountLedgerPage({
   const context = await requireTenantContext();
   const params = await searchParams;
 
-  const range = monthRange(params.from, params.to);
+  const range = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const accounts = await getPostableAccounts();
 
   // `code` as well as `account`, so the trial balance and any other screen

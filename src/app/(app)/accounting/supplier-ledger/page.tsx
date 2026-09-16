@@ -8,7 +8,7 @@ import { requirePermission } from '@/server/auth/tenant-context';
 import { PageHeader } from '@/components/data-table/data-table';
 import { PartyLedgerView, SUPPLIER_LEDGER_LABELS } from '@/components/accounting/party-ledger-view';
 import { ExportButtons } from '@/components/export/export-buttons';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Supplier ledger' };
 export const dynamic = 'force-dynamic';
@@ -26,9 +26,9 @@ export default async function Page({
 }: {
   searchParams: Promise<{ supplier?: string; from?: string; to?: string }>;
 }) {
-  await requirePermission('accounting.ledgers.view');
+  const context = await requirePermission('accounting.ledgers.view');
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const supplierId = params.supplier ?? '';
 
   const [suppliers, ledger] = await Promise.all([

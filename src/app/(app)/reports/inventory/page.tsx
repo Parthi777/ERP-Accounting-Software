@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, paise } from '@/lib/money';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Inventory report' };
@@ -35,7 +35,7 @@ export default async function Page({
 }) {
   const context = await requirePermission('reports.inventory.view');
   const params = await searchParams;
-  const range = monthRange(params.from, params.to);
+  const range = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const view = params.view ?? 'VEHICLES';
 
   const showCost = hasPermission(context, 'vehicles.view_cost') || hasPermission(context, 'inventory.view_cost');

@@ -98,6 +98,15 @@ export const NAVIGATION: readonly NavSection[] = [
     status: 'ready',
     items: [
       { label: 'Vehicle Sales', href: '/sales', permission: 'sales.view', status: 'ready' },
+      // Accessories and spares over the counter. Filed here rather than under
+      // Inventory because it is a sale: someone looking for "where do I sell an
+      // accessory" goes to Sales, finds vehicles and returns, and concludes the
+      // product cannot do it. Inventory is where stock is managed, not sold.
+      //
+      // Safe for the COUNTER_SALES role, which holds inventory.counter_sale.create
+      // and not sales.view: visibleNavigation() shows a section whenever any of
+      // its items is visible, so they get a Sales section containing this alone.
+      { label: 'Counter Sales', href: '/inventory/counter-sales', permission: 'inventory.counter_sale.create', status: 'ready' },
       { label: 'Sales Returns', href: '/sales/returns', permission: 'sales.return', status: 'ready', phase: 4 },
     ],
   },
@@ -167,7 +176,6 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Stock Upload', href: '/inventory/upload', permission: 'inventory.stock.upload', status: 'ready', phase: 3 },
       { label: 'Stock Transfer', href: '/inventory/transfers', permission: 'inventory.stock.transfer', status: 'ready', phase: 3 },
       { label: 'Stock Adjustment', href: '/inventory/adjustments', permission: 'inventory.stock.adjust', status: 'ready', phase: 3 },
-      { label: 'Counter Sales', href: '/inventory/counter-sales', permission: 'inventory.counter_sale.create', status: 'ready' },
       { label: 'Stock Ledger', href: '/inventory/ledger', permission: 'inventory.ledger.view', status: 'ready', phase: 3 },
     ],
   },

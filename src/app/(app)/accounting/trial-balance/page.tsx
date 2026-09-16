@@ -10,6 +10,7 @@ import { StatementFilters } from '@/components/accounting/statement-filters';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, ZERO, type Paise } from '@/lib/money';
 import { formatDate } from '@/lib/format';
+import { asOnInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,7 @@ export default async function TrialBalancePage({
   const context = await requireTenantContext();
   const params = await searchParams;
 
-  const asOn = /^\d{4}-\d{2}-\d{2}$/.test(params.asOn ?? '') ? params.asOn! : today();
+  const asOn = asOnInYear(context.activeFinancialYear, params.asOn);
   const branchId = params.branch === 'all' ? null : (params.branch ?? null);
 
   const rows = await getTrialBalance(asOn, branchId);
@@ -112,9 +113,4 @@ export default async function TrialBalancePage({
       </div>
     </div>
   );
-}
-
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

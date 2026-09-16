@@ -19,6 +19,7 @@ import { redirect } from 'next/navigation';
 import { requireTenantContext } from '@/server/auth/tenant-context';
 import { getDashboard } from '@/server/services/dashboard/dashboard-service';
 import { formatDateRange } from '@/lib/format';
+import { rangeInYear } from '@/lib/period';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { KpiCard, type KpiTone } from '@/components/dashboard/kpi-card';
@@ -101,7 +102,7 @@ export default async function DashboardPage({
 
   const params = await searchParams;
 
-  const { from, to } = resolvePeriod(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const branchId = params.branch === 'all' ? null : (params.branch ?? null);
 
   const data = await getDashboard({ from, to, branchId });
@@ -231,22 +232,7 @@ export default async function DashboardPage({
 }
 
 /** Defaults to the current month when no range is supplied. */
-function resolvePeriod(from?: string, to?: string): { from: string; to: string } {
-  const isIsoDate = (value?: string) => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 
-  if (isIsoDate(from) && isIsoDate(to)) {
-    return { from: from!, to: to! };
-  }
-
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return { from: toIso(start), to: toIso(end) };
-}
-
-function toIso(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
 
 function greeting(): string {
   const hour = new Date().getHours();

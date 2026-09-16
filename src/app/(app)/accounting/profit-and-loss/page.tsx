@@ -9,7 +9,7 @@ import { StatementSection } from '@/components/accounting/statement-section';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, subtract, ZERO, type Paise } from '@/lib/money';
 import { formatDateRange } from '@/lib/format';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Profit & Loss' };
 export const dynamic = 'force-dynamic';
@@ -21,7 +21,7 @@ export default async function ProfitAndLossPage({
 }) {
   const context = await requireTenantContext();
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const branchId = params.branch === 'all' ? null : (params.branch ?? null);
 
   const rows = await getProfitAndLoss(from, to, branchId);

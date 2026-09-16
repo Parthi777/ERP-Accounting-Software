@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR, negate, type Paise } from '@/lib/money';
 import { formatDate } from '@/lib/format';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Trade advances' };
 export const dynamic = 'force-dynamic';
@@ -35,7 +35,7 @@ export default async function Page({
 }) {
   const context = await requirePermission('finance.trade_advance.view');
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const companyId = params.company ?? '';
 
   const canManage = hasPermission(context, 'finance.trade_advance.manage');

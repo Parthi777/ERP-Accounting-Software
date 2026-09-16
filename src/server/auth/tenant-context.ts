@@ -27,11 +27,30 @@ import { ForbiddenError, UnauthenticatedError } from '@/server/errors';
 
 export const ACTIVE_BRANCH_COOKIE = 'tw_active_branch';
 
+/**
+ * The financial year every dated screen defaults to.
+ *
+ * Validated against the dealer's own accounting periods before it is honoured,
+ * exactly as the branch cookie is. A year the dealer has no period for is not a
+ * year they can look at: periods are what define the range and say whether it is
+ * still open (spec §24).
+ */
+export const FINANCIAL_YEAR_COOKIE = 'tw_financial_year';
+
 export interface BranchSummary {
   readonly id: string;
   readonly code: string;
   readonly name: string;
   readonly isHeadOffice: boolean;
+}
+
+export interface FinancialYearSummary {
+  readonly id: string;
+  readonly name: string;
+  /** ISO dates, inclusive. */
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly status: 'OPEN' | 'CLOSED' | 'LOCKED';
 }
 
 export interface TenantContext {
@@ -48,6 +67,16 @@ export interface TenantContext {
   readonly accessibleBranches: readonly BranchSummary[];
   /** The branch currently in context, or null when viewing all branches. */
   readonly activeBranch: BranchSummary | null;
+
+  /** The dealer's accounting periods, newest first. Empty until one is created. */
+  readonly financialYears: readonly FinancialYearSummary[];
+  /**
+   * The year dated screens default to, or null when the dealer has no period.
+   *
+   * A default, not a filter: a screen with an explicit date in its URL uses that
+   * date. This only decides where someone lands.
+   */
+  readonly activeFinancialYear: FinancialYearSummary | null;
   readonly hasAllBranchAccess: boolean;
 
   readonly roles: readonly string[];
@@ -80,6 +109,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
     { data: profile, error: profileError },
     { data: branchRows },
     { data: roleRows },
+    { data: periodRows },
   ] = await Promise.all([
     supabase
       .from('user_profiles')
@@ -110,6 +140,12 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
       .from('user_roles')
       .select('roles ( code, role_permissions ( permission_code ) )')
       .eq('user_id', user.id),
+    // RLS scopes these to the caller's dealer. Newest first: the year someone
+    // wants is almost always the latest one.
+    supabase
+      .from('accounting_periods')
+      .select('id, name, start_date, end_date, status')
+      .order('start_date', { ascending: false }),
   ]);
 
   // A user with no profile row is authenticated but not yet provisioned into a
@@ -125,6 +161,14 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
     code: branch.code,
     name: branch.name,
     isHeadOffice: branch.is_head_office,
+  }));
+
+  const financialYears: FinancialYearSummary[] = (periodRows ?? []).map((period) => ({
+    id: period.id,
+    name: period.name,
+    startDate: period.start_date,
+    endDate: period.end_date,
+    status: period.status as FinancialYearSummary['status'],
   }));
 
   const roles: string[] = [];
@@ -155,6 +199,9 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
     accessibleBranches,
     activeBranch: await resolveActiveBranch(accessibleBranches, profile.default_branch_id),
     hasAllBranchAccess: profile.has_all_branch_access || profile.is_platform_admin,
+
+    financialYears,
+    activeFinancialYear: await resolveActiveFinancialYear(financialYears),
 
     roles,
     permissions: createPermissionSet([...permissionCodes]),
@@ -187,6 +234,34 @@ async function resolveActiveBranch(
     : undefined;
 
   return fromDefault ?? accessible.find((branch) => branch.isHeadOffice) ?? accessible[0] ?? null;
+}
+
+/**
+ * Picks the financial year from the cookie, but only if the dealer has a period
+ * for it. An unknown or forged value falls back to the year covering today, and
+ * failing that to the most recent one — never to a guess at what the dates might
+ * be, because the period is what defines them.
+ */
+async function resolveActiveFinancialYear(
+  years: readonly FinancialYearSummary[],
+): Promise<FinancialYearSummary | null> {
+  if (years.length === 0) {
+    return null;
+  }
+
+  const cookieStore = await cookies();
+  const requested = cookieStore.get(FINANCIAL_YEAR_COOKIE)?.value;
+
+  const fromCookie = requested ? years.find((year) => year.id === requested) : undefined;
+  if (fromCookie) {
+    return fromCookie;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const covering = years.find((year) => year.startDate <= today && today <= year.endDate);
+
+  // years is ordered newest first, so [0] is the most recent.
+  return covering ?? years[0] ?? null;
 }
 
 /** Context or bust. Use in any code path that must have a signed-in user. */

@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDateTime } from '@/lib/format';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Stock ledger' };
 export const dynamic = 'force-dynamic';
@@ -49,7 +49,7 @@ export default async function Page({
 }) {
   const context = await requirePermission('inventory.ledger.view');
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const type = params.type ?? 'ALL';
   const source = params.source ?? 'ALL';
 

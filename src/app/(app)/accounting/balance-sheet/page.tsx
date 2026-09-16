@@ -10,7 +10,7 @@ import { StatementSection } from '@/components/accounting/statement-section';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, ZERO, type Paise } from '@/lib/money';
 import { formatDate } from '@/lib/format';
-import { todayIso } from '@/lib/period';
+import { asOnInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Balance Sheet' };
 export const dynamic = 'force-dynamic';
@@ -22,7 +22,7 @@ export default async function BalanceSheetPage({
 }) {
   const context = await requireTenantContext();
   const params = await searchParams;
-  const asOn = /^\d{4}-\d{2}-\d{2}$/.test(params.asOn ?? '') ? params.asOn! : todayIso();
+  const asOn = asOnInYear(context.activeFinancialYear, params.asOn);
   const branchId = params.branch === 'all' ? null : (params.branch ?? null);
 
   const rows = await getBalanceSheet(asOn, branchId);

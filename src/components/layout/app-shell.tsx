@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
+import type { FinancialYearOption } from '@/components/layout/financial-year-switcher';
 import type { NavSection } from '@/config/navigation';
 import type { BranchOption } from '@/components/layout/branch-switcher';
 
@@ -19,6 +20,8 @@ export function AppShell({
   dealerName,
   dealerCode,
   sections,
+  financialYears,
+  activeFinancialYearId,
   branches,
   activeBranchId,
   children,
@@ -36,6 +39,8 @@ export function AppShell({
    */
   readonly dealerCode: string | null;
   readonly sections: readonly NavSection[];
+  readonly financialYears: readonly FinancialYearOption[];
+  readonly activeFinancialYearId: string | null;
   readonly branches: readonly BranchOption[];
   readonly activeBranchId: string | null;
   readonly children: React.ReactNode;
@@ -67,6 +72,8 @@ export function AppShell({
           user={user}
           dealerName={dealerName}
           sections={sections}
+          financialYears={financialYears}
+          activeFinancialYearId={activeFinancialYearId}
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
         />
         <main className="px-4 py-5 sm:px-6">{children}</main>

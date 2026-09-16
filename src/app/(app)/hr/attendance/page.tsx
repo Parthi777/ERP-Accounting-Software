@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/data-table/data-table';
 import { AttendanceView } from '@/components/hr/attendance-view';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Attendance' };
@@ -23,9 +23,9 @@ export default async function Page({
 }: {
   searchParams: Promise<{ from?: string; to?: string }>;
 }) {
-  await requirePermission('hr.attendance.view');
+  const context = await requirePermission('hr.attendance.view');
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
 
   const overview = await getAttendanceOverview({ from, to, branchId: null });
 

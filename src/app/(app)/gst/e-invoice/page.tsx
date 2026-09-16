@@ -15,7 +15,7 @@ import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatINR } from '@/lib/money';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'E-invoices' };
@@ -44,7 +44,7 @@ export default async function Page({
 }) {
   const context = await requirePermission('gst.summary.view');
   const params = await searchParams;
-  const range = monthRange(params.from, params.to);
+  const range = rangeInYear(context.activeFinancialYear, params.from, params.to);
 
   const [rows, portal, irp] = await Promise.all([
     getEinvoiceQueue({ from: range.from, to: range.to }),

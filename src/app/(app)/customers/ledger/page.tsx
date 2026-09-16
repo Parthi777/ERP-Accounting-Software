@@ -8,7 +8,7 @@ import { requirePermission } from '@/server/auth/tenant-context';
 import { PageHeader } from '@/components/data-table/data-table';
 import { PartyLedgerView, CUSTOMER_LEDGER_LABELS } from '@/components/accounting/party-ledger-view';
 import { ExportButtons } from '@/components/export/export-buttons';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 
 export const metadata: Metadata = { title: 'Customer ledger' };
 export const dynamic = 'force-dynamic';
@@ -26,9 +26,9 @@ export default async function Page({
 }: {
   searchParams: Promise<{ customer?: string; from?: string; to?: string }>;
 }) {
-  await requirePermission('customers.view_ledger');
+  const context = await requirePermission('customers.view_ledger');
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const customerId = params.customer ?? '';
 
   const [customers, ledger] = await Promise.all([

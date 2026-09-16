@@ -10,16 +10,29 @@ import { breadcrumbsFor } from '@/config/navigation';
 import { Button } from '@/components/ui/button';
 import { signOut } from '@/server/auth/actions';
 import { CommandPalette } from '@/components/layout/command-palette';
+import {
+  FinancialYearSwitcher,
+  type FinancialYearOption,
+} from '@/components/layout/financial-year-switcher';
 import type { NavSection } from '@/config/navigation';
 
 interface HeaderProps {
   readonly user: { readonly name: string; readonly email: string; readonly roleLabel: string };
   readonly dealerName: string | null;
   readonly sections: readonly NavSection[];
+  readonly financialYears: readonly FinancialYearOption[];
+  readonly activeFinancialYearId: string | null;
   readonly onToggleSidebar: () => void;
 }
 
-export function Header({ user, dealerName, sections, onToggleSidebar }: HeaderProps) {
+export function Header({
+  user,
+  dealerName,
+  sections,
+  financialYears,
+  activeFinancialYearId,
+  onToggleSidebar,
+}: HeaderProps) {
   const pathname = usePathname();
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -77,6 +90,11 @@ export function Header({ user, dealerName, sections, onToggleSidebar }: HeaderPr
           </div>
 
           <div className="flex-1" />
+
+          {/* Which year everything dated defaults to (spec §24, §51). Before the
+              search rather than after: it qualifies what the page below is
+              showing, and reads left-to-right as "this dealer, this year". */}
+          <FinancialYearSwitcher years={financialYears} activeYearId={activeFinancialYearId} />
 
           {/* Global search (spec §8) */}
           <button

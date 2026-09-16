@@ -16,7 +16,7 @@ import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { add, formatINR, paise, subtract } from '@/lib/money';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'GST' };
@@ -80,7 +80,7 @@ export default async function Page({
 }) {
   const context = await requirePermission('gst.summary.view');
   const params = await searchParams;
-  const range = monthRange(params.from, params.to);
+  const range = rangeInYear(context.activeFinancialYear, params.from, params.to);
 
   const [sections, hsn, inputTax, portal] = await Promise.all([
     getGstr1Summary({ from: range.from, to: range.to }),

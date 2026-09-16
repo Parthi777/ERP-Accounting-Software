@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, paise } from '@/lib/money';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'GST reports' };
@@ -88,9 +88,9 @@ export default async function Page({
 }: {
   searchParams: Promise<{ from?: string; to?: string; section?: string }>;
 }) {
-  await requirePermission('gst.reports.view');
+  const context = await requirePermission('gst.reports.view');
   const params = await searchParams;
-  const range = monthRange(params.from, params.to);
+  const range = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const section = params.section ?? 'ALL';
 
   const rows = await getGstDocuments({ from: range.from, to: range.to, section });

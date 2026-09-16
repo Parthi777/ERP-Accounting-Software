@@ -37,6 +37,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       }}
       dealerName={context.dealerName}
       dealerCode={context.dealerCode}
+      financialYears={context.financialYears}
+      activeFinancialYearId={context.activeFinancialYear?.id ?? null}
       sections={sections}
       branches={context.accessibleBranches.map((branch) => ({
         id: branch.id,

@@ -7,7 +7,7 @@ import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, paise } from '@/lib/money';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Sales report' };
@@ -27,7 +27,7 @@ export default async function Page({
 }) {
   const context = await requirePermission('reports.sales.view');
   const params = await searchParams;
-  const range = monthRange(params.from, params.to);
+  const range = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const groupBy = params.group ?? 'MODEL';
 
   const rows = await getSalesSummary({ from: range.from, to: range.to, groupBy });

@@ -6,7 +6,11 @@ import { cookies } from 'next/headers';
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { recordAudit } from '@/server/services/audit/record-audit';
-import { ACTIVE_BRANCH_COOKIE, requireTenantContext } from '@/server/auth/tenant-context';
+import {
+  ACTIVE_BRANCH_COOKIE,
+  FINANCIAL_YEAR_COOKIE,
+  requireTenantContext,
+} from '@/server/auth/tenant-context';
 
 /**
  * Switches the active branch.
@@ -42,6 +46,38 @@ export async function switchBranch(branchId: string): Promise<{ error?: string }
     newData: { branch_code: target.code, branch_name: target.name },
   });
 
+  revalidatePath('/', 'layout');
+  return {};
+}
+
+/**
+ * Switches the financial year every dated screen defaults to.
+ *
+ * Checked against the dealer's own accounting periods before the cookie is
+ * written, for the same reason the branch is (spec §47): the browser's copy of
+ * the list is a convenience, never the authority. A period belonging to another
+ * dealer is not in `financialYears` at all, because RLS never returned it.
+ */
+export async function switchFinancialYear(periodId: string): Promise<{ error?: string }> {
+  const context = await requireTenantContext();
+
+  const target = context.financialYears.find((year) => year.id === periodId);
+  if (!target) {
+    return { error: 'That financial year is not one of yours.' };
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(FINANCIAL_YEAR_COOKIE, target.id, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30,
+  });
+
+  // Not audited. Choosing which year to look at reads nothing it could not
+  // already read and changes no data — unlike a branch switch, which changes
+  // what a later write is attributed to.
   revalidatePath('/', 'layout');
   return {};
 }

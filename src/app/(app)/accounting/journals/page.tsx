@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
-import { monthRange } from '@/lib/period';
+import { rangeInYear } from '@/lib/period';
 import type { JournalStatus } from '@/types/database.types';
 import type { SourceModule } from '@/server/services/accounting/accounting-service';
 
@@ -83,7 +83,7 @@ export default async function JournalsPage({
 }) {
   const context = await requireTenantContext();
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const branchId = params.branch === 'all' ? null : (params.branch ?? null);
   const moduleFilter =
     params.module && (MODULES as readonly string[]).includes(params.module)
