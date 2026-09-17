@@ -3784,6 +3784,10 @@ export interface Database {
         Args: { p_branch_id?: string | null; p_status?: string | null };
         Returns: { vehicle_id: string; chassis_no: string; engine_no: string; brand: string; model_name: string; variant_name: string; branch_name: string; status: string; stock_date: string; age_days: number; age_bucket: string; purchase_cost: string }[];
       };
+      work_in_progress: {
+        Args: { p_branch_id?: string | null };
+        Returns: { key: string; count: number; oldest_date: string; href: string }[];
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

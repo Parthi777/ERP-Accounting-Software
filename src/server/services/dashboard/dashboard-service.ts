@@ -92,6 +92,106 @@ const REVENUE_CODES = [
   ACCOUNTS.serviceLabour,
 ];
 
+/** One stage something is stuck at, ready to render as a row. */
+export interface WorkItem {
+  readonly key: string;
+  readonly label: string;
+  readonly detail: string;
+  readonly count: number;
+  readonly href: string;
+  readonly oldestDate: string | null;
+  readonly tone: 'warning' | 'danger';
+}
+
+/**
+ * How each stage is worded. Kept here rather than in the database: the query
+ * decides what is waiting, this decides how to say so, and a message is easier
+ * to improve than a migration.
+ */
+const WORK_LABELS: Record<string, { label: string; detail: string; tone: 'warning' | 'danger' }> = {
+  sales_draft: {
+    label: 'Vehicle sales still in draft',
+    detail: 'Not submitted, so in no ledger and no GST return. The vehicle is neither sold nor available.',
+    tone: 'warning',
+  },
+  sales_awaiting_approval: {
+    label: 'Sales waiting on Accounts',
+    detail: 'Submitted, awaiting verification and approval before they can post.',
+    tone: 'warning',
+  },
+  sales_approved_unposted: {
+    label: 'Approved but not posted',
+    detail: 'Approved and not yet in the books. Posting is the step that makes it a sale.',
+    tone: 'danger',
+  },
+  sales_undelivered: {
+    label: 'Posted, awaiting delivery',
+    detail: 'Invoiced and paid for, the vehicle not yet handed over.',
+    tone: 'warning',
+  },
+  bookings_open: {
+    label: 'Open bookings',
+    detail: 'Advance taken, not yet converted into a sale.',
+    tone: 'warning',
+  },
+  einvoice_failed: {
+    label: 'E-invoices that failed to file',
+    detail: 'The invoice is posted and correct; the portal refused it. Retry from the e-invoice screen.',
+    tone: 'danger',
+  },
+  cash_days_open: {
+    label: 'Cash days never closed',
+    detail: 'Money moved on these days and nobody counted the drawer (spec §36).',
+    tone: 'danger',
+  },
+};
+
+/**
+ * What is waiting to be done — spec §54's "attention required".
+ *
+ * Deliberately not period-scoped, and so deliberately not part of getDashboard():
+ * every figure there is bounded by the selected financial year, and this must not
+ * be. A draft raised last March is more urgent than one raised this morning, and
+ * a year-bounded panel would hide it exactly when the year turned over.
+ *
+ * This exists because three vehicle-sale drafts sat untouched for three days on a
+ * live tenant while the dashboard showed nothing. The workflow was never broken:
+ * nothing said there was anything to do.
+ */
+export async function getWorkInProgress(branchId: string | null): Promise<WorkItem[]> {
+  await requirePermission('dashboard.view');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.rpc('work_in_progress', { p_branch_id: branchId });
+
+  if (error) {
+    // A panel that cannot load must not take the dashboard down with it: the
+    // KPIs above it are the reason most people opened the page.
+    console.error('[dashboard] work in progress failed', error.message);
+    return [];
+  }
+
+  const items: WorkItem[] = [];
+  for (const row of data ?? []) {
+    const wording = WORK_LABELS[row.key];
+    // An unknown key means the migration added a stage this build has no wording
+    // for. Skipped rather than rendered raw — the panel is read at a glance.
+    if (!wording) {
+      continue;
+    }
+    items.push({
+      key: row.key,
+      label: wording.label,
+      detail: wording.detail,
+      tone: wording.tone,
+      count: Number(row.count),
+      href: row.href,
+      oldestDate: row.oldest_date ?? null,
+    });
+  }
+  return items;
+}
+
 export interface DashboardQuery {
   readonly from: string;
   readonly to: string;

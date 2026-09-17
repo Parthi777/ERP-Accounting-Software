@@ -32,11 +32,27 @@ function parseNav(): NavEntry[] {
   const lines = readFileSync(navPath, 'utf8').split('\n');
   const entries: NavEntry[] = [];
 
+  // `status` is looked for on the href's line and the few after it, not only on
+  // the same line. A child item is written on one line and a section is spread
+  // over six, so a same-line match silently skipped every section — including a
+  // section whose page did not exist, which is the case this check is for.
+  const WINDOW = 6;
+
   lines.forEach((text, index) => {
     const href = text.match(/href:\s*'([^']+)'/)?.[1];
-    const status = text.match(/status:\s*'(ready|planned)'/)?.[1];
-    if (href && status) {
-      entries.push({ href, status: status as NavEntry['status'], line: index + 1 });
+    if (!href) {
+      return;
+    }
+    for (let i = index; i < Math.min(index + WINDOW, lines.length); i += 1) {
+      const status = lines[i]?.match(/status:\s*'(ready|planned)'/)?.[1];
+      if (status) {
+        entries.push({ href, status: status as NavEntry['status'], line: index + 1 });
+        return;
+      }
+      // A closing brace ends the entry; anything past it belongs to the next one.
+      if (i > index && /^\s*\},?\s*$/.test(lines[i] ?? '')) {
+        break;
+      }
     }
   });
 

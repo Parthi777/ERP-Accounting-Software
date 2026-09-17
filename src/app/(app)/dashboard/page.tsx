@@ -14,11 +14,16 @@ import {
   Wrench,
 } from 'lucide-react';
 
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { requireTenantContext } from '@/server/auth/tenant-context';
-import { getDashboard } from '@/server/services/dashboard/dashboard-service';
-import { formatDateRange } from '@/lib/format';
+import {
+  getDashboard,
+  getWorkInProgress,
+  type WorkItem,
+} from '@/server/services/dashboard/dashboard-service';
+import { formatDate, formatDateRange } from '@/lib/format';
 import { rangeInYear } from '@/lib/period';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
@@ -105,7 +110,12 @@ export default async function DashboardPage({
   const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
   const branchId = params.branch === 'all' ? null : (params.branch ?? null);
 
-  const data = await getDashboard({ from, to, branchId });
+  // Two independent reads: the KPIs are bounded by the selected financial year,
+  // the outstanding work deliberately is not (spec §54).
+  const [data, work] = await Promise.all([
+    getDashboard({ from, to, branchId }),
+    getWorkInProgress(branchId),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -132,6 +142,8 @@ export default async function DashboardPage({
           branchId={branchId}
         />
       </div>
+
+      {work.length > 0 && <WorkPanel items={work} />}
 
       {!data.ledgerHasData && (
         <Panel className="flex items-start gap-3 p-4">
@@ -239,4 +251,53 @@ function greeting(): string {
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
+}
+
+/**
+ * What is waiting to be done — spec §54's "attention required" row.
+ *
+ * Above the KPIs on purpose. A number tells the owner how the month went; this
+ * tells them what has not happened yet, and only one of those is actionable at
+ * the moment they open the page.
+ *
+ * Nothing renders when there is nothing outstanding: the query returns no row
+ * for a stage with a zero count, so an idle dealer sees no panel rather than a
+ * row of noughts.
+ */
+function WorkPanel({ items }: { readonly items: readonly WorkItem[] }) {
+  return (
+    <Panel className="mb-4">
+      <PanelHeader>
+        <PanelTitle>Needs attention</PanelTitle>
+      </PanelHeader>
+      <PanelContent className="divide-y divide-ink-100 pt-0">
+        {items.map((item) => (
+          <Link
+            key={item.key}
+            href={item.href}
+            className="flex items-center gap-3 py-2.5 transition-colors hover:bg-ink-50/60"
+          >
+            <span
+              className={`numeric inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-semibold ${
+                item.tone === 'danger'
+                  ? 'bg-danger-50 text-danger-700'
+                  : 'bg-warning-50 text-warning-700'
+              }`}
+            >
+              {item.count}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-ink-900">{item.label}</span>
+              <span className="block text-xs text-ink-500">{item.detail}</span>
+            </span>
+            {item.oldestDate && (
+              <span className="hidden shrink-0 text-xs text-ink-400 sm:block">
+                oldest {formatDate(item.oldestDate)}
+              </span>
+            )}
+          </Link>
+        ))}
+      </PanelContent>
+    </Panel>
+  );
 }

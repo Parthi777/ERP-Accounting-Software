@@ -1,4 +1,5 @@
 import {
+  CircleHelp,
   BadgeIndianRupee,
   Banknote,
   BookOpenCheck,
@@ -31,6 +32,7 @@ import type { NavIconName } from '@/config/navigation';
  */
 export const NAV_ICONS: Record<NavIconName, LucideIcon> = {
   dashboard: LayoutDashboard,
+  help: CircleHelp,
   sales: ShoppingCart,
   bookings: BookOpenCheck,
   customers: Users,

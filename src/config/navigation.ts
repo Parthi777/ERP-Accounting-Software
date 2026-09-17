@@ -29,6 +29,7 @@ import type { Permission } from '@/lib/permissions/registry';
  */
 export type NavIconName =
   | 'dashboard'
+  | 'help'
   | 'sales'
   | 'bookings'
   | 'customers'
@@ -328,6 +329,16 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Audit Logs', href: '/admin/audit', permission: 'admin.audit.view', status: 'ready' },
       { label: 'Settings', href: '/admin/settings', permission: 'admin.settings.view', status: 'ready' },
     ],
+  },
+  {
+    label: 'Help & Processes',
+    group: 'Setup',
+    icon: 'help',
+    href: '/help',
+    // Every operational role holds dashboard.view; a platform administrator has
+    // no tenant whose processes this would describe.
+    permission: 'dashboard.view',
+    status: 'ready',
   },
 ];
 

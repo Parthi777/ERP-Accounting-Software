@@ -7,6 +7,7 @@ import { ChevronRight, CircleHelp, LogOut, Menu, Search } from 'lucide-react';
 
 import { initials } from '@/lib/format';
 import { breadcrumbsFor } from '@/config/navigation';
+import { guideSectionFor } from '@/content/process-guide';
 import { Button } from '@/components/ui/button';
 import { signOut } from '@/server/auth/actions';
 import { CommandPalette } from '@/components/layout/command-palette';
@@ -37,6 +38,13 @@ export function Header({
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const crumbs = breadcrumbsFor(pathname);
+
+  // Help opens the guide at the process for whatever screen you are on, and at
+  // the top of it when nothing matches. A help button that always lands in the
+  // same place is one people stop pressing.
+  const guide = guideSectionFor(pathname);
+  const helpHref = guide ? `/help#${guide.id}` : '/help';
+  const helpLabel = guide ? `Help: ${guide.title}` : 'Help';
 
   // ⌘K / Ctrl+K opens the command palette (spec §8).
   React.useEffect(() => {
@@ -109,8 +117,17 @@ export function Header({
             </kbd>
           </button>
 
-          <Button variant="secondary" size="icon" aria-label="Help" className="hidden rounded-xl sm:inline-flex">
-            <CircleHelp />
+          <Button
+            variant="secondary"
+            size="icon"
+            aria-label={helpLabel}
+            title={helpLabel}
+            className="hidden rounded-xl sm:inline-flex"
+            asChild
+          >
+            <Link href={helpHref}>
+              <CircleHelp />
+            </Link>
           </Button>
 
           {/* User menu */}
