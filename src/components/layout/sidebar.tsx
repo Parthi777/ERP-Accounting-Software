@@ -75,7 +75,7 @@ export function Sidebar({ sections, dealerName, user, branches, activeBranchId, 
     >
       {/* Brand */}
       <div className="flex items-center gap-3 px-4 py-5">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-[inset_0_2px_0_rgba(255,255,255,.28),inset_0_-3px_0_rgba(0,0,0,.16),4px_6px_12px_rgba(47,91,216,.3)]">
           <Bike className="size-[22px]" aria-hidden />
         </div>
         <div className="min-w-0">
@@ -107,8 +107,8 @@ export function Sidebar({ sections, dealerName, user, branches, activeBranchId, 
                     className={cn(
                       'flex items-center gap-3 rounded-xl px-3 py-[9px] text-[14px] transition-colors',
                       active
-                        ? 'bg-brand-50 font-semibold text-brand-700'
-                        : 'font-medium text-ink-600 hover:bg-ink-100/70 hover:text-ink-900',
+                        ? 'clay-raised font-semibold text-ink-900'
+                        : 'font-medium text-ink-600 hover:bg-white/50 hover:text-ink-900',
                     )}
                   >
                     <Icon
@@ -133,8 +133,8 @@ export function Sidebar({ sections, dealerName, user, branches, activeBranchId, 
                   className={cn(
                     'flex w-full items-center gap-3 rounded-xl px-3 py-[9px] text-[14px] transition-colors',
                     containsActive
-                      ? 'font-semibold text-brand-700'
-                      : 'font-medium text-ink-600 hover:bg-ink-100/70 hover:text-ink-900',
+                      ? 'font-semibold text-ink-900'
+                      : 'font-medium text-ink-600 hover:bg-white/50 hover:text-ink-900',
                   )}
                 >
                   <Icon
@@ -155,7 +155,7 @@ export function Sidebar({ sections, dealerName, user, branches, activeBranchId, 
                 </button>
 
                 {isOpen && (
-                  <ul className="ml-[22px] mt-[3px] space-y-[2px] border-l border-brand-100 pb-1 pl-3">
+                  <ul className="ml-[22px] mt-[3px] space-y-[3px] border-l-2 border-white/80 pb-1 pl-3">
                     {section.items.map((item) => {
                       const active = pathname === item.href;
                       return (
@@ -164,10 +164,10 @@ export function Sidebar({ sections, dealerName, user, branches, activeBranchId, 
                             href={item.href}
                             aria-current={active ? 'page' : undefined}
                             className={cn(
-                              'flex items-center justify-between gap-2 rounded-lg px-3 py-[7px] text-[13px] transition-colors',
+                              'flex items-center justify-between gap-2 rounded-xl px-3 py-[7px] text-[13px] transition-colors',
                               active
-                                ? 'bg-brand-50 font-semibold text-brand-700'
-                                : 'text-ink-500 hover:bg-ink-100/70 hover:text-ink-800',
+                                ? 'clay-raised font-semibold text-brand-700'
+                                : 'text-ink-500 hover:bg-white/50 hover:text-ink-800',
                             )}
                           >
                             <span className="truncate">{item.label}</span>
@@ -186,11 +186,11 @@ export function Sidebar({ sections, dealerName, user, branches, activeBranchId, 
       </nav>
 
       {/* Branch context + user */}
-      <div className="space-y-2 border-t border-ink-200/70 p-3">
+      <div className="space-y-2 p-3">
         <BranchSwitcher branches={branches} activeBranchId={activeBranchId} />
 
         <div className="flex items-center gap-3 rounded-xl px-2 py-1.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-semibold text-white">
+          <div className="clay-raised flex size-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-brand-700">
             {initials(user.name)}
           </div>
           <div className="min-w-0 flex-1">

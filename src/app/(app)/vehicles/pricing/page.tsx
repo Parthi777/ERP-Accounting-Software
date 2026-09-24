@@ -99,7 +99,7 @@ export default async function PricingPage({
       <Panel className="mb-4 p-3">
         <form method="GET" className="flex flex-wrap items-center gap-2">
           <select name="model" defaultValue={modelId ?? ''} aria-label="Model"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+            className="h-9 field px-2 text-sm text-ink-700">
             <option value="">All models</option>
             {models.map((m) => <option key={m.id} value={m.id}>{m.brand} {m.name}</option>)}
           </select>

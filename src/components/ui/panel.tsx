@@ -5,11 +5,11 @@ import { cn } from '@/lib/utils';
 /**
  * Surface primitives.
  *
- * `Panel` is glass — for KPI cards, filter bars and summary panels.
- * `SolidPanel` is opaque white — for anything holding dense rows of numbers.
+ * `Panel` is raised clay — for KPI cards, filter bars and summary panels.
+ * `SolidPanel` is flat opaque white — for anything holding dense rows of numbers.
  *
  * Keeping both in one file makes the choice explicit at every call site, which is
- * how spec §7's "do not overuse glass effects" survives contact with a growing
+ * how spec §7's restraint on surface effects survives contact with a growing
  * codebase.
  *
  * Entrance motion lives here rather than at the call sites, so ninety-nine pages
@@ -33,7 +33,7 @@ export function Panel({
     <div
       className={cn(
         strong ? 'glass-strong' : 'glass',
-        'animate-rise rounded-[--radius-panel]',
+        'animate-rise rounded-(--radius-panel)',
         interactive && 'lift',
         className,
       )}
@@ -46,7 +46,7 @@ export function Panel({
 export function SolidPanel({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('surface-solid animate-fade rounded-[--radius-panel]', className)}
+      className={cn('surface-solid animate-fade rounded-[1.125rem]', className)}
       {...props}
     />
   );

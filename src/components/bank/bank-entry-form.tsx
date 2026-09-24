@@ -122,7 +122,7 @@ export function BankEntryForm({
         <div>
           <Label htmlFor="direction" className="mb-1.5 block">Direction</Label>
           <select id="direction" value={direction} onChange={(e) => setDirection(e.target.value as 'RECEIPT')}
-            className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+            className="h-9 w-full field px-3 text-sm">
             <option value="RECEIPT">Money in</option>
             <option value="PAYMENT">Money out</option>
           </select>

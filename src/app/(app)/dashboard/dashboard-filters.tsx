@@ -49,7 +49,7 @@ export function DashboardFilters({
           value={branchId ?? 'all'}
           onChange={(event) => apply({ branch: event.target.value })}
           disabled={pending}
-          className="h-8 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+          className="h-8 field px-2 text-sm text-ink-700 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
         >
           {canViewAllBranches && <option value="all">All Branches</option>}
           {branches.map((branch) => (
@@ -60,7 +60,7 @@ export function DashboardFilters({
         </select>
       )}
 
-      <div className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2 shadow-sm">
+      <div className="flex items-center gap-1.5 clay-pit rounded-xl border-0 px-2">
         <CalendarDays className="size-4 shrink-0 text-ink-400" aria-hidden />
         <input
           type="date"

@@ -156,7 +156,7 @@ export default async function Page({
             <label htmlFor="status" className="mb-1.5 block text-xs font-medium text-ink-600">Status</label>
             <select
               id="status" name="status" defaultValue={status}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             >
               {VIEWS.map((v) => <option key={v} value={v}>{v}</option>)}
             </select>

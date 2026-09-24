@@ -152,7 +152,7 @@ export function PriceForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label htmlFor="model_id" className="mb-1.5 block">Model<span className="ml-0.5 text-danger-600">*</span></Label>
-            <select id="model_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('model_id')}>
+            <select id="model_id" className="h-9 w-full field px-3 text-sm" {...register('model_id')}>
               <option value="">Choose a model</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
@@ -160,7 +160,7 @@ export function PriceForm({
 
           <div>
             <Label htmlFor="variant_id" className="mb-1.5 block">Variant</Label>
-            <select id="variant_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('variant_id')}>
+            <select id="variant_id" className="h-9 w-full field px-3 text-sm" {...register('variant_id')}>
               <option value="">All variants of this model</option>
               {availableVariants.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
             </select>
@@ -169,7 +169,7 @@ export function PriceForm({
 
           <div>
             <Label htmlFor="branch_id" className="mb-1.5 block">Branch</Label>
-            <select id="branch_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('branch_id')}>
+            <select id="branch_id" className="h-9 w-full field px-3 text-sm" {...register('branch_id')}>
               <option value="">All branches</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
             </select>
@@ -188,7 +188,7 @@ export function PriceForm({
 
           <div>
             <Label htmlFor="tax_code" className="mb-1.5 block">Tax code</Label>
-            <select id="tax_code" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('tax_code')}>
+            <select id="tax_code" className="h-9 w-full field px-3 text-sm" {...register('tax_code')}>
               <option value="">Not specified</option>
               {taxCodes.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
             </select>
@@ -245,7 +245,7 @@ export function PriceForm({
         <textarea
           id="notes"
           rows={2}
-          className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm"
+          className="w-full field px-3 py-2 text-sm"
           placeholder="Why this price changed — useful when someone asks in six months."
           {...register('notes')}
         />

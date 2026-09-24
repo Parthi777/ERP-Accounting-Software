@@ -126,14 +126,14 @@ export default async function JournalsPage({
       <Panel className="mb-4 p-3">
         <form method="GET" className="flex flex-wrap items-center gap-2">
           <input type="date" name="from" defaultValue={from} aria-label="From date"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm" />
+            className="h-9 field px-2 text-sm text-ink-700" />
           <span className="text-ink-300">–</span>
           <input type="date" name="to" defaultValue={to} aria-label="To date"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm" />
+            className="h-9 field px-2 text-sm text-ink-700" />
 
           {context.accessibleBranches.length > 0 && (
             <select name="branch" defaultValue={branchId ?? 'all'} aria-label="Branch"
-              className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+              className="h-9 field px-2 text-sm text-ink-700">
               {context.hasAllBranchAccess && <option value="all">All branches</option>}
               {context.accessibleBranches.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
@@ -142,13 +142,13 @@ export default async function JournalsPage({
           )}
 
           <select name="module" defaultValue={moduleFilter ?? ''} aria-label="Module"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+            className="h-9 field px-2 text-sm text-ink-700">
             <option value="">All modules</option>
             {MODULES.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
 
           <select name="status" defaultValue={statusFilter ?? ''} aria-label="Status"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+            className="h-9 field px-2 text-sm text-ink-700">
             <option value="">All statuses</option>
             <option value="POSTED">Posted</option>
             <option value="DRAFT">Draft</option>

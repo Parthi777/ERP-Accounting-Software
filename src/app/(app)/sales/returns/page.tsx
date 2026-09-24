@@ -128,7 +128,7 @@ export default async function Page({
               id="view"
               name="view"
               defaultValue={view}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             >
               {VIEWS.map((v) => (
                 <option key={v.value} value={v.value}>{v.label}</option>
@@ -142,7 +142,7 @@ export default async function Page({
               name="q"
               defaultValue={params.q ?? ''}
               placeholder="Invoice, customer or chassis"
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             />
           </div>
           <Button type="submit" variant="secondary" size="sm">Filter</Button>

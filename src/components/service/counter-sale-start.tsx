@@ -81,7 +81,7 @@ export function CounterSaleStart({
                 id="counter-customer"
                 value={customerId}
                 onChange={(e) => setCustomerId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+                className="h-9 w-full field px-3 text-sm"
               >
                 <option value="">
                   {requireCustomer ? 'Choose a customer' : 'Walk-in — no customer'}

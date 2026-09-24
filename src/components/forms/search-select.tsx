@@ -154,7 +154,7 @@ export function SearchSelect({
           aria-controls={`${inputId}-list`}
           aria-autocomplete="list"
           autoComplete="off"
-          className="h-9 w-full rounded-lg border border-ink-200 bg-white pl-8 pr-14 text-sm shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+          className="h-9 w-full field pl-8 pr-14 text-sm"
           placeholder={placeholder ?? 'Type to search…'}
           // Closed, it reads as the chosen value; open, it is the search term.
           value={open ? query : (selectedOption?.label ?? '')}
@@ -189,7 +189,7 @@ export function SearchSelect({
         <ul
           id={`${inputId}-list`}
           role="listbox"
-          className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-ink-200 bg-white py-1 shadow-lg"
+          className="absolute z-50 mt-1 max-h-72 w-full overflow-auto glass-strong rounded-xl py-1"
         >
           {matches.length === 0 && (
             <li className="px-3 py-2 text-sm text-ink-500">

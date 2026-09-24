@@ -180,7 +180,7 @@ export function SaleWorkflow({
                 <label className="mt-4 block">
                   <span className="text-sm font-medium text-ink-700">Reason</span>
                   <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm" />
+                    className="mt-1 w-full field px-3 py-2 text-sm" />
                 </label>
                 <div className="mt-4 flex justify-end gap-2">
                   <Button variant="secondary" size="sm" onClick={() => setDialog(null)} disabled={pending}>Back</Button>
@@ -212,7 +212,7 @@ export function SaleWorkflow({
                   <div>
                     <Label htmlFor="pay-mode" className="mb-1.5 block">Mode</Label>
                     <select id="pay-mode" value={mode} onChange={(e) => setMode(e.target.value)}
-                      className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                      className="h-9 w-full field px-3 text-sm">
                       {['CASH', 'UPI', 'CARD', 'NEFT', 'RTGS', 'IMPS', 'CHEQUE', 'DD', 'FINANCE'].map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}

@@ -7,14 +7,9 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
     <input
       ref={ref}
       type={type}
-      className={cn(
-        'flex h-9 w-full rounded-lg border border-ink-200 bg-white px-3 py-1 text-sm text-ink-900',
-        'placeholder:text-ink-400 shadow-sm transition-colors',
-        'focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
-        'disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400',
-        'aria-[invalid=true]:border-danger-500 aria-[invalid=true]:ring-danger-500/20',
-        className,
-      )}
+      // A clay well: pressed into the surface, with the focus ring and invalid
+      // state carried by the `field` utility in globals.css.
+      className={cn('field flex h-10 w-full px-3 py-1 text-sm', className)}
       {...props}
     />
   ),

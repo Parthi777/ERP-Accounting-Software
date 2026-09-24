@@ -118,7 +118,7 @@ export function TransferDispatchForm({
               id="vehicle"
               value={vehicleId}
               onChange={(e) => chooseVehicle(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             >
               <option value="">Choose a vehicle in stock</option>
               {vehicles.map((v) => (
@@ -139,7 +139,7 @@ export function TransferDispatchForm({
               value={toBranchId}
               onChange={(e) => setToBranchId(e.target.value)}
               disabled={!selected}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm disabled:bg-ink-50 disabled:text-ink-400"
+              className="h-9 w-full field px-3 text-sm disabled:bg-ink-50 disabled:text-ink-400"
             >
               <option value="">{selected ? 'Choose a branch' : 'Choose a vehicle first'}</option>
               {destinations.map((b) => (

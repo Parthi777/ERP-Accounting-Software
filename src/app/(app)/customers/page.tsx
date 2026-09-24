@@ -125,14 +125,14 @@ export default async function CustomersPage({
               defaultValue={params.q ?? ''}
               placeholder="Customer ID, mobile, name or GSTIN…"
               aria-label="Search customers"
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-sm text-ink-900 shadow-sm placeholder:text-ink-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="h-9 w-full field pl-9 pr-3 text-sm"
             />
           </div>
           <select
             name="status"
             defaultValue={params.status}
             aria-label="Status"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm"
+            className="h-9 field px-2 text-sm text-ink-700"
           >
             <option value="ACTIVE">Active</option>
             <option value="ALL">All statuses</option>

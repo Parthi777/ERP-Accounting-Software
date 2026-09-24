@@ -118,11 +118,11 @@ export default async function DashboardPage({
   ]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Greeting + filters */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink-900">
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink-900">
             {greeting()}, {context.fullName.split(' ')[0]}
           </h1>
           <p className="mt-0.5 text-sm text-ink-500">
@@ -158,7 +158,7 @@ export default async function DashboardPage({
 
       {/* Row 1 — headline KPIs (spec §54) */}
       <section aria-label="Key performance indicators">
-        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="stagger grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {data.primary.map((kpi) => (
             <KpiCard key={kpi.key} kpi={kpi} icon={ICONS[kpi.key]} tone={TONES[kpi.key]} />
           ))}
@@ -167,7 +167,7 @@ export default async function DashboardPage({
 
       {/* Row 2 — stock and finance */}
       <section aria-label="Stock and finance">
-        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="stagger grid gap-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           {data.secondary.map((kpi) => (
             <KpiCard key={kpi.key} kpi={kpi} icon={ICONS[kpi.key]} tone={TONES[kpi.key]} />
           ))}
@@ -175,7 +175,7 @@ export default async function DashboardPage({
       </section>
 
       {/* Row 3 — charts */}
-      <section className="grid gap-4 lg:grid-cols-3" aria-label="Revenue analysis">
+      <section className="grid gap-5 lg:grid-cols-3" aria-label="Revenue analysis">
         <Panel className="lg:col-span-2">
           <PanelHeader>
             <div>
@@ -203,7 +203,7 @@ export default async function DashboardPage({
 
       {/* Row 4 — cash, bank, working capital */}
       <section aria-label="Cash and bank">
-        <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="stagger grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {data.financial.map((kpi) => (
             <KpiCard
               key={kpi.key}
@@ -228,7 +228,7 @@ export default async function DashboardPage({
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {data.margin.map((kpi) => (
-                <div key={kpi.key} className="rounded-lg border border-ink-200/70 bg-white/60 p-3">
+                <div key={kpi.key} className="clay-pit rounded-xl p-3.5">
                   <p className="truncate text-[12px] text-ink-500">{kpi.label}</p>
                   <p className="numeric mt-1 text-left text-lg font-semibold text-ink-900">
                     {kpi.display}
@@ -270,15 +270,15 @@ function WorkPanel({ items }: { readonly items: readonly WorkItem[] }) {
       <PanelHeader>
         <PanelTitle>Needs attention</PanelTitle>
       </PanelHeader>
-      <PanelContent className="divide-y divide-ink-100 pt-0">
+      <PanelContent className="grid gap-2.5 pt-0 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
           <Link
             key={item.key}
             href={item.href}
-            className="flex items-center gap-3 py-2.5 transition-colors hover:bg-ink-50/60"
+            className="clay-pit flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:text-brand-700"
           >
             <span
-              className={`numeric inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-semibold ${
+              className={`numeric clay-pebble inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] text-sm font-bold ${
                 item.tone === 'danger'
                   ? 'bg-danger-50 text-danger-700'
                   : 'bg-warning-50 text-warning-700'

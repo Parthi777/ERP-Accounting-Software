@@ -125,7 +125,7 @@ export default async function Page({
           <div>
             <label htmlFor="status" className="mb-1.5 block text-xs font-medium text-ink-600">Showing</label>
             <select id="status" name="status" defaultValue={status}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 field px-3 text-sm">
               {VIEWS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
             </select>
           </div>
@@ -133,7 +133,7 @@ export default async function Page({
             <label htmlFor="q" className="mb-1.5 block text-xs font-medium text-ink-600">Search</label>
             <input id="q" name="q" defaultValue={params.q ?? ''}
               placeholder="Name, code, mobile or department"
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="h-9 w-full field px-3 text-sm" />
           </div>
           <Button type="submit" variant="secondary" size="sm">Filter</Button>
         </form>

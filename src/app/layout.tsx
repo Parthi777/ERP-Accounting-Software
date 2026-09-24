@@ -1,6 +1,15 @@
 import type { Metadata, Viewport } from 'next';
+import { Plus_Jakarta_Sans } from 'next/font/google';
 
 import './globals.css';
+
+// Self-hosted by next/font at build time: no request reaches Google from the
+// browser. Exposed as a variable so globals.css owns where it applies.
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-jakarta',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: {
@@ -13,14 +22,14 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#f2f7ff',
+  themeColor: '#e9eff8',
   width: 'device-width',
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-IN">
+    <html lang="en-IN" className={jakarta.variable}>
       <body className="antialiased">{children}</body>
     </html>
   );

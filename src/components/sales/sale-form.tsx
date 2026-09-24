@@ -172,7 +172,7 @@ export function SaleForm({
 
           <div>
             <Label htmlFor="sales_executive_id" className="mb-1.5 block">Sales executive</Label>
-            <select id="sales_executive_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('sales_executive_id')}>
+            <select id="sales_executive_id" className="h-9 w-full field px-3 text-sm" {...register('sales_executive_id')}>
               <option value="">Not assigned</option>
               {employees.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
             </select>
@@ -192,7 +192,7 @@ export function SaleForm({
           <div className="sm:col-span-2">
             <Label htmlFor="notes" className="mb-1.5 block">Notes</Label>
             <textarea id="notes" rows={2}
-              className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm"
+              className="w-full field px-3 py-2 text-sm"
               {...register('notes')} />
           </div>
         </div>

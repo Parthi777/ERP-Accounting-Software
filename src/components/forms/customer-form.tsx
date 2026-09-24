@@ -146,7 +146,7 @@ export function CustomerForm({
 
           <Field label="Customer type" error={errors.customer_type?.message}>
             <select
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="h-9 w-full field px-3 text-sm"
               {...register('customer_type')}
             >
               <option value="INDIVIDUAL">Individual</option>
@@ -156,7 +156,7 @@ export function CustomerForm({
 
           <Field label="Status" error={errors.status?.message}>
             <select
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="h-9 w-full field px-3 text-sm"
               {...register('status')}
             >
               <option value="ACTIVE">Active</option>
@@ -220,7 +220,7 @@ export function CustomerForm({
           </Field>
           <Field label="State" error={errors.state?.message} className="sm:col-span-2">
             <select
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="h-9 w-full field px-3 text-sm"
               value={selectedState ?? ''}
               onChange={(event) => {
                 const state = STATES.find((s) => s.name === event.target.value);
@@ -282,7 +282,7 @@ export function CustomerForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Registered at branch" error={errors.origin_branch_id?.message}>
             <select
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="h-9 w-full field px-3 text-sm"
               {...register('origin_branch_id')}
             >
               <option value="">Not specified</option>
@@ -300,7 +300,7 @@ export function CustomerForm({
           <Field label="Notes" error={errors.notes?.message}>
             <textarea
               rows={3}
-              className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="w-full field px-3 py-2 text-sm"
               {...register('notes')}
             />
           </Field>

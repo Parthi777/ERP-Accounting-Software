@@ -99,7 +99,7 @@ export function AccountForm({ headings }: { readonly headings: readonly Heading[
           <Label htmlFor="acc-type" className="mb-1.5 block">Type</Label>
           <select id="acc-type" value={type}
             onChange={(e) => { setType(e.target.value as AccountType); setParentId(''); }}
-            className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+            className="h-9 w-full field px-3 text-sm">
             {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
           <p className="mt-1 text-[11px] text-ink-400">{TYPES.find((t) => t.value === type)?.hint}</p>
@@ -108,7 +108,7 @@ export function AccountForm({ headings }: { readonly headings: readonly Heading[
         <div>
           <Label htmlFor="acc-parent" className="mb-1.5 block">Under heading</Label>
           <select id="acc-parent" value={parentId} onChange={(e) => setParentId(e.target.value)}
-            className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+            className="h-9 w-full field px-3 text-sm">
             <option value="">None (top level)</option>
             {parents.map((h) => <option key={h.id} value={h.id}>{h.code} — {h.name}</option>)}
           </select>

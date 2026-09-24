@@ -201,7 +201,7 @@ export default async function Page({
             <label htmlFor="status" className="mb-1.5 block text-xs font-medium text-ink-600">Status</label>
             <select
               id="status" name="status" defaultValue={status}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             >
               {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -211,7 +211,7 @@ export default async function Page({
             <input
               id="q" name="q" defaultValue={params.q ?? ''}
               placeholder="Application, customer, financier or chassis"
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             />
           </div>
           <Button type="submit" variant="secondary" size="sm">Filter</Button>

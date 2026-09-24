@@ -241,7 +241,7 @@ export function ServiceInvoiceEditor({
               <Label htmlFor="line-type" className="mb-1.5 block">Type</Label>
               <select id="line-type" value={lineType}
                 onChange={(e) => { setLineType(e.target.value); setItemId(''); }}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                className="h-9 w-full field px-3 text-sm">
                 {LINE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
@@ -252,7 +252,7 @@ export function ServiceInvoiceEditor({
                   Part<span className="ml-0.5 text-danger-600">*</span>
                 </Label>
                 <select id="item" value={itemId} onChange={(e) => chooseItem(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                  className="h-9 w-full field px-3 text-sm">
                   <option value="">Choose a part</option>
                   {items.map((i) => (
                     <option key={i.id} value={i.id} disabled={i.onHand <= 0}>
@@ -291,7 +291,7 @@ export function ServiceInvoiceEditor({
             <div className="sm:col-span-2">
               <Label htmlFor="tax" className="mb-1.5 block">Tax code</Label>
               <select id="tax" value={taxCode} onChange={(e) => setTaxCode(e.target.value)}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                className="h-9 w-full field px-3 text-sm">
                 <option value="">No GST</option>
                 {taxCodes.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
               </select>
@@ -369,7 +369,7 @@ export function ServiceInvoiceEditor({
               <div>
                 <Label htmlFor="settle-mode" className="mb-1.5 block">Mode</Label>
                 <select id="settle-mode" value={mode} onChange={(e) => setMode(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                  className="h-9 w-full field px-3 text-sm">
                   {['CASH', 'UPI', 'CARD', 'NEFT', 'RTGS', 'IMPS', 'CHEQUE'].map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}
@@ -425,7 +425,7 @@ export function ServiceInvoiceEditor({
               <div>
                 <Label htmlFor="pay-mode" className="mb-1.5 block">Mode</Label>
                 <select id="pay-mode" value={mode} onChange={(e) => setMode(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                  className="h-9 w-full field px-3 text-sm">
                   {['CASH', 'UPI', 'CARD', 'NEFT', 'RTGS', 'IMPS', 'CHEQUE'].map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}

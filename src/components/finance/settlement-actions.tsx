@@ -110,7 +110,7 @@ export function SettlementForm({
             </Label>
             <select
               id="s-company" value={companyId} onChange={(e) => setCompanyId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             >
               <option value="">Choose a company</option>
               {companies.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -237,7 +237,7 @@ export function SettlementPostAction({
               </Label>
               <select
                 id="post-bank" value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+                className="h-9 w-full field px-3 text-sm"
               >
                 <option value="">Choose the account it was paid into</option>
                 {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}

@@ -116,7 +116,7 @@ export function StockAdjustmentForm({ lots }: { readonly lots: readonly StockLot
               id="lot"
               value={selectedLot}
               onChange={(e) => setSelectedLot(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             >
               <option value="">Choose an item and lot</option>
               {lots.map((l) => (

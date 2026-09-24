@@ -62,7 +62,7 @@ export function CancelBooking({ id, canCancel }: { readonly id: string; readonly
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Why is this booking being cancelled?"
-                className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm"
+                className="mt-1 w-full field px-3 py-2 text-sm"
               />
             </label>
 

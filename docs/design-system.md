@@ -1,45 +1,50 @@
 # Design system
 
-Light glassmorphism, deliberately restrained. Spec §7 asks for a modern premium SaaS ERP that stays
-professional and accounting-friendly, and is explicit about two things it does not want: a dark-heavy
-admin dashboard, and overused glass.
+Light claymorphism, restrained. Spec §7 asks for a modern premium SaaS ERP that stays
+professional and accounting-friendly; it rules out a dark-heavy admin dashboard. The chrome is soft
+clay; the data is flat.
 
-Tokens live in `src/app/globals.css`.
+Tokens live in `src/app/globals.css`. The approved mockup is the Claude Design canvas
+*ERP Claymorphism Redesign* (dashboard, journal entries, component sheet).
 
 ## Palette
 
 | Role | Token | Value |
 |---|---|---|
-| Primary | `--color-brand-600` | `#2563eb` |
-| Positive | `--color-positive-500` | `#10b981` |
-| Warning | `--color-warning-500` | `#f59e0b` |
-| Danger | `--color-danger-500` | `#ef4444` |
-| Accent | `--color-accent-500` | `#8b5cf6` |
-| Text | `--color-ink-800` | `#1e293b` |
-| Muted text | `--color-ink-500` | `#64748b` |
-| Page ground | `--page-gradient` | very light blue → white |
+| Primary | `--color-brand-600` | `#2f5bd8` |
+| Positive | `--color-positive-700` | `#1e7a55` on `#e4f6ee` |
+| Warning | `--color-warning-700` | `#8a5200` on `#fdf1dc` |
+| Danger | `--color-danger-700` | `#a11d26` on `#fce4e5` |
+| Accent | `--color-accent-600` | `#4a36a8` on `#eeeafc` |
+| Text | `--color-ink-800` | `#1b2638` |
+| Muted text | `--color-ink-500` | `#5b6b82` |
+| Page ground | `--page-ground` | `#e9eff8` |
+| Clay surface | `--clay-bg` | `#f3f6fc` |
 
-Light-only. There is no dark palette because §7 rules one out; a toggle would be a feature nobody
-asked for and a second surface set to keep honest.
+Typeface: Plus Jakarta Sans, self-hosted by `next/font` (`--font-jakarta`), tabular figures for money.
 
-## Where glass applies
+Light-only. There is no dark palette because §7 rules one out.
+
+## Where clay applies
 
 This is the rule that keeps §7 from eroding as the app grows.
 
-**Glass** — `.glass`, via the `<Panel>` component:
+**Raised clay** — `.glass` (the name is kept so no screen had to change), via `<Panel>`:
 
-- Dashboard KPI cards
-- The header
-- Filter panels and summary panels
-- Modal dialogs and the command palette (`.glass-strong`)
+- Dashboard KPI cards, filter panels, summary panels
+- `.glass-strong` (higher): the header bar, menus, modal dialogs, the command palette
+- `.clay-raised`: secondary buttons, the active sidebar item, avatars
+- `.clay-pebble`: the small pastel tile an icon sits on
+
+**Pressed in** — `.field` for every input and select, `.clay-pit` for wells (search, filter chips,
+the "needs attention" rows, inline figures).
 
 **Solid white** — `.surface-solid`, via `<SolidPanel>`:
 
 - Every operational table
 - Anything holding dense rows of numbers
 
-An accountant reading four hundred rows needs contrast, not translucency. §7 says it plainly: *"Do
-not make tables excessively transparent."*
+An accountant reading four hundred rows needs contrast, not depth. No clay inside a grid of figures.
 
 `Panel` and `SolidPanel` sit in the same file (`src/components/ui/panel.tsx`) so the choice is
 explicit at every call site rather than a default someone drifts away from.
@@ -72,7 +77,7 @@ Animation is minimal by intent — §8 rules out excessive animation, and charts
 
 | Component | Purpose |
 |---|---|
-| `ui/panel.tsx` | `Panel` (glass) and `SolidPanel` (opaque) |
+| `ui/panel.tsx` | `Panel` (raised clay) and `SolidPanel` (flat, opaque) |
 | `ui/button.tsx` | primary, secondary, ghost, subtle, danger, link |
 | `ui/badge.tsx` | Status badges mapped to the §7 palette |
 | `ui/input.tsx` | Input, Label, FieldError for inline validation |

@@ -72,7 +72,7 @@ export function PurchaseReturnReverse({
               </span>
               <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
                 placeholder="e.g. The supplier would not accept the chassis back"
-                className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm" />
+                className="mt-1 w-full field px-3 py-2 text-sm" />
             </label>
 
             <div className="mt-4 flex justify-end gap-2">

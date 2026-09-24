@@ -104,13 +104,13 @@ function StatementPanel({
           <div>
             <label htmlFor="asOn" className="mb-1 block text-xs text-ink-600">As on</label>
             <input id="asOn" name="asOn" type="date" defaultValue={asOn}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="h-9 field px-3 text-sm" />
           </div>
           <div>
             <label htmlFor="statement" className="mb-1 block text-xs text-ink-600">Statement closing</label>
             <input id="statement" name="statement" type="number" step="0.01" defaultValue={statement}
               placeholder="per bank"
-              className="numeric h-9 w-40 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="numeric h-9 w-40 field px-3 text-sm" />
           </div>
           <Button type="submit" variant="secondary" size="sm">Update</Button>
         </form>
@@ -224,7 +224,7 @@ export default async function Page({
           <div>
             <label htmlFor="account" className="mb-1.5 block text-xs font-medium text-ink-600">Account</label>
             <select id="account" name="account" defaultValue={account.id}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 field px-3 text-sm">
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.accountNumber}</option>)}
             </select>
           </div>

@@ -97,17 +97,17 @@ export default async function Page({
           <div>
             <label htmlFor="from" className="mb-1.5 block text-xs font-medium text-ink-600">From</label>
             <input id="from" name="from" type="date" defaultValue={range.from}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="h-9 field px-3 text-sm" />
           </div>
           <div>
             <label htmlFor="to" className="mb-1.5 block text-xs font-medium text-ink-600">To</label>
             <input id="to" name="to" type="date" defaultValue={range.to}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="h-9 field px-3 text-sm" />
           </div>
           <div>
             <label htmlFor="group" className="mb-1.5 block text-xs font-medium text-ink-600">Group by</label>
             <select id="group" name="group" defaultValue={groupBy}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 field px-3 text-sm">
               {GROUPINGS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
             </select>
           </div>

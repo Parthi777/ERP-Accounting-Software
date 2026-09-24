@@ -71,14 +71,14 @@ export default async function AccountLedgerPage({
             <label htmlFor="from" className="mb-1.5 block text-xs font-medium text-ink-600">From</label>
             <input
               id="from" type="date" name="from" defaultValue={range.from}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             />
           </div>
           <div>
             <label htmlFor="to" className="mb-1.5 block text-xs font-medium text-ink-600">To</label>
             <input
               id="to" type="date" name="to" defaultValue={range.to}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             />
           </div>
           <Button type="submit" variant="secondary">Show ledger</Button>

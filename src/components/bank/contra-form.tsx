@@ -77,7 +77,7 @@ export function ContraForm({ options }: { readonly options: readonly MoneyAccoun
 
   const select = (id: string, value: string, onChange: (v: string) => void) => (
     <select id={id} value={value} onChange={(e) => onChange(e.target.value)}
-      className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+      className="h-9 w-full field px-3 text-sm">
       <option value="">Choose…</option>
       <optgroup label="Cash">
         {options.filter((o) => o.value.startsWith('CASH:')).map((o) => (

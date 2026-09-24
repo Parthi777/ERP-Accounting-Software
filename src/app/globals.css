@@ -3,132 +3,121 @@
 /* =============================================================================
    TW ERP design system — spec §7, §8, §54
    =============================================================================
-   Light glassmorphism, deliberately restrained. Glass is for KPI cards, the
-   header, filter panels and modals. Operational tables stay solid white and
-   dense, because an accountant reading four hundred rows needs contrast, not
-   translucency (spec §7, "Do not make tables excessively transparent").
+   Light claymorphism, restrained. Chrome — the sidebar, header, KPI cards,
+   filter bars, summary panels, buttons and dialogs — is soft clay: pastel
+   surfaces raised off a cool ground by a paired light/shade shadow, with a faint
+   inner highlight, and fields pressed *into* the surface. Operational tables
+   stay flat, solid white and dense, because an accountant reading four hundred
+   rows needs contrast, not depth (spec §7).
 
-   Light-only by design: §7 rules out a dark-heavy admin dashboard, so there is
-   no dark palette to switch to.
+   Light-only by design: §7 rules out a dark-heavy admin dashboard.
 
-   On motion: spec §8 rules out *excessive* animation, not all of it. Everything
-   here is 120–260ms, moves a few pixels, and exists to show where something came
-   from — a panel arriving, a row highlighting under the cursor. Nothing loops,
-   nothing bounces, and nothing animates on a table of numbers. The whole system
-   collapses to zero under prefers-reduced-motion.
+   On motion: everything is 120–260ms and moves a few pixels. Nothing loops,
+   nothing bounces, nothing animates on a table of numbers, and the whole
+   system collapses to zero under prefers-reduced-motion.
    ========================================================================== */
 
 @theme {
   /* ── Brand ──────────────────────────────────────────────────────────────
-     Indigo rather than a pure blue: still the blue §7 asks for, but the violet
-     lean is what separates the chrome from the data. Every figure on a screen
-     is slate or a status colour, so the brand only ever appears on navigation,
-     primary actions and the active pill — and at that job indigo reads as
-     deliberate where a mid blue reads as a link. */
-  --color-brand-50:  #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-200: #c7d2fe;
-  --color-brand-300: #a5b4fc;
-  --color-brand-400: #818cf8;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
-  --color-brand-800: #3730a3;
-  --color-brand-900: #312e81;
+     A clear mid blue (spec §7). The brand only ever appears on navigation,
+     primary actions and the active state; figures are navy or a status colour. */
+  --color-brand-50:  #eef3fd;
+  --color-brand-100: #dce7fb;
+  --color-brand-200: #bccff6;
+  --color-brand-300: #8fa9e8;
+  --color-brand-400: #5f85e0;
+  --color-brand-500: #3d69e2;
+  --color-brand-600: #2f5bd8;
+  --color-brand-700: #2549b8;
+  --color-brand-800: #1e3c94;
+  --color-brand-900: #1b3474;
 
-  /* ── Slate / navy text (spec §7: dark navy and slate) ───────────────────── */
-  --color-ink-50:  #f8fafc;
-  --color-ink-100: #f1f5f9;
-  --color-ink-200: #e2e8f0;
-  --color-ink-300: #cbd5e1;
-  --color-ink-400: #94a3b8;
-  --color-ink-500: #64748b;
-  --color-ink-600: #475569;
-  --color-ink-700: #334155;
-  --color-ink-800: #1e293b;
-  --color-ink-900: #0f172a;
+  /* ── Navy / slate text (spec §7) ─────────────────────────────────────── */
+  --color-ink-50:  #f5f8fd;
+  --color-ink-100: #edf1f7;
+  --color-ink-200: #dce4f0;
+  --color-ink-300: #c3cedf;
+  --color-ink-400: #8e9bb0;
+  --color-ink-500: #5b6b82;
+  --color-ink-600: #44546b;
+  --color-ink-700: #2f3d52;
+  --color-ink-800: #1b2638;
+  --color-ink-900: #111a2a;
 
-  /* ── Status colours (spec §7) ───────────────────────────────────────────── */
-  --color-positive-50:  #ecfdf5;
-  --color-positive-200: #a7f3d0;
-  --color-positive-500: #10b981;
-  --color-positive-600: #059669;
-  --color-positive-700: #047857;
+  /* ── Status colours (spec §7) — pastel grounds, deep text ─────────────── */
+  --color-positive-50:  #e4f6ee;
+  --color-positive-200: #b7e6d1;
+  --color-positive-500: #1f9d6b;
+  --color-positive-600: #1a8a5d;
+  --color-positive-700: #1e7a55;
 
-  --color-warning-50:  #fffbeb;
-  --color-warning-200: #fde68a;
-  --color-warning-500: #f59e0b;
-  --color-warning-600: #d97706;
-  --color-warning-700: #b45309;
+  --color-warning-50:  #fdf1dc;
+  --color-warning-200: #f6d9a3;
+  --color-warning-500: #e39b1c;
+  --color-warning-600: #b86f00;
+  --color-warning-700: #8a5200;
 
-  --color-danger-50:  #fef2f2;
-  --color-danger-200: #fecaca;
-  --color-danger-500: #ef4444;
-  --color-danger-600: #dc2626;
-  --color-danger-700: #b91c1c;
+  --color-danger-50:  #fce4e5;
+  --color-danger-200: #f5bcc0;
+  --color-danger-500: #dc3a44;
+  --color-danger-600: #c62b34;
+  --color-danger-700: #a11d26;
 
-  --color-accent-50:  #f5f3ff;
-  --color-accent-200: #ddd6fe;
-  --color-accent-500: #8b5cf6;
-  --color-accent-600: #7c3aed;
+  --color-accent-50:  #eeeafc;
+  --color-accent-200: #d3c9f5;
+  --color-accent-500: #7a63dc;
+  --color-accent-600: #4a36a8;
+
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
 
   /* Tabular figures for every financial column (spec §51). */
-  --font-numeric: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', monospace;
+  --font-numeric: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
 
-  --radius-panel: 1rem;
-  --radius-card: 0.75rem;
+  --radius-panel: 1.25rem;
+  --radius-card: 0.875rem;
 
-  /* One curve for everything, so nothing feels like a different application.
-     Slightly eased out: motion decelerates into place rather than stopping. */
+  /* One curve for everything, so nothing feels like a different application. */
   --ease-ui: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root {
-  /* ── Page ground ─────────────────────────────────────────────────────────
-     Three washes — blue, violet, teal — over a tinted base. They give the glass
-     something to refract, which is what makes a frosted surface read as frosted
-     rather than as flat grey.
-     Around 10%: enough to be seen as colour rather than as a dirty white, and
-     still well under the point where it tints the figures on the panels above. */
-  --tint-blue:   rgba(99, 102, 241, 0.10);
-  --tint-violet: rgba(139, 92, 246, 0.08);
-  --tint-teal:   rgba(56, 189, 248, 0.06);
+  /* ── The ground clay sits on ───────────────────────────────────────────
+     A flat cool blue-grey. Clay reads as clay because the surface is lighter
+     than the ground and the shadow pair is tinted from it, not because of a
+     border — so the ground must stay quiet. */
+  --page-ground: #e9eff8;
 
-  /* The ground is a flat lavender wash rather than a white page. Cards read as
-     cards because the ground is tinted, not because they carry a heavy border —
-     which is what keeps a screen of twelve tiles from looking like a grid of
-     boxes. */
-  --page-base: linear-gradient(175deg, #eceefb 0%, #eff1fc 45%, #f4f6fd 100%);
-
-  /* Card surface tokens. Changing these changes every panel at once, which is
-     the point — the treatment cannot drift panel by panel.
-
-     Near-opaque on purpose. §7 names KPI cards as a glass surface, and they
-     still are: the blur and the tint are live, and the lavender ground shows
-     through at the edges. But a card carrying a ₹2.2 crore figure wants a
-     white ground under the number, so the panel sits at 94% and the frosting
-     reads as depth rather than as translucency. */
-  --glass-bg: rgba(255, 255, 255, 0.94);
-  --glass-bg-strong: rgba(255, 255, 255, 0.97);
-  --glass-border: rgba(255, 255, 255, 0.9);
-  --glass-ring: rgba(79, 70, 229, 0.05);
-  --glass-shadow:
-    0 1px 2px rgba(30, 27, 75, 0.04),
-    0 10px 26px -14px rgba(30, 27, 75, 0.16);
-  --glass-shadow-lg:
-    0 2px 4px rgba(30, 27, 75, 0.05),
-    0 26px 50px -22px rgba(30, 27, 75, 0.22);
-  --glass-blur: 14px;
+  /* ── Clay surface tokens ───────────────────────────────────────────────
+     Changing these changes every raised surface at once, which is the point:
+     the treatment cannot drift panel by panel. */
+  --clay-bg: #f3f6fc;
+  --clay-shade: rgba(118, 140, 180, 0.26);
+  --clay-light: rgba(255, 255, 255, 0.95);
+  --clay-shadow:
+    10px 12px 24px var(--clay-shade),
+    -8px -8px 18px var(--clay-light),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.9),
+    inset -2px -3px 6px rgba(118, 140, 180, 0.12);
+  --clay-shadow-lg:
+    16px 20px 40px rgba(118, 140, 180, 0.32),
+    -10px -10px 24px var(--clay-light),
+    inset 2px 2px 0 rgba(255, 255, 255, 0.95),
+    inset -3px -4px 8px rgba(118, 140, 180, 0.16);
+  /* Small controls — buttons, pills, the active nav item. */
+  --clay-shadow-sm:
+    5px 6px 12px rgba(118, 140, 180, 0.28),
+    -4px -4px 10px var(--clay-light),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.9);
+  /* Pressed into the surface: fields, wells, selected segments. */
+  --clay-pit-bg: #e6edf8;
+  --clay-pit:
+    inset 3px 3px 7px rgba(118, 140, 180, 0.28),
+    inset -3px -3px 7px rgba(255, 255, 255, 0.95);
 
   /* Solid surface for dense data (spec §7). */
   --surface: #ffffff;
-  --surface-muted: #f8fafc;
-  --border-subtle: #e7e9f7;
-
-  /* Sidebar. Slightly off-white against the lavender ground so the rail reads as
-     a separate plane without needing a hard divider. */
-  --sidebar-bg: rgba(255, 255, 255, 0.86);
-  --sidebar-border: rgba(199, 210, 254, 0.5);
+  --surface-muted: #f5f8fd;
+  --border-subtle: #dce4f0;
 }
 
 * {
@@ -140,53 +129,86 @@ html {
 }
 
 body {
-  /* The washes sit above the base gradient and below everything else. Fixed, so
-     they stay put while content scrolls over them — a background that scrolls
-     with the page reads as a texture rather than as depth. */
+  /* One soft light from the top left, the same direction every clay shadow
+     assumes; otherwise flat. */
   background:
-    radial-gradient(60rem 60rem at 12% -8%,  var(--tint-blue),   transparent 60%),
-    radial-gradient(52rem 52rem at 92% 4%,   var(--tint-violet), transparent 62%),
-    radial-gradient(44rem 44rem at 68% 96%,  var(--tint-teal),   transparent 60%),
-    var(--page-base);
+    radial-gradient(70rem 50rem at 0% -10%, rgba(255, 255, 255, 0.7), transparent 60%),
+    var(--page-ground);
   background-attachment: fixed;
   color: var(--color-ink-800);
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   min-height: 100dvh;
 }
 
 /* =============================================================================
-   Glass surfaces — spec §7
+   Clay surfaces — spec §7
+   =============================================================================
+   `glass` and `glass-strong` keep their names — ninety-odd screens use them —
+   and now draw clay. Raised for chrome and summaries; `glass-strong` for the
+   header, menus and dialogs, which float highest.
    ========================================================================== */
 
 @utility glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(165%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(165%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow), inset 0 0 0 1px var(--glass-ring);
-  /* The top edge catches light, the way a real pane does. Without it a glass
-     panel reads as a flat translucent rectangle. */
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 40%);
+  background: var(--clay-bg);
+  border: 0;
+  box-shadow: var(--clay-shadow);
 }
 
 @utility glass-strong {
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.3)) saturate(175%);
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.3)) saturate(175%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow-lg), inset 0 0 0 1px var(--glass-ring);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 42%);
+  background: var(--clay-bg);
+  border: 0;
+  box-shadow: var(--clay-shadow-lg);
 }
 
-/* The navigation rail. Its own token pair so the sidebar can sit slightly
-   lighter than the ground without borrowing the card treatment. */
+@utility clay-raised {
+  background: var(--clay-bg);
+  box-shadow: var(--clay-shadow-sm);
+}
+
+/* The small raised tile a KPI or list icon sits on. Its fill comes from the
+   tone classes; this adds only the clay. */
+@utility clay-pebble {
+  box-shadow:
+    4px 5px 10px rgba(118, 140, 180, 0.28),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.8),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* Pressed into the surface — a well that holds a value or a figure. */
+@utility clay-pit {
+  background: var(--clay-pit-bg);
+  box-shadow: var(--clay-pit);
+}
+
+/* Every text field and select: a sunken well, no border, a clear focus ring. */
+@utility field {
+  background: var(--clay-pit-bg);
+  border: 0;
+  border-radius: 0.75rem;
+  box-shadow: var(--clay-pit);
+  color: var(--color-ink-800);
+
+  &::placeholder {
+    color: var(--color-ink-400);
+  }
+  &:focus {
+    outline: none;
+    box-shadow: var(--clay-pit), 0 0 0 3px color-mix(in oklab, var(--color-brand-500) 30%, transparent);
+  }
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  &[aria-invalid='true'] {
+    box-shadow: var(--clay-pit), 0 0 0 2px var(--color-danger-500);
+  }
+}
+
+/* The navigation rail sits on the ground itself; the active item is what rises. */
 @utility sidebar-surface {
-  background: var(--sidebar-bg);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border-right: 1px solid var(--sidebar-border);
+  background: var(--page-ground);
 }
 
 /* A thin scrollbar for the nav, so a long list does not gain a heavy grey
@@ -211,11 +233,12 @@ body {
   background: transparent;
 }
 
-/* Dense data surfaces stay solid. */
+/* Dense data surfaces stay solid — white, a thin border, one soft drop. No
+   clay inside a grid of figures. */
 @utility surface-solid {
   background: var(--surface);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 8px 20px rgba(118, 140, 180, 0.16);
 }
 
 /* Right-aligned tabular numerals for financial columns (spec §51). */
@@ -294,7 +317,7 @@ body {
 
   &:hover {
     transform: translate3d(0, -2px, 0);
-    box-shadow: var(--glass-shadow-lg), inset 0 0 0 1px var(--glass-ring);
+    box-shadow: var(--clay-shadow-lg);
   }
 }
 
@@ -329,9 +352,7 @@ textarea,
   position: sticky;
   top: 0;
   z-index: 10;
-  background: color-mix(in oklab, var(--surface-muted) 88%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: var(--surface-muted);
   box-shadow: inset 0 -1px 0 var(--border-subtle);
 }
 
@@ -428,22 +449,17 @@ textarea,
     padding-right: 0.625rem;
   }
 
-  /* Glass is expensive to composite and least visible on a small screen. Panels
-     stay translucent but stop blurring, which is the single biggest scrolling
-     win on a mid-range phone. */
+  /* Large clay shadows are costly to paint while scrolling on a mid-range
+     phone and barely visible at this size; a smaller pair keeps the look. */
   .glass,
   .glass-strong {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 6px 8px 16px var(--clay-shade), -4px -4px 10px var(--clay-light);
   }
 
-  /* The rail is a full-height blurred surface sliding in over the page, which is
-     the most expensive composite on the screen. Opaque while it moves. */
+  /* The rail slides in over the page as a drawer, so it needs its own shadow
+     to read as a layer. */
   .sidebar-surface {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: #ffffff;
+    box-shadow: 12px 0 30px rgba(118, 140, 180, 0.3);
   }
 
   /* Entrance motion is charming once and tiring on a phone, where navigation is

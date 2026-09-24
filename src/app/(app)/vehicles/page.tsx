@@ -170,12 +170,12 @@ export default async function VehicleStockPage({
               defaultValue={params.q ?? ''}
               placeholder="Chassis, engine or registration number…"
               aria-label="Search vehicles"
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-sm text-ink-900 shadow-sm placeholder:text-ink-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="h-9 w-full field pl-9 pr-3 text-sm"
             />
           </div>
 
           <select name="status" defaultValue={status} aria-label="Status"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+            className="h-9 field px-2 text-sm text-ink-700">
             <option value="IN_STOCK">In stock</option>
             <option value="ALL">All statuses</option>
             <option value="BOOKED">Booked</option>
@@ -186,7 +186,7 @@ export default async function VehicleStockPage({
 
           {context.accessibleBranches.length > 0 && (
             <select name="branch" defaultValue={params.branch ?? 'all'} aria-label="Branch"
-              className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+              className="h-9 field px-2 text-sm text-ink-700">
               {context.hasAllBranchAccess && <option value="all">All branches</option>}
               {context.accessibleBranches.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
@@ -195,7 +195,7 @@ export default async function VehicleStockPage({
           )}
 
           <select name="model" defaultValue={modelId ?? ''} aria-label="Model"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+            className="h-9 field px-2 text-sm text-ink-700">
             <option value="">All models</option>
             {models.map((m) => (
               <option key={m.id} value={m.id}>{m.brand} {m.name}</option>

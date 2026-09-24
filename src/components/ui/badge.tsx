@@ -8,16 +8,16 @@ import { cn } from '@/lib/utils';
  * status palette in §7 so a colour always means the same thing across modules.
  */
 const badgeVariants = cva(
-  'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium leading-5',
+  'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold leading-5 shadow-[inset_1px_1px_0_rgba(255,255,255,.7)]',
   {
     variants: {
       variant: {
-        neutral: 'border-ink-200 bg-ink-50 text-ink-600',
-        info: 'border-brand-200 bg-brand-50 text-brand-700',
-        positive: 'border-positive-200 bg-positive-50 text-positive-700',
-        warning: 'border-warning-200 bg-warning-50 text-warning-700',
-        danger: 'border-danger-200 bg-danger-50 text-danger-700',
-        accent: 'border-accent-200 bg-accent-50 text-accent-600',
+        neutral: 'bg-ink-100 text-ink-600',
+        info: 'bg-brand-100 text-brand-700',
+        positive: 'bg-positive-50 text-positive-700',
+        warning: 'bg-warning-50 text-warning-700',
+        danger: 'bg-danger-50 text-danger-700',
+        accent: 'bg-accent-50 text-accent-600',
       },
     },
     defaultVariants: { variant: 'neutral' },

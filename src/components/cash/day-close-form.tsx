@@ -161,7 +161,7 @@ export function DayCloseForm({
               Why is this day being reopened?
             </Label>
             <textarea id="reopen-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)}
-              className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm" />
+              className="w-full field px-3 py-2 text-sm" />
             <p className="mt-1 text-xs text-warning-800">
               The reason is recorded permanently in the audit trail.
             </p>
@@ -259,7 +259,7 @@ export function DayCloseForm({
           </Label>
           <textarea id="remarks" rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)}
             placeholder={gap !== 0 ? 'Explain the difference' : 'Optional'}
-            className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm" />
+            className="w-full field px-3 py-2 text-sm" />
         </div>
 
         {gap !== 0 && (

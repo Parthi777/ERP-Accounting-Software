@@ -133,7 +133,7 @@ export function JobCardForm({
           <div>
             <Label htmlFor="type" className="mb-1.5 block">Service type</Label>
             <select id="type" value={serviceType} onChange={(e) => setServiceType(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 w-full field px-3 text-sm">
               {SERVICE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
@@ -150,13 +150,13 @@ export function JobCardForm({
             </Label>
             <textarea id="complaint" rows={3} value={complaint} onChange={(e) => setComplaint(e.target.value)}
               placeholder="What the customer reported, in their words"
-              className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm" />
+              className="w-full field px-3 py-2 text-sm" />
           </div>
 
           <div>
             <Label htmlFor="advisor" className="mb-1.5 block">Service advisor</Label>
             <select id="advisor" value={advisorId} onChange={(e) => setAdvisorId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 w-full field px-3 text-sm">
               <option value="">Not assigned</option>
               {employees.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
             </select>
@@ -165,7 +165,7 @@ export function JobCardForm({
           <div>
             <Label htmlFor="technician" className="mb-1.5 block">Technician</Label>
             <select id="technician" value={technicianId} onChange={(e) => setTechnicianId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 w-full field px-3 text-sm">
               <option value="">Not assigned</option>
               {employees.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
             </select>

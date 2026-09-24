@@ -296,23 +296,21 @@ Use a modern premium SaaS ERP interface.
 
 Style:
 
-### Light Glassmorphism
+### Light Claymorphism
 
-Primary visual direction:
+Primary visual direction (changed from light glassmorphism, Sep 2026):
 
-- White
-- Soft blue
-- Very light blue
-- Cool gray
-- Subtle gradients
-- Frosted glass surfaces
-- Thin borders
-- Soft shadows
+- Cool light blue-grey ground
+- Soft pastel clay surfaces raised off it
+- Paired light/shade shadows with a faint inner highlight
+- Fields and wells pressed into the surface
+- Blue primary actions as raised "pebbles"
+- No borders on clay surfaces
 - High readability
 
 Do NOT create a dark-heavy admin dashboard.
 
-Do NOT overuse glass effects.
+Do NOT put clay on data: tables, ledgers and statements stay flat.
 
 The UI must remain professional and accounting-friendly.
 
@@ -320,14 +318,13 @@ The UI must remain professional and accounting-friendly.
 
 Background:
 
-- Very light blue/white gradient
+- Flat cool blue-grey (`--page-ground`)
 
-Panels:
+Clay surfaces:
 
-- White with slight transparency
-- `backdrop-blur`
-- Thin white/blue border
-- Soft shadow
+- Pastel clay fill (`--clay-bg`)
+- Raised by `--clay-shadow` (outer shade + outer light + inner highlight)
+- Rounded, but not pill-shaped: ~20px panels, ~12px controls
 
 Primary:
 
@@ -353,19 +350,18 @@ Muted text:
 
 - Slate gray
 
-### Glass card rules
+### Clay rules
 
-Use glassmorphism mainly for:
+Use clay mainly for:
 
-- Dashboard KPI cards
-- Header
-- Filter panels
+- Sidebar active item, header, dashboard KPI cards
+- Buttons, fields, filter panels
 - Summary panels
-- Modal dialogs
+- Modal dialogs and menus
 
-Operational accounting tables should remain highly readable with mostly solid white surfaces.
+Operational accounting tables stay solid white, thin-bordered and dense.
 
-Do not make tables excessively transparent.
+Do not put depth, shadows or pastel fills inside a grid of figures.
 
 ---
 
@@ -1832,7 +1828,7 @@ Indian formatting:
 
 # 52. Sales Screen Layout
 
-Modern glass UI:
+Modern clay UI:
 
 Left:
 Customer + vehicle selection
@@ -1901,7 +1897,7 @@ Use:
 
 - white background
 - soft blue gradient
-- glass KPI cards
+- clay KPI cards
 - blue primary buttons
 - subtle shadows
 - thin borders
@@ -2144,7 +2140,7 @@ Start by creating the application foundation before building individual business
 
 First deliver:
 
-1. Modern light glassmorphism UI shell
+1. Modern light claymorphism UI shell
 2. Sidebar navigation
 3. Top header
 4. Dealer/branch context selector

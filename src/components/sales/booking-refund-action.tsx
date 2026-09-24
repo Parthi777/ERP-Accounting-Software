@@ -103,7 +103,7 @@ export function BookingRefundAction({
                 <select
                   id="refund-mode" value={mode}
                   onChange={(e) => setMode(e.target.value as 'CASH' | 'BANK')}
-                  className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+                  className="h-9 w-full field px-3 text-sm"
                 >
                   <option value="CASH">Cash</option>
                   <option value="BANK">Bank</option>
@@ -118,7 +118,7 @@ export function BookingRefundAction({
                   <select
                     id="refund-bank" value={bankAccountId}
                     onChange={(e) => setBankAccountId(e.target.value)}
-                    className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+                    className="h-9 w-full field px-3 text-sm"
                   >
                     <option value="">Choose an account</option>
                     {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
@@ -134,7 +134,7 @@ export function BookingRefundAction({
                   id="refund-reason" rows={3} value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="e.g. Customer cancelled, advance returned in full"
-                  className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm"
+                  className="w-full field px-3 py-2 text-sm"
                 />
               </div>
             </div>

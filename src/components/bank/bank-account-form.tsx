@@ -151,7 +151,7 @@ export function BankAccountForm({
         <div>
           <Label htmlFor="ba-type" className="mb-1.5 block">Account type</Label>
           <select id="ba-type" value={accountType} onChange={(e) => setAccountType(e.target.value)}
-            className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+            className="h-9 w-full field px-3 text-sm">
             {ACCOUNT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </div>
@@ -160,7 +160,7 @@ export function BankAccountForm({
           <div>
             <Label htmlFor="ba-status" className="mb-1.5 block">Status</Label>
             <select id="ba-status" value={status} onChange={(e) => setStatus(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 w-full field px-3 text-sm">
               <option value="ACTIVE">Active</option>
               <option value="INACTIVE">Inactive</option>
               <option value="CLOSED">Closed</option>
@@ -170,7 +170,7 @@ export function BankAccountForm({
           <div>
             <Label htmlFor="ba-branch" className="mb-1.5 block">Branch</Label>
             <select id="ba-branch" value={branchId} onChange={(e) => setBranchId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 w-full field px-3 text-sm">
               <option value="">Dealer-wide</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>

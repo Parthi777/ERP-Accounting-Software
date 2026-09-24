@@ -100,7 +100,7 @@ export function FinancialYearSwitcher({
         aria-expanded={open}
         aria-label={`Financial year: ${active?.name ?? 'none'}`}
         className={cn(
-          'flex items-center gap-2 rounded-lg border border-ink-200 bg-white/70 px-2.5 py-1.5 text-left transition-colors',
+          'clay-raised flex items-center gap-2 rounded-xl px-3 py-1.5 text-left transition-colors',
           !onlyOne && 'hover:bg-white',
           pending && 'opacity-60',
         )}

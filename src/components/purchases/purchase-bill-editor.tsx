@@ -146,7 +146,7 @@ export function PurchaseBillEditor({
               </span>
               <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
                 placeholder="e.g. Supplier raised a corrected invoice"
-                className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm" />
+                className="mt-1 w-full field px-3 py-2 text-sm" />
             </label>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="secondary" size="sm" onClick={() => setDialog(null)} disabled={pending}>Back</Button>
@@ -290,7 +290,7 @@ function AddLine({
               const v = unbilledVehicles.find((x) => x.vehicleId === e.target.value);
               if (v && v.purchaseCost > 0 && !rate) setRate(String(v.purchaseCost / 100));
             }}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 w-full field px-3 text-sm">
               <option value="">Choose a chassis in stock</option>
               {unbilledVehicles.map((v) => (
                 <option key={v.vehicleId} value={v.vehicleId}>
@@ -309,7 +309,7 @@ function AddLine({
             <div className="sm:col-span-2">
               <Label htmlFor="line-account" className="mb-1.5 block">Charged to</Label>
               <select id="line-account" value={accountId} onChange={(e) => setAccountId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                className="h-9 w-full field px-3 text-sm">
                 <option value="">Choose an expense or fixed-asset account</option>
                 {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
               </select>
@@ -338,7 +338,7 @@ function AddLine({
                 const i = items.find((x) => x.id === e.target.value);
                 if (i && i.standardCost > 0 && !rate) setRate(String(i.standardCost));
               }}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                className="h-9 w-full field px-3 text-sm">
                 <option value="">Choose an item</option>
                 {pickable.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
               </select>
@@ -346,7 +346,7 @@ function AddLine({
             <div>
               <Label htmlFor="line-source" className="mb-1.5 block">Lot</Label>
               <select id="line-source" value={source} onChange={(e) => setSource(e.target.value as StockSource)}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                className="h-9 w-full field px-3 text-sm">
                 <option value="COMPANY">Company</option>
                 <option value="LOCAL">Local</option>
               </select>
@@ -376,7 +376,7 @@ function AddLine({
         <div>
           <Label htmlFor="line-gst" className="mb-1.5 block">GST</Label>
           <select id="line-gst" value={gst} onChange={(e) => setGst(Number(e.target.value))}
-            className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+            className="h-9 w-full field px-3 text-sm">
             {gstRates.map((r) => <option key={r} value={r}>{r}%</option>)}
           </select>
           <label className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-500">

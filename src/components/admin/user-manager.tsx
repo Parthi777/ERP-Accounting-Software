@@ -306,7 +306,7 @@ function UserDialog({
               <Label htmlFor="u-status" className="mb-1.5 block">Status</Label>
               <select id="u-status" value={status} disabled={isSelf}
                 onChange={(e) => setStatus(e.target.value as 'ACTIVE')}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                className="h-9 w-full field px-3 text-sm">
                 <option value="ACTIVE">Active</option>
                 <option value="SUSPENDED">Suspended</option>
                 <option value="DISABLED">Disabled</option>

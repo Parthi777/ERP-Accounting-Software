@@ -143,7 +143,7 @@ export default async function Page({
               name="date"
               type="date"
               defaultValue={date}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             />
           </div>
           <Button type="submit" variant="secondary" size="sm">Show</Button>

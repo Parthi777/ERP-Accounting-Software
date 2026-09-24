@@ -52,7 +52,7 @@ export function StatementFilters({
           value={branchId ?? 'all'}
           disabled={pending}
           onChange={(event) => apply({ branch: event.target.value })}
-          className="h-8 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm"
+          className="h-8 field px-2 text-sm text-ink-700"
         >
           {canViewAllBranches && <option value="all">All branches</option>}
           {branches.map((branch) => (
@@ -63,7 +63,7 @@ export function StatementFilters({
         </select>
       )}
 
-      <div className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2 shadow-sm">
+      <div className="flex items-center gap-1.5 clay-pit rounded-xl border-0 px-2">
         <CalendarDays className="size-4 shrink-0 text-ink-400" aria-hidden />
         {asOn !== undefined ? (
           <input

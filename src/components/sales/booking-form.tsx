@@ -159,7 +159,7 @@ export function BookingForm({
             <Label htmlFor="model_id" className="mb-1.5 block">
               Model<span className="ml-0.5 text-danger-600">*</span>
             </Label>
-            <select id="model_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('model_id')}>
+            <select id="model_id" className="h-9 w-full field px-3 text-sm" {...register('model_id')}>
               <option value="">Choose a model</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
@@ -167,7 +167,7 @@ export function BookingForm({
 
           <div>
             <Label htmlFor="variant_id" className="mb-1.5 block">Variant</Label>
-            <select id="variant_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('variant_id')}>
+            <select id="variant_id" className="h-9 w-full field px-3 text-sm" {...register('variant_id')}>
               <option value="">Not specified</option>
               {availableVariants.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
             </select>
@@ -222,7 +222,7 @@ export function BookingForm({
 
           <div>
             <Label htmlFor="payment_mode" className="mb-1.5 block">Payment mode</Label>
-            <select id="payment_mode" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('payment_mode')}>
+            <select id="payment_mode" className="h-9 w-full field px-3 text-sm" {...register('payment_mode')}>
               {['CASH', 'UPI', 'CARD', 'NEFT', 'RTGS', 'IMPS', 'CHEQUE', 'DD'].map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
@@ -252,7 +252,7 @@ export function BookingForm({
           </div>
           <div>
             <Label htmlFor="sales_executive_id" className="mb-1.5 block">Sales executive</Label>
-            <select id="sales_executive_id" className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" {...register('sales_executive_id')}>
+            <select id="sales_executive_id" className="h-9 w-full field px-3 text-sm" {...register('sales_executive_id')}>
               <option value="">Not assigned</option>
               {employees.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
             </select>
@@ -260,7 +260,7 @@ export function BookingForm({
           <div className="sm:col-span-2">
             <Label htmlFor="notes" className="mb-1.5 block">Notes</Label>
             <textarea id="notes" rows={2}
-              className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm"
+              className="w-full field px-3 py-2 text-sm"
               {...register('notes')} />
           </div>
         </div>

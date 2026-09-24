@@ -47,12 +47,12 @@ export default async function Page({
           <div>
             <label htmlFor="from" className="mb-1.5 block text-xs font-medium text-ink-600">From</label>
             <input id="from" name="from" type="date" defaultValue={from}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="h-9 field px-3 text-sm" />
           </div>
           <div>
             <label htmlFor="to" className="mb-1.5 block text-xs font-medium text-ink-600">To</label>
             <input id="to" name="to" type="date" defaultValue={to}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="h-9 field px-3 text-sm" />
           </div>
           <Button type="submit" variant="secondary" size="sm">Show period</Button>
         </form>

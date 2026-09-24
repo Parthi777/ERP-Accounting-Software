@@ -120,7 +120,7 @@ export default async function Page({
           <div className="min-w-56">
             <label htmlFor="customer" className="mb-1.5 block text-xs font-medium text-ink-600">Customer</label>
             <select id="customer" name="customer" defaultValue={params.customer ?? ''}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 w-full field px-3 text-sm">
               <option value="">Any customer</option>
               {customers.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
@@ -131,7 +131,7 @@ export default async function Page({
             </label>
             <input id="registration" name="registration" defaultValue={params.registration ?? ''}
               placeholder="TN01AB1234"
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm uppercase shadow-sm" />
+              className="h-9 field px-3 text-sm uppercase" />
           </div>
           <Button type="submit" variant="secondary" size="sm">Search</Button>
         </form>

@@ -107,7 +107,7 @@ export function PriceApprovalActions({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="e.g. Ex-showroom does not match the circular"
-                className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm"
+                className="mt-1 w-full field px-3 py-2 text-sm"
               />
             </label>
 

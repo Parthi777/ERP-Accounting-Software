@@ -123,17 +123,17 @@ export default async function Page({
           <div>
             <label htmlFor="from" className="mb-1.5 block text-xs font-medium text-ink-600">From</label>
             <input id="from" name="from" type="date" defaultValue={range.from}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="h-9 field px-3 text-sm" />
           </div>
           <div>
             <label htmlFor="to" className="mb-1.5 block text-xs font-medium text-ink-600">To</label>
             <input id="to" name="to" type="date" defaultValue={range.to}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm" />
+              className="h-9 field px-3 text-sm" />
           </div>
           <div>
             <label htmlFor="section" className="mb-1.5 block text-xs font-medium text-ink-600">Section</label>
             <select id="section" name="section" defaultValue={section}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+              className="h-9 field px-3 text-sm">
               <option value="ALL">All</option>
               <option value="B2B">B2B</option>
               <option value="B2C">B2C</option>

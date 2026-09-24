@@ -105,10 +105,10 @@ export default async function BookingsPage({
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-400" aria-hidden />
             <input type="search" name="q" defaultValue={params.q ?? ''}
               placeholder="Booking number, customer name or ID…" aria-label="Search bookings"
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-sm shadow-sm placeholder:text-ink-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20" />
+              className="h-9 w-full field pl-9 pr-3 text-sm" />
           </div>
           <select name="status" defaultValue={status} aria-label="Status"
-            className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+            className="h-9 field px-2 text-sm text-ink-700">
             <option value="OPEN">Open</option>
             <option value="ALL">All</option>
             <option value="CONVERTED">Converted</option>
@@ -116,7 +116,7 @@ export default async function BookingsPage({
           </select>
           {context.accessibleBranches.length > 0 && (
             <select name="branch" defaultValue={params.branch ?? 'all'} aria-label="Branch"
-              className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-sm text-ink-700 shadow-sm">
+              className="h-9 field px-2 text-sm text-ink-700">
               {context.hasAllBranchAccess && <option value="all">All branches</option>}
               {context.accessibleBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>

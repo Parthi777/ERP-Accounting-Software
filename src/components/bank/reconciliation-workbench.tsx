@@ -332,7 +332,7 @@ export function ReconciliationWorkbench({
                 <Label htmlFor="recon-notes" className="mb-1.5 block">Notes</Label>
                 <textarea id="recon-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
                   placeholder="Anything left unexplained, and why"
-                  className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm shadow-sm" />
+                  className="w-full field px-3 py-2 text-sm" />
               </div>
             </div>
 

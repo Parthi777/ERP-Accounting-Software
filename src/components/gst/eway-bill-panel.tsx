@@ -176,7 +176,7 @@ export function EwayBillPanel({
                 <select
                   id="ew-mode" value={mode}
                   onChange={(e) => setMode(e.target.value as (typeof MODES)[number])}
-                  className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+                  className="h-9 w-full field px-3 text-sm"
                 >
                   {MODES.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>

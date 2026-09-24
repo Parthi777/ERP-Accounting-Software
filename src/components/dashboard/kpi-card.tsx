@@ -9,12 +9,12 @@ import type { Kpi } from '@/server/services/dashboard/dashboard-service';
 /**
  * KPI card — spec §7, §10, §54.
  *
- * The shape is a stack, not a row: a small tinted icon beside a quiet uppercase
- * label, the figure large underneath, and an optional breakdown under that. It
+ * The shape is a stack, not a row: a clay icon tile, a quiet uppercase label,
+ * the figure large underneath, and an optional breakdown under that. It
  * reads in one downward glance, which is what a wall of twelve tiles needs —
  * an icon sitting to the left of the number competes with it for the eye.
  *
- * The coloured bar down the left edge is the only strong colour on the card. It
+ * The raised pastel tile holding the icon is the only colour on the card. It
  * groups the tiles by what they are about — money, stock, things that need
  * attention — so a dealer scanning the row finds the red ones without reading a
  * single label.
@@ -42,42 +42,31 @@ export function KpiCard({
   const palette = TONES[tone];
 
   return (
-    <Panel
-      interactive
-      className={cn(
-        // The accent bar is the card's left border, so it runs the full height
-        // whatever the content does. overflow-hidden keeps it inside the radius.
-        'relative flex flex-col gap-2.5 overflow-hidden rounded-2xl p-[18px] pl-[22px]',
-        className,
-      )}
-    >
-      <span className={cn('absolute inset-y-0 left-0 w-[5px]', palette.bar)} aria-hidden />
-
-      <div className="flex items-center gap-2">
-        {Icon && (
-          <span
-            className={cn(
-              'flex size-6 shrink-0 items-center justify-center rounded-md',
-              palette.chip,
-            )}
-          >
-            <Icon className="size-[15px]" aria-hidden />
+    <Panel interactive className={cn('flex flex-col gap-3 rounded-[1.25rem] p-[18px]', className)}>
+      <div className="flex items-start justify-between gap-2">
+        {Icon ? (
+          <span className={cn('clay-pebble flex size-11 shrink-0 items-center justify-center rounded-[14px]', palette.chip)}>
+            <Icon className="size-5" aria-hidden />
           </span>
+        ) : (
+          <span />
         )}
-        <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.07em] text-ink-500">
-          {kpi.label}
-        </p>
         {kpi.sensitive && (
-          <Lock
-            className="size-3 shrink-0 text-ink-400"
-            aria-label="Restricted to Accounts and Owner roles"
-          />
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-accent-50 px-2 py-0.5 text-[10.5px] font-semibold text-accent-600"
+            title="Restricted to Accounts and Owner roles"
+          >
+            <Lock className="size-3" aria-hidden />
+            Owner
+          </span>
         )}
       </div>
 
+      <p className="truncate text-[11px] font-bold uppercase tracking-[0.06em] text-ink-500">{kpi.label}</p>
+
       <p
         className={cn(
-          'numeric text-left text-[26px] font-bold leading-none tracking-tight',
+          'numeric text-left text-[24px] font-extrabold leading-none tracking-tight',
           palette.figure,
         )}
       >
@@ -85,7 +74,7 @@ export function KpiCard({
       </p>
 
       {detail && (
-        <p className="truncate text-[11px] text-ink-500" title={detail}>
+        <p className="truncate text-[11.5px] text-ink-500" title={detail}>
           {detail}
         </p>
       )}
@@ -103,11 +92,11 @@ export type KpiTone = 'brand' | 'positive' | 'warning' | 'danger' | 'accent' | '
  * reserved for the tiles that are a queue of work, where the figure being large
  * genuinely is the point.
  */
-const TONES: Record<KpiTone, { bar: string; chip: string; figure: string }> = {
-  brand:    { bar: 'bg-brand-500',    chip: 'bg-brand-50 text-brand-600',       figure: 'text-ink-900' },
-  positive: { bar: 'bg-positive-500', chip: 'bg-positive-50 text-positive-600', figure: 'text-positive-700' },
-  warning:  { bar: 'bg-warning-500',  chip: 'bg-warning-50 text-warning-600',   figure: 'text-ink-900' },
-  danger:   { bar: 'bg-danger-500',   chip: 'bg-danger-50 text-danger-600',     figure: 'text-danger-600' },
-  accent:   { bar: 'bg-accent-500',   chip: 'bg-accent-50 text-accent-600',     figure: 'text-ink-900' },
-  info:     { bar: 'bg-sky-400',      chip: 'bg-sky-50 text-sky-600',           figure: 'text-ink-900' },
+const TONES: Record<KpiTone, { chip: string; figure: string }> = {
+  brand:    { chip: 'bg-brand-100 text-brand-700',       figure: 'text-ink-900' },
+  positive: { chip: 'bg-positive-50 text-positive-700',  figure: 'text-positive-700' },
+  warning:  { chip: 'bg-warning-50 text-warning-700',    figure: 'text-ink-900' },
+  danger:   { chip: 'bg-danger-50 text-danger-700',      figure: 'text-danger-600' },
+  accent:   { chip: 'bg-accent-50 text-accent-600',      figure: 'text-ink-900' },
+  info:     { chip: 'bg-sky-100 text-sky-700',           figure: 'text-ink-900' },
 };

@@ -130,7 +130,7 @@ export function StatementImport({ accounts }: { readonly accounts: readonly Bank
           Import into
         </label>
         <select id="bank-account" value={accountId} onChange={(e) => setAccountId(e.target.value)}
-          className="h-9 w-full max-w-md rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+          className="h-9 w-full max-w-md field px-3 text-sm">
           {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
         </select>
       </Panel>

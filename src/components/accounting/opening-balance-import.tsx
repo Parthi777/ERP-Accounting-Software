@@ -53,7 +53,7 @@ export function OpeningBalanceImport({
               id="party-type"
               value={partyType}
               onChange={(e) => setPartyType(e.target.value as PartyType)}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             >
               <option value="CUSTOMER">Customers (receivable)</option>
               <option value="SUPPLIER">Suppliers (payable)</option>
@@ -66,7 +66,7 @@ export function OpeningBalanceImport({
               type="date"
               value={asOn}
               onChange={(e) => setAsOn(e.target.value)}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             />
           </div>
           <p className="flex-1 text-xs text-ink-500">

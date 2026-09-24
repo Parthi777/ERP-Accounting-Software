@@ -60,8 +60,10 @@ export function Header({
 
   return (
     <>
-      <header className="glass-strong sticky top-0 z-30 rounded-none border-x-0 border-t-0 px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-3">
+      {/* A floating clay bar rather than a full-bleed strip: it sits on the same
+          ground as everything else and rises above the page as it scrolls. */}
+      <header className="sticky top-0 z-30 px-4 pt-3 sm:px-6">
+        <div className="glass-strong flex items-center gap-3 rounded-[1.25rem] px-4 py-2.5">
           <Button
             variant="ghost"
             size="icon"
@@ -108,11 +110,11 @@ export function Header({
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            className="flex h-9 items-center gap-2 rounded-xl border border-ink-200 bg-white px-3 text-sm text-ink-400 shadow-sm transition-colors hover:border-brand-200 hover:text-ink-600 sm:w-64"
+            className="clay-pit flex h-10 items-center gap-2 rounded-xl px-3 text-sm text-ink-500 transition-colors hover:text-ink-700 sm:w-72"
           >
             <Search className="size-4 shrink-0" aria-hidden />
             <span className="hidden flex-1 text-left sm:block">Jump to a page…</span>
-            <kbd className="hidden rounded border border-ink-200 bg-ink-50 px-1.5 font-sans text-[10px] font-medium text-ink-500 sm:block">
+            <kbd className="clay-raised hidden rounded-md px-1.5 font-sans text-[10px] font-semibold text-ink-500 sm:block">
               ⌘K
             </kbd>
           </button>
@@ -139,7 +141,7 @@ export function Header({
               aria-expanded={menuOpen}
               className="flex items-center rounded-full transition-opacity hover:opacity-85"
             >
-              <span className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-semibold text-white">
+              <span className="clay-raised flex size-10 items-center justify-center rounded-full text-[12px] font-bold text-brand-700">
                 {initials(user.name)}
               </span>
             </button>

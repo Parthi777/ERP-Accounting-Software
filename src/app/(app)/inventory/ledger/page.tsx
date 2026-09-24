@@ -166,21 +166,21 @@ export default async function Page({
             <label htmlFor="from" className="mb-1.5 block text-xs font-medium text-ink-600">From</label>
             <input
               id="from" name="from" type="date" defaultValue={from}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             />
           </div>
           <div>
             <label htmlFor="to" className="mb-1.5 block text-xs font-medium text-ink-600">To</label>
             <input
               id="to" name="to" type="date" defaultValue={to}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             />
           </div>
           <div className="min-w-56">
             <label htmlFor="item" className="mb-1.5 block text-xs font-medium text-ink-600">Item</label>
             <select
               id="item" name="item" defaultValue={params.item ?? ''}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             >
               <option value="">All items</option>
               {items.map((i) => (
@@ -192,7 +192,7 @@ export default async function Page({
             <label htmlFor="type" className="mb-1.5 block text-xs font-medium text-ink-600">Movement</label>
             <select
               id="type" name="type" defaultValue={type}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             >
               <option value="ALL">All movements</option>
               {MOVEMENT_TYPES.map((t) => (
@@ -204,7 +204,7 @@ export default async function Page({
             <label htmlFor="source" className="mb-1.5 block text-xs font-medium text-ink-600">Source</label>
             <select
               id="source" name="source" defaultValue={source}
-              className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 field px-3 text-sm"
             >
               <option value="ALL">Local and company</option>
               <option value="LOCAL">Local</option>

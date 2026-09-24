@@ -134,7 +134,7 @@ export function StockTransferForm({
               id="lot"
               value={selectedLot}
               onChange={(e) => chooseLot(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             >
               <option value="">Choose an item and lot</option>
               {lots.map((l) => (
@@ -154,7 +154,7 @@ export function StockTransferForm({
               value={toBranchId}
               onChange={(e) => setToBranchId(e.target.value)}
               disabled={!lot}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm disabled:bg-ink-50 disabled:text-ink-400"
+              className="h-9 w-full field px-3 text-sm disabled:bg-ink-50 disabled:text-ink-400"
             >
               <option value="">{lot ? 'Choose a branch' : 'Choose the stock first'}</option>
               {destinations.map((b) => (

@@ -124,7 +124,7 @@ export default async function Page({
             </label>
             <select
               id="customer" name="customer" defaultValue={params.customer ?? ''}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             >
               <option value="">All customers</option>
               {customers.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -135,7 +135,7 @@ export default async function Page({
             <input
               id="q" name="q" defaultValue={params.q ?? ''}
               placeholder="Registration, chassis or customer"
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             />
           </div>
           <Button type="submit" variant="secondary" size="sm">Filter</Button>

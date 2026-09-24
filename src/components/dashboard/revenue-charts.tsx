@@ -24,7 +24,7 @@ import { formatDate } from '@/lib/format';
  * Colours come from the §7 palette rather than Recharts' defaults.
  */
 
-const MIX_COLORS = ['#2563eb', '#8b5cf6', '#10b981', '#f59e0b'];
+const MIX_COLORS = ['#2f5bd8', '#7a63dc', '#1f9d6b', '#e39b1c'];
 
 export function RevenueTrendChart({
   data,
@@ -40,31 +40,31 @@ export function RevenueTrendChart({
       <AreaChart data={[...data]} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="revenue-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2563eb" stopOpacity={0.22} />
-            <stop offset="100%" stopColor="#2563eb" stopOpacity={0.02} />
+            <stop offset="0%" stopColor="#2f5bd8" stopOpacity={0.22} />
+            <stop offset="100%" stopColor="#2f5bd8" stopOpacity={0.02} />
           </linearGradient>
         </defs>
 
         <XAxis
           dataKey="date"
           tickFormatter={(value: string) => formatDate(value).slice(0, 6)}
-          tick={{ fontSize: 11, fill: '#94a3b8' }}
+          tick={{ fontSize: 11, fill: '#5b6b82' }}
           axisLine={false}
           tickLine={false}
           minTickGap={24}
         />
         <YAxis
           tickFormatter={(value: number) => formatINRShort(value as Paise)}
-          tick={{ fontSize: 11, fill: '#94a3b8' }}
+          tick={{ fontSize: 11, fill: '#5b6b82' }}
           axisLine={false}
           tickLine={false}
           width={72}
         />
         <Tooltip
-          cursor={{ stroke: '#cbd5e1', strokeDasharray: '3 3' }}
+          cursor={{ stroke: '#c3cedf', strokeDasharray: '3 3' }}
           contentStyle={{
             borderRadius: 10,
-            border: '1px solid #e8eef7',
+            border: '1px solid #dce4f0',
             boxShadow: '0 8px 24px -12px rgba(15,23,42,0.2)',
             fontSize: 12,
           }}
@@ -76,7 +76,7 @@ export function RevenueTrendChart({
         <Area
           type="monotone"
           dataKey="amount"
-          stroke="#2563eb"
+          stroke="#2f5bd8"
           strokeWidth={2}
           fill="url(#revenue-fill)"
           // Spec §8 asks for restraint; the line draws once and stays put.
@@ -120,7 +120,7 @@ export function RevenueMixChart({
             <Tooltip
               contentStyle={{
                 borderRadius: 10,
-                border: '1px solid #e8eef7',
+                border: '1px solid #dce4f0',
                 fontSize: 12,
               }}
               formatter={(value, name) => [formatINR(Number(value) as Paise), String(name)]}

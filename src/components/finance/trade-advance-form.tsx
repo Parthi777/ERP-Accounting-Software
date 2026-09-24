@@ -140,7 +140,7 @@ export function TradeAdvanceForm({
               id="ta-company"
               value={companyId}
               onChange={(e) => setCompanyId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             >
               <option value="">Choose a company</option>
               {companies.map((c) => (
@@ -157,7 +157,7 @@ export function TradeAdvanceForm({
               id="ta-type"
               value={type}
               onChange={(e) => setType(e.target.value as TradeAdvanceType)}
-              className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+              className="h-9 w-full field px-3 text-sm"
             >
               {TRADE_ADVANCE_TYPES.map((t) => (
                 <option key={t} value={t}>{label(t)}</option>
@@ -188,7 +188,7 @@ export function TradeAdvanceForm({
                 id="ta-bank"
                 value={bankAccountId}
                 onChange={(e) => setBankAccountId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm"
+                className="h-9 w-full field px-3 text-sm"
               >
                 <option value="">Choose an account</option>
                 {bankAccounts.map((b) => (
