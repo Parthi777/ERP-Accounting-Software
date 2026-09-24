@@ -32,18 +32,20 @@ declare
 begin
   select id into v_dealer from public.dealers where code = 'SBM';
   select id into v_cash from public.chart_of_accounts where dealer_id = v_dealer and code = '1100';
-  select id into v_bank from public.chart_of_accounts where dealer_id = v_dealer and code = '1200';
+  -- 2700, not 1200: since 0076 a hand-written line may not touch a cash or bank
+  -- ledger, because it would move the ledger without moving the bank book.
+  select id into v_bank from public.chart_of_accounts where dealer_id = v_dealer and code = '2700';
   select id into v_exp  from public.chart_of_accounts where dealer_id = v_dealer and code = '5800';
 
   select sum(debit) into v_before from public.journal_entry_lines;
 
-  -- ── A bank charge, which is exactly why this exists ─────────────────────
+  -- ── An accrual, which is exactly why this exists ────────────────────────
   select * into r from public.post_manual_journal(
     current_date,
-    'Bank charges for August',
+    'Bank charges for August, debited next month',
     jsonb_build_array(
       jsonb_build_object('account_id', v_exp,  'debit', 250, 'credit', 0, 'narration', 'Monthly charges'),
-      jsonb_build_object('account_id', v_bank, 'debit', 0, 'credit', 250, 'narration', 'HDFC current account')
+      jsonb_build_object('account_id', v_bank, 'debit', 0, 'credit', 250, 'narration', 'Accrued')
     ));
 
   perform app_test.assert_equals(
@@ -77,6 +79,31 @@ begin
         jsonb_build_object('account_id', %L, 'debit', 100, 'credit', 0),
         jsonb_build_object('account_id', %L, 'debit', 0, 'credit', 100)))$q$, v_exp, v_bank),
     'an entry with no narration is refused — it has to be readable a year later'
+  );
+
+  -- ── Cash and bank are not written by hand (0076) ────────────────────────
+  perform app_test.assert_raises(
+    format($q$select public.post_manual_journal(current_date, 'Bank charge by hand',
+      jsonb_build_array(
+        jsonb_build_object('account_id', %L, 'debit', 100, 'credit', 0),
+        jsonb_build_object('account_id', %L, 'debit', 0, 'credit', 100)))$q$,
+      v_exp, (select id from public.chart_of_accounts where dealer_id = v_dealer and code = '1200')),
+    'a manual line on the bank ledger is refused — the bank book would not move'
+  );
+  perform app_test.assert_raises(
+    format($q$select public.post_manual_journal(current_date, 'Cash by hand',
+      jsonb_build_array(
+        jsonb_build_object('account_id', %L, 'debit', 100, 'credit', 0),
+        jsonb_build_object('account_id', %L, 'debit', 0, 'credit', 100)))$q$,
+      v_exp, v_cash),
+    'and so is one on the cash ledger'
+  );
+  perform app_test.assert_raises(
+    format($q$select public.post_manual_journal(current_date + 1, 'Tomorrow',
+      jsonb_build_array(
+        jsonb_build_object('account_id', %L, 'debit', 100, 'credit', 0),
+        jsonb_build_object('account_id', %L, 'debit', 0, 'credit', 100)))$q$, v_exp, v_bank),
+    'a manual entry dated in the future is refused'
   );
 
   -- ── Another dealer's account cannot be posted into ──────────────────────

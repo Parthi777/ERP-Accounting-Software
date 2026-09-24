@@ -22,7 +22,11 @@ import { add, formatINR, fromDb, fromRupees, toDb, toRupees, ZERO, type Paise } 
  */
 
 export type PurchaseStatus = 'DRAFT' | 'POSTED' | 'CANCELLED';
-export type PurchaseLineType = 'VEHICLE' | 'ACCESSORY' | 'SPARE';
+/**
+ * EXPENSE (0078) is everything bought that is not stock — rent, a computer, the
+ * auditor — charged to the expense or fixed-asset account the line names.
+ */
+export type PurchaseLineType = 'VEHICLE' | 'ACCESSORY' | 'SPARE' | 'EXPENSE';
 export type StockSource = 'LOCAL' | 'COMPANY';
 
 export interface PurchaseListRow {
@@ -49,6 +53,11 @@ export interface PurchaseLine {
   readonly source: StockSource | null;
   readonly chassisNo: string | null;
   readonly itemCode: string | null;
+  /** EXPENSE lines: the account charged, as "5600 Rent". */
+  readonly accountLabel: string | null;
+  readonly hsnSac: string | null;
+  /** False when the input tax is a blocked credit and was charged to the expense. */
+  readonly itcEligible: boolean;
   readonly quantity: number;
   readonly unitRate: Paise;
   readonly taxableValue: Paise;
@@ -227,7 +236,7 @@ export async function getPurchaseBill(id: string): Promise<PurchaseBill | null> 
   const { data: rawLines, error: lineError } = await supabase
     .from('purchase_bill_lines')
     .select(
-      'id, line_number, line_type, description, source, quantity, unit_rate, taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount, vehicle_id, item_id',
+      'id, line_number, line_type, description, source, quantity, unit_rate, taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount, vehicle_id, item_id, account_id, hsn_sac, itc_eligible',
     )
     .eq('purchase_bill_id', id)
     .order('line_number');
@@ -240,18 +249,23 @@ export async function getPurchaseBill(id: string): Promise<PurchaseBill | null> 
   // rather than one per line.
   const vehicleIds = (rawLines ?? []).map((l) => l.vehicle_id).filter((v): v is string => !!v);
   const itemIds = (rawLines ?? []).map((l) => l.item_id).filter((v): v is string => !!v);
+  const accountIds = (rawLines ?? []).map((l) => l.account_id).filter((v): v is string => !!v);
 
-  const [vehicles, items] = await Promise.all([
+  const [vehicles, items, accounts] = await Promise.all([
     vehicleIds.length > 0
       ? supabase.from('vehicles').select('id, chassis_no').in('id', vehicleIds)
       : Promise.resolve({ data: [] as { id: string; chassis_no: string }[] }),
     itemIds.length > 0
       ? supabase.from('inventory_items').select('id, item_code').in('id', itemIds)
       : Promise.resolve({ data: [] as { id: string; item_code: string }[] }),
+    accountIds.length > 0
+      ? supabase.from('chart_of_accounts').select('id, code, name').in('id', accountIds)
+      : Promise.resolve({ data: [] as { id: string; code: string; name: string }[] }),
   ]);
 
   const chassisById = new Map((vehicles.data ?? []).map((v) => [v.id, v.chassis_no]));
   const codeById = new Map((items.data ?? []).map((i) => [i.id, i.item_code]));
+  const accountById = new Map((accounts.data ?? []).map((a) => [a.id, `${a.code} ${a.name}`]));
 
   const lines: PurchaseLine[] = (rawLines ?? []).map((line) => ({
     id: line.id,
@@ -261,6 +275,9 @@ export async function getPurchaseBill(id: string): Promise<PurchaseBill | null> 
     source: (line.source as StockSource | null) ?? null,
     chassisNo: line.vehicle_id ? (chassisById.get(line.vehicle_id) ?? null) : null,
     itemCode: line.item_id ? (codeById.get(line.item_id) ?? null) : null,
+    accountLabel: line.account_id ? (accountById.get(line.account_id) ?? null) : null,
+    hsnSac: line.hsn_sac,
+    itcEligible: line.itc_eligible,
     quantity: Number(line.quantity),
     unitRate: fromDb(line.unit_rate),
     taxableValue: fromDb(line.taxable_value),
@@ -326,6 +343,8 @@ export async function getUnbilledVehicles(params: {
 
 export interface PurchasePickers {
   readonly suppliers: readonly { id: string; label: string }[];
+  /** Expense and fixed-asset accounts an EXPENSE line may be charged to. */
+  readonly accounts: readonly { id: string; label: string }[];
   readonly items: readonly {
     id: string;
     label: string;
@@ -338,7 +357,7 @@ export async function getPurchasePickers(): Promise<PurchasePickers> {
   await requirePermission('purchases.create');
   const supabase = await createSupabaseServerClient();
 
-  const [suppliers, items] = await Promise.all([
+  const [suppliers, items, accounts, cashLedgers, bankLedgers, purchaseRules] = await Promise.all([
     supabase
       .from('suppliers')
       .select('id, name, supplier_code')
@@ -351,6 +370,25 @@ export async function getPurchasePickers(): Promise<PurchasePickers> {
       .in('item_type', ['ACCESSORY', 'SPARE'])
       .order('name')
       .limit(1000),
+    supabase
+      .from('chart_of_accounts')
+      .select('id, code, name, account_type')
+      .eq('is_group', false)
+      .eq('status', 'ACTIVE')
+      .in('account_type', ['EXPENSE', 'ASSET'])
+      .order('account_type', { ascending: false })
+      .order('code'),
+    supabase.from('cash_accounts').select('ledger_account_id'),
+    supabase.from('bank_accounts').select('ledger_account_id'),
+    supabase.from('accounting_rules').select('account_id').eq('module', 'INVENTORY').eq('event', 'PURCHASE'),
+  ]);
+
+  // Stock, input tax, the payable and cash/bank each reach a bill another way;
+  // the database refuses them on an expense line (0078), so they are not offered.
+  const excluded = new Set([
+    ...(cashLedgers.data ?? []).map((r) => r.ledger_account_id),
+    ...(bankLedgers.data ?? []).map((r) => r.ledger_account_id),
+    ...(purchaseRules.data ?? []).map((r) => r.account_id),
   ]);
 
   if (suppliers.error) throw new Error(`Failed to load suppliers: ${suppliers.error.message}`);
@@ -361,6 +399,9 @@ export async function getPurchasePickers(): Promise<PurchasePickers> {
       id: s.id,
       label: `${s.supplier_code} · ${s.name}`,
     })),
+    accounts: (accounts.data ?? [])
+      .filter((a) => !excluded.has(a.id))
+      .map((a) => ({ id: a.id, label: `${a.code} · ${a.name}${a.account_type === 'ASSET' ? ' (asset)' : ''}` })),
     items: (items.data ?? []).map((i) => ({
       id: i.id,
       label: `${i.item_code} · ${i.name}`,
@@ -434,6 +475,12 @@ export interface PurchaseLineInput {
   /** ACCESSORY and SPARE lines only. */
   readonly itemId?: string | null;
   readonly source?: StockSource | null;
+  /** EXPENSE lines only: the expense or fixed-asset account charged. */
+  readonly accountId?: string | null;
+  /** EXPENSE lines: the supplier invoice's HSN or SAC, for the input-tax summary. */
+  readonly hsnSac?: string | null;
+  /** EXPENSE lines: false for a blocked credit (s.17(5)); its GST becomes cost. */
+  readonly itcEligible?: boolean;
   readonly description: string;
   readonly quantity: number;
   /** Rupees, per unit, before tax. */
@@ -463,9 +510,19 @@ export async function addPurchaseLine(input: PurchaseLineInput): Promise<Purchas
   if (input.lineType === 'VEHICLE' && !input.vehicleId) {
     return { ok: false, error: 'Choose the chassis this line is for.' };
   }
-  if (input.lineType !== 'VEHICLE' && (!input.itemId || !input.source)) {
+  if ((input.lineType === 'ACCESSORY' || input.lineType === 'SPARE') && (!input.itemId || !input.source)) {
     return { ok: false, error: 'Choose the item and which lot it joins.' };
   }
+  if (input.lineType === 'EXPENSE') {
+    if (!input.accountId) {
+      return { ok: false, error: 'Choose the account this is charged to.' };
+    }
+    if (input.hsnSac && !/^[0-9]{4,8}$/.test(input.hsnSac.trim())) {
+      return { ok: false, error: 'An HSN or SAC is 4 to 8 digits.' };
+    }
+  }
+  const stock = input.lineType === 'ACCESSORY' || input.lineType === 'SPARE';
+  const expense = input.lineType === 'EXPENSE';
   if (input.igstRate > 0 && (input.cgstRate > 0 || input.sgstRate > 0)) {
     return { ok: false, error: 'A line carries CGST and SGST, or IGST — never both.' };
   }
@@ -494,8 +551,11 @@ export async function addPurchaseLine(input: PurchaseLineInput): Promise<Purchas
     line_number: (existing?.[0]?.line_number ?? 0) + 1,
     line_type: input.lineType,
     vehicle_id: input.lineType === 'VEHICLE' ? input.vehicleId! : null,
-    item_id: input.lineType === 'VEHICLE' ? null : input.itemId!,
-    source: input.lineType === 'VEHICLE' ? null : input.source!,
+    item_id: stock ? input.itemId! : null,
+    source: stock ? input.source! : null,
+    account_id: expense ? input.accountId! : null,
+    hsn_sac: expense ? input.hsnSac?.trim() || null : null,
+    itc_eligible: expense ? input.itcEligible !== false : true,
     description: input.description.trim() || 'Purchase line',
     quantity: String(quantity),
     unit_rate: String(input.unitRate),

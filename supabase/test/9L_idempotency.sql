@@ -46,9 +46,9 @@ begin
   select id into v_dealer from public.dealers  where code = 'SBM';
   select id into v_branch from public.branches where dealer_id = v_dealer and code = 'MAIN';
   select id into v_income  from public.chart_of_accounts
-   where dealer_id = v_dealer and account_type = 'INCOME' order by code limit 1;
+   where dealer_id = v_dealer and account_type = 'INCOME' and not is_group order by code limit 1;
   select id into v_expense from public.chart_of_accounts
-   where dealer_id = v_dealer and account_type = 'EXPENSE' order by code limit 1;
+   where dealer_id = v_dealer and account_type = 'EXPENSE' and not is_group order by code limit 1;
   select id into v_bank from public.bank_accounts where dealer_id = v_dealer and status = 'ACTIVE' limit 1;
 
   -- ── Cash: the same key twice is one receipt ─────────────────────────────
@@ -176,7 +176,7 @@ begin
 
   select id into v_branch from public.branches where dealer_id = v_other order by code limit 1;
   select id into v_income from public.chart_of_accounts
-   where dealer_id = v_other and account_type = 'INCOME' order by code limit 1;
+   where dealer_id = v_other and account_type = 'INCOME' and not is_group order by code limit 1;
 
   if v_branch is null or v_income is null
      or not exists (select 1 from public.cash_accounts where branch_id = v_branch) then

@@ -26,11 +26,16 @@ export default async function ProfitAndLossPage({
 
   const rows = await getProfitAndLoss(from, to, branchId);
 
+  // Cost of sales is its own section (0076), so gross profit is read off the
+  // statement rather than worked out by whoever is reading it.
   const income = rows.filter((r) => r.section === 'INCOME');
+  const costOfSales = rows.filter((r) => r.section === 'COST_OF_SALES');
   const expense = rows.filter((r) => r.section === 'EXPENSE');
   const totalIncome = income.reduce<Paise>((s, r) => add(s, r.amount), ZERO);
+  const totalCostOfSales = costOfSales.reduce<Paise>((s, r) => add(s, r.amount), ZERO);
   const totalExpense = expense.reduce<Paise>((s, r) => add(s, r.amount), ZERO);
-  const result = subtract(totalIncome, totalExpense);
+  const grossProfit = subtract(totalIncome, totalCostOfSales);
+  const result = subtract(grossProfit, totalExpense);
 
   return (
     <div>
@@ -54,8 +59,19 @@ export default async function ProfitAndLossPage({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <StatementSection title="Income" rows={income} total={totalIncome} tone="positive" />
-        <StatementSection title="Expenses" rows={expense} total={totalExpense} tone="danger" />
+        <StatementSection title="Cost of sales" rows={costOfSales} total={totalCostOfSales} tone="danger" />
       </div>
+
+      <SolidPanel className="my-4 flex items-center justify-between px-5 py-3">
+        <span className="text-sm font-semibold text-ink-900">
+          {grossProfit >= 0 ? 'Gross profit' : 'Gross loss'}
+        </span>
+        <span className={`numeric text-lg font-semibold ${grossProfit >= 0 ? 'text-positive-700' : 'text-danger-700'}`}>
+          {formatINR(grossProfit)}
+        </span>
+      </SolidPanel>
+
+      <StatementSection title="Expenses" rows={expense} total={totalExpense} tone="danger" />
 
       <SolidPanel className="mt-4 flex items-center justify-between px-5 py-4">
         <span className="text-sm font-semibold text-ink-900">

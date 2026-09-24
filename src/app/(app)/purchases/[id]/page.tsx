@@ -54,7 +54,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       : Promise.resolve([]),
     bill.status === 'DRAFT' && can.edit
       ? getPurchasePickers()
-      : Promise.resolve({ suppliers: [], items: [] }),
+      : Promise.resolve({ suppliers: [], items: [], accounts: [] }),
     bill.status === 'POSTED' && can.return
       ? getReturnableLines(bill.id)
       : Promise.resolve([]),
@@ -107,6 +107,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             bill={bill}
             unbilledVehicles={vehicles}
             items={pickers.items}
+            accounts={pickers.accounts}
             can={can}
           />
 

@@ -74,6 +74,11 @@ function tsType(dataType, udt) {
 function unionsFor(checks) {
   const map = new Map();
   for (const [, def] of checks) {
+    // A compound check (`a = 'X' AND b IS NOT NULL OR a IN (...) AND ...`) says
+    // what shape a row takes, not what a column may hold; reading its first IN
+    // as the column's domain narrows the type wrongly. Only plain `x IN (...)`
+    // and `x IS NULL OR x IN (...)` checks describe a column.
+    if (/ AND /.test(def)) continue;
     // Postgres normalises `in (...)` to `= ANY (ARRAY[...])`, and renders the
     // column with or without a ::text cast depending on its declared type.
     const match = /\(\(?(\w+)\)?(?:::text)? = ANY \(\(?ARRAY\[(.+?)\]/.exec(def);
@@ -278,6 +283,9 @@ const RPC = new Set([
   'create_counter_invoice',
   // E-invoice transmission — spec §40.
   'einvoice_payload', 'record_einvoice_request',
+  // Ledger integrity — the chart, the lock date, contra, BRS and tie-out (0076, 0077).
+  'create_account', 'set_account_status', 'set_books_lock', 'record_contra',
+  'bank_reconciliation_statement', 'bank_reconciliation_items', 'control_account_tieout',
 ]);
 
 function argsType(args) {

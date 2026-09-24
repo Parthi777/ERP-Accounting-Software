@@ -14,6 +14,7 @@ export type {
   JournalLine,
   TrialBalanceRow,
   StatementRow,
+  TieoutRow,
 } from '@/server/repositories/accounting-repository';
 
 /**
@@ -73,4 +74,14 @@ export async function getProfitAndLoss(from: string, to: string, branchId: strin
 export async function getBalanceSheet(asOn: string, branchId: string | null) {
   const context = await requirePermission('accounting.reports.view');
   return repository.getBalanceSheet(asOn, resolveBranch(context, branchId));
+}
+
+/**
+ * Every control account against its sub-ledger (0077). Dealer-wide by nature:
+ * a bank book or a supplier balance is not a branch's, so there is no branch
+ * filter to honour here.
+ */
+export async function getControlTieout(asOn: string) {
+  await requirePermission('accounting.reports.view');
+  return repository.getControlTieout(asOn);
 }

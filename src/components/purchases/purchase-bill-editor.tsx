@@ -38,12 +38,15 @@ export function PurchaseBillEditor({
   bill,
   unbilledVehicles,
   items,
+  accounts,
   gstRates,
   can,
 }: {
   readonly bill: PurchaseBill;
   readonly unbilledVehicles: readonly UnbilledVehicle[];
   readonly items: readonly { id: string; label: string; type: PurchaseLineType; standardCost: number }[];
+  /** Expense and fixed-asset accounts an EXPENSE line may be charged to (0078). */
+  readonly accounts: readonly { id: string; label: string }[];
   /** From the dealer's tax master (spec §16) — never a list written in here. */
   readonly gstRates: readonly number[];
   readonly can: { readonly edit: boolean; readonly post: boolean; readonly cancel: boolean };
@@ -92,6 +95,7 @@ export function PurchaseBillEditor({
           billId={bill.id}
           unbilledVehicles={unbilledVehicles}
           items={items}
+          accounts={accounts}
           gstRates={gstRates}
           pending={pending}
           onAdd={(input) => run(() => addPurchaseLineAction(input))}
@@ -163,6 +167,7 @@ function AddLine({
   billId,
   unbilledVehicles,
   items,
+  accounts,
   gstRates,
   pending,
   onAdd,
@@ -170,6 +175,7 @@ function AddLine({
   readonly billId: string;
   readonly unbilledVehicles: readonly UnbilledVehicle[];
   readonly items: readonly { id: string; label: string; type: PurchaseLineType; standardCost: number }[];
+  readonly accounts: readonly { id: string; label: string }[];
   readonly gstRates: readonly number[];
   readonly pending: boolean;
   readonly onAdd: (input: {
@@ -178,6 +184,9 @@ function AddLine({
     vehicleId?: string | null;
     itemId?: string | null;
     source?: StockSource | null;
+    accountId?: string | null;
+    hsnSac?: string | null;
+    itcEligible?: boolean;
     description: string;
     quantity: number;
     unitRate: number;
@@ -194,8 +203,13 @@ function AddLine({
   const [rate, setRate] = React.useState('');
   const [gst, setGst] = React.useState(28);
   const [interState, setInterState] = React.useState(false);
+  const [accountId, setAccountId] = React.useState('');
+  const [description, setDescription] = React.useState('');
+  const [hsnSac, setHsnSac] = React.useState('');
+  const [itcEligible, setItcEligible] = React.useState(true);
 
   const isVehicle = lineType === 'VEHICLE';
+  const isExpense = lineType === 'EXPENSE';
   const vehicle = unbilledVehicles.find((v) => v.vehicleId === vehicleId);
   const item = items.find((i) => i.id === itemId);
   const pickable = items.filter((i) => i.type === lineType);
@@ -210,20 +224,29 @@ function AddLine({
     setItemId('');
     setQuantity('1');
     setRate('');
+    setAccountId('');
+    setDescription('');
+    setHsnSac('');
+    setItcEligible(true);
   };
 
   const submit = () => {
-    const description = isVehicle
+    const text = isVehicle
       ? `${vehicle?.modelLabel ?? 'Vehicle'} — ${vehicle?.chassisNo ?? ''}`.trim()
-      : (item?.label ?? 'Item');
+      : isExpense
+        ? description.trim() || (accounts.find((a) => a.id === accountId)?.label ?? 'Expense')
+        : (item?.label ?? 'Item');
 
     onAdd({
       billId,
       lineType,
       vehicleId: isVehicle ? vehicleId : null,
-      itemId: isVehicle ? null : itemId,
-      source: isVehicle ? null : source,
-      description,
+      itemId: isVehicle || isExpense ? null : itemId,
+      source: isVehicle || isExpense ? null : source,
+      accountId: isExpense ? accountId : null,
+      hsnSac: isExpense ? hsnSac.trim() || null : null,
+      itcEligible: isExpense ? itcEligible : true,
+      description: text,
       quantity: qty,
       unitRate: rateValue,
       // Intra-state splits in half; inter-state is one IGST figure (spec §16).
@@ -234,14 +257,18 @@ function AddLine({
     reset();
   };
 
-  const ready = isVehicle ? Boolean(vehicleId) && rateValue > 0 : Boolean(itemId) && qty > 0 && rateValue > 0;
+  const ready = isVehicle
+    ? Boolean(vehicleId) && rateValue > 0
+    : isExpense
+      ? Boolean(accountId) && qty > 0 && rateValue > 0
+      : Boolean(itemId) && qty > 0 && rateValue > 0;
 
   return (
     <Panel className="p-4">
       <h2 className="mb-3 text-sm font-semibold text-ink-900">Add a line</h2>
 
       <div className="mb-3 flex flex-wrap gap-1.5">
-        {(['VEHICLE', 'ACCESSORY', 'SPARE'] as const).map((t) => (
+        {(['VEHICLE', 'ACCESSORY', 'SPARE', 'EXPENSE'] as const).map((t) => (
           <Button
             key={t}
             type="button"
@@ -249,7 +276,7 @@ function AddLine({
             variant={lineType === t ? 'primary' : 'secondary'}
             onClick={() => { setLineType(t); reset(); setGst(t === 'VEHICLE' ? 28 : 18); }}
           >
-            {t === 'VEHICLE' ? 'Vehicle' : t === 'ACCESSORY' ? 'Accessory' : 'Spare'}
+            {t === 'VEHICLE' ? 'Vehicle' : t === 'ACCESSORY' ? 'Accessory' : t === 'SPARE' ? 'Spare' : 'Expense / asset'}
           </Button>
         ))}
       </div>
@@ -277,6 +304,31 @@ function AddLine({
                 : `${unbilledVehicles.length} chassis in stock and not yet billed.`}
             </p>
           </div>
+        ) : isExpense ? (
+          <>
+            <div className="sm:col-span-2">
+              <Label htmlFor="line-account" className="mb-1.5 block">Charged to</Label>
+              <select id="line-account" value={accountId} onChange={(e) => setAccountId(e.target.value)}
+                className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                <option value="">Choose an expense or fixed-asset account</option>
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-ink-400">
+                Rent, power, a computer, the auditor — anything bought that is not stock.
+                Capital items go to an asset account and are depreciated later.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="line-desc" className="mb-1.5 block">Description</Label>
+              <Input id="line-desc" value={description} onChange={(e) => setDescription(e.target.value)}
+                placeholder="Showroom rent, September" />
+            </div>
+            <div>
+              <Label htmlFor="line-hsn" className="mb-1.5 block">HSN / SAC</Label>
+              <Input id="line-hsn" className="font-mono" inputMode="numeric" maxLength={8}
+                value={hsnSac} onChange={(e) => setHsnSac(e.target.value)} placeholder="997212" />
+            </div>
+          </>
         ) : (
           <>
             <div className="sm:col-span-2">
@@ -331,6 +383,13 @@ function AddLine({
             <input type="checkbox" checked={interState} onChange={(e) => setInterState(e.target.checked)} />
             Inter-state (IGST)
           </label>
+          {isExpense && (
+            <label className="mt-1 flex items-center gap-1.5 text-xs text-ink-500"
+              title="Uncheck for a blocked credit under s.17(5) — food, personal use, own-use vehicles. The GST is then charged to the expense and not claimed.">
+              <input type="checkbox" checked={itcEligible} onChange={(e) => setItcEligible(e.target.checked)} />
+              Input tax claimable
+            </label>
+          )}
         </div>
       </div>
 
@@ -360,10 +419,11 @@ function Lines({
   readonly pending: boolean;
   readonly onRemove: (lineId: string) => void;
 }) {
-  const tone: Record<string, 'info' | 'positive' | 'accent'> = {
+  const tone: Record<string, 'info' | 'positive' | 'accent' | 'warning'> = {
     VEHICLE: 'info',
     ACCESSORY: 'positive',
     SPARE: 'accent',
+    EXPENSE: 'warning',
   };
 
   return (
@@ -399,10 +459,12 @@ function Lines({
                         <Badge variant={tone[line.lineType] ?? 'neutral'}>{line.lineType}</Badge>
                         <span className="text-ink-800">{line.description}</span>
                         {line.source && <Badge variant="neutral">{line.source}</Badge>}
+                        {!line.itcEligible && <Badge variant="warning">ITC blocked</Badge>}
                       </span>
-                      {(line.chassisNo || line.itemCode) && (
+                      {(line.chassisNo || line.itemCode || line.accountLabel) && (
                         <span className="mt-0.5 block font-mono text-[11px] text-ink-400">
-                          {line.chassisNo ?? line.itemCode}
+                          {line.chassisNo ?? line.itemCode ?? line.accountLabel}
+                          {line.hsnSac && ` · ${line.hsnSac}`}
                         </span>
                       )}
                     </td>

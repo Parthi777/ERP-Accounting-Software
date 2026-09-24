@@ -129,3 +129,19 @@ export async function previewStatementAction(csv: string): Promise<StatementPars
   await requirePermission('bank.statement.import');
   return parseStatement(csv);
 }
+
+export async function recordContraAction(
+  input: service.ContraInput,
+): Promise<service.BankResult & { journalId?: string }> {
+  try {
+    const result = await service.recordContra(input);
+    if (result.ok) {
+      refreshBank();
+      revalidatePath('/cash-book');
+      revalidatePath('/accounting/journals');
+    }
+    return result;
+  } catch (error) {
+    return { ok: false, error: toAppError(error).userMessage };
+  }
+}

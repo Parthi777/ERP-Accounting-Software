@@ -66,18 +66,20 @@ export const accountingReports: AnyExportReport[] = [
       const { from, to } = monthParams(params);
       const rows = await getProfitAndLoss(from, to, branchParam(context, params));
 
-      const income = rows
-        .filter((row) => row.section === 'INCOME')
-        .reduce((sum, row) => sum + row.amount, 0) as Paise;
-      const expense = rows
-        .filter((row) => row.section === 'EXPENSE')
-        .reduce((sum, row) => sum + row.amount, 0) as Paise;
+      const total = (section: string) =>
+        rows.filter((row) => row.section === section).reduce((sum, row) => sum + row.amount, 0) as Paise;
+      const income = total('INCOME');
+      const costOfSales = total('COST_OF_SALES');
+      const expense = total('EXPENSE');
+      const gross = subtract(income, costOfSales);
 
       return {
         rows,
         facts: [periodFact(from, to)],
         notes: [
-          `Income ${money(income)} less expenses ${money(expense)} = ${money(subtract(income, expense))} for the period.`,
+          `Income ${money(income)} less cost of sales ${money(costOfSales)} = gross profit ${money(gross)}.`,
+          `Gross profit less expenses ${money(expense)} = ${money(subtract(gross, expense))} for the period.`,
+          'The total row below sums every section and is therefore not meaningful on its own.',
         ],
       };
     },
@@ -85,7 +87,7 @@ export const accountingReports: AnyExportReport[] = [
       { key: 'section', header: 'Section', width: 14, value: (row) => row.section },
       { key: 'code', header: 'Code', width: 10, value: (row) => row.code },
       { key: 'name', header: 'Account', width: 36, value: (row) => row.name },
-      { key: 'amount', header: 'Amount', type: 'money', total: true, value: (row) => row.amount },
+      { key: 'amount', header: 'Amount', type: 'money', value: (row) => row.amount },
     ],
   }),
 

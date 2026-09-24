@@ -83,7 +83,10 @@ begin
     current_date, 'Ledger visibility check',
     jsonb_build_array(
       jsonb_build_object('account_id', v_exp,  'debit', 111, 'credit', 0),
-      jsonb_build_object('account_id', v_cash, 'debit', 0, 'credit', 111)
+      -- 2700, not cash: a hand-written line may not move the cash ledger (0076).
+      jsonb_build_object('account_id',
+        (select id from public.chart_of_accounts where dealer_id = v_dealer and code = '2700'),
+        'debit', 0, 'credit', 111)
     ));
 
   select count(*) into v_rows from public.account_ledger(v_exp, current_date, current_date);

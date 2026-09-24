@@ -29,6 +29,18 @@ type AccessoryVehicleMappingsRow = {
 
 type AccessoryVehicleMappingsRowInsert = Insertable<AccessoryVehicleMappingsRow, 'dealer_id' | 'model_id' | 'item_id'>;
 
+type AccountingLocksRow = {
+  id: string;
+  seq: number;
+  dealer_id: string;
+  locked_through: string | null;
+  reason: string;
+  created_at: string;
+  created_by: string | null;
+};
+
+type AccountingLocksRowInsert = Insertable<AccountingLocksRow, 'dealer_id' | 'reason'>;
+
 type AccountingPeriodsRow = {
   id: string;
   dealer_id: string;
@@ -70,7 +82,7 @@ type AttendanceDaysRow = {
   branch_id: string;
   employee_id: string;
   attendance_date: string;
-  status: 'PRESENT' | 'HALF_DAY';
+  status: 'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'LEAVE' | 'WEEK_OFF' | 'HOLIDAY';
   first_in: string | null;
   last_out: string | null;
   worked_minutes: number;
@@ -172,6 +184,13 @@ type BankReconciliationsRow = {
   created_at: string;
   updated_at: string;
   created_by: string | null;
+  bank_only_credits: string | null;
+  bank_only_debits: string | null;
+  adjusted_book_balance: string | null;
+  unpresented_payments: string | null;
+  deposits_in_transit: string | null;
+  expected_statement_balance: string | null;
+  unexplained_difference: string | null;
 };
 
 type BankReconciliationsRowInsert = Insertable<BankReconciliationsRow, 'dealer_id' | 'bank_account_id' | 'reconciliation_number' | 'from_date' | 'to_date'>;
@@ -370,7 +389,7 @@ type ChartOfAccountsRow = {
   dealer_id: string;
   code: string;
   name: string;
-  account_type: 'ASSET' | 'EXPENSE';
+  account_type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
   account_subtype: string | null;
   parent_id: string | null;
   normal_balance: 'DEBIT' | 'CREDIT';
@@ -955,7 +974,7 @@ type PurchaseBillLinesRow = {
   purchase_bill_id: string;
   dealer_id: string;
   line_number: number;
-  line_type: 'VEHICLE' | 'ACCESSORY' | 'SPARE';
+  line_type: 'VEHICLE' | 'ACCESSORY' | 'SPARE' | 'EXPENSE';
   vehicle_id: string | null;
   item_id: string | null;
   source: 'LOCAL' | 'COMPANY' | null;
@@ -971,6 +990,9 @@ type PurchaseBillLinesRow = {
   igst_amount: string;
   total_amount: string;
   created_at: string;
+  account_id: string | null;
+  hsn_sac: string | null;
+  itc_eligible: boolean;
 };
 
 type PurchaseBillLinesRowInsert = Insertable<PurchaseBillLinesRow, 'purchase_bill_id' | 'dealer_id' | 'line_number' | 'line_type' | 'description' | 'quantity' | 'unit_rate' | 'taxable_value' | 'total_amount'>;
@@ -1569,6 +1591,20 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'vehicle_variants';
             referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      accounting_locks: {
+        Row: AccountingLocksRow;
+        Insert: AccountingLocksRowInsert;
+        Update: Partial<AccountingLocksRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'accounting_locks_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
           },
         ];
       };
@@ -2646,6 +2682,13 @@ export interface Database {
         Update: Partial<PurchaseBillLinesRow>;
         Relationships: [
           {
+            foreignKeyName: 'pbl_account_tenant_fkey';
+            columns: ['account_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'chart_of_accounts';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
             foreignKeyName: 'pbl_bill_tenant_fkey';
             columns: ['purchase_bill_id', 'dealer_id'];
             isOneToOne: false;
@@ -3396,6 +3439,14 @@ export interface Database {
         Args: { p_bank_account_id: string; p_from_date?: string | null; p_to_date?: string | null };
         Returns: { id: number; transaction_date: string; particular: string; reference_number: string; utr: string; receipt: string; payment: string; running_balance: string; reconciled: boolean; journal_entry_id: string }[];
       };
+      bank_reconciliation_items: {
+        Args: { p_bank_account_id: string; p_as_on: string };
+        Returns: { kind: string; item_date: string; particular: string; reference: string; amount: string; source: string; source_id: number; match_status: string }[];
+      };
+      bank_reconciliation_statement: {
+        Args: { p_bank_account_id: string; p_as_on: string; p_statement_closing?: number | null };
+        Returns: { book_balance: string; bank_only_credits: string; bank_only_debits: string; adjusted_book_balance: string; unpresented_payments: string; deposits_in_transit: string; expected_statement_balance: string; statement_closing_balance: string; unexplained_difference: string }[];
+      };
       bank_unreconciled_counts: {
         Args: Record<string, never>;
         Returns: { bank_account_id: string; unreconciled: number }[];
@@ -3431,6 +3482,14 @@ export interface Database {
       consume_fitting_stock: {
         Args: { p_sale_id: string; p_item_id: string; p_quantity: number; p_unit_rate: number };
         Returns: undefined;
+      };
+      control_account_tieout: {
+        Args: { p_as_on?: string | null };
+        Returns: { control: string; account_code: string; account_name: string; ledger_balance: string; subledger_balance: string; difference: string; explanation: string }[];
+      };
+      create_account: {
+        Args: { p_code: string; p_name: string; p_type: string; p_parent_id?: string | null; p_is_group?: boolean | null; p_subtype?: string | null };
+        Returns: string;
       };
       create_bank_account: {
         Args: { p_name: string; p_bank_name: string; p_account_number: string; p_ifsc?: string | null; p_account_type?: string | null; p_branch_id?: string | null; p_opening_balance?: number | null; p_as_on?: string | null; p_idempotency_key?: string | null };
@@ -3676,6 +3735,10 @@ export interface Database {
         Args: { p_branch_id: string; p_direction: string; p_amount: number; p_particular: string; p_account_id: string; p_customer_id?: string | null; p_reference?: string | null; p_date?: string | null; p_supplier_id?: string | null; p_idempotency_key?: string | null };
         Returns: { transaction_id: number; journal_entry_id: string; balance_after: string }[];
       };
+      record_contra: {
+        Args: { p_from_kind: string; p_from_id: string; p_to_kind: string; p_to_id: string; p_amount: number; p_date?: string | null; p_reference?: string | null; p_narration?: string | null; p_idempotency_key?: string | null };
+        Returns: { journal_entry_id: string; entry_number: string }[];
+      };
       record_einvoice_request: {
         Args: { p_einvoice_id: string; p_payload: Json };
         Returns: undefined;
@@ -3751,6 +3814,14 @@ export interface Database {
       service_invoice_totals: {
         Args: { p_status?: string | null; p_branch_id?: string | null };
         Returns: { invoices: number; total_amount: string; paid_amount: string; balance: string }[];
+      };
+      set_account_status: {
+        Args: { p_account_id: string; p_status: string };
+        Returns: undefined;
+      };
+      set_books_lock: {
+        Args: { p_locked_through: string; p_reason: string };
+        Returns: { locked_through: string; previous: string }[];
       };
       start_attendance_sync: {
         Args: { p_from: string; p_to: string };

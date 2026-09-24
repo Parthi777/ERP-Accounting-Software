@@ -457,6 +457,9 @@ begin
       ('1900', 'Input CGST',                'ASSET',     'DEBIT',  false, '1000', false),
       ('1910', 'Input SGST',                'ASSET',     'DEBIT',  false, '1000', false),
       ('1920', 'Input IGST',                'ASSET',     'DEBIT',  false, '1000', false),
+      ('1950', 'Fixed Assets',              'ASSET',     'DEBIT',  true,  '1000', false),
+      ('1951', 'Furniture, Fixtures & Computers', 'ASSET', 'DEBIT', false, '1950', false),
+      ('1959', 'Accumulated Depreciation',  'ASSET',     'DEBIT',  false, '1950', false),
 
       ('2000', 'Liabilities',               'LIABILITY', 'CREDIT', true,  null,   false),
       ('2100', 'Customer Advances',         'LIABILITY', 'CREDIT', false, '2000', false),
@@ -466,11 +469,13 @@ begin
       ('2500', 'Output IGST',               'LIABILITY', 'CREDIT', false, '2000', false),
       ('2600', 'Finance Company Payable',   'LIABILITY', 'CREDIT', false, '2000', false),
       ('2700', 'Other Payables',            'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2800', 'Loans',                     'LIABILITY', 'CREDIT', false, '2000', false),
 
       ('3000', 'Equity',                    'EQUITY',    'CREDIT', true,  null,   false),
       ('3100', 'Share Capital',             'EQUITY',    'CREDIT', false, '3000', false),
       ('3200', 'Retained Earnings',         'EQUITY',    'CREDIT', false, '3000', false),
       ('3300', 'Opening Balance Equity',  'EQUITY',    'CREDIT', false, '3000', false),
+      ('3400', 'Drawings',                  'EQUITY',    'CREDIT', false, '3000', false),
 
       ('4000', 'Income',                    'INCOME',    'CREDIT', true,  null,   false),
       ('4100', 'Vehicle Sales',             'INCOME',    'CREDIT', false, '4000', true),
@@ -491,7 +496,10 @@ begin
       ('5600', 'Rent',                      'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5700', 'Utilities',                 'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5800', 'Bank Charges',              'EXPENSE',   'DEBIT',  false, '5000', true),
-      ('5900', 'Other Expenses',            'EXPENSE',   'DEBIT',  false, '5000', true)
+      ('5900', 'Other Expenses',            'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5950', 'Depreciation',              'EXPENSE',   'DEBIT',  false, '5000', false),
+      ('5960', 'Interest Expense',          'EXPENSE',   'DEBIT',  false, '5000', false),
+      ('5970', 'Stock Adjustments',         'EXPENSE',   'DEBIT',  false, '5000', false)
     ) as t(code, name, account_type, normal_balance, is_group, parent_code, branch_scoped)
     order by code
   loop
@@ -515,6 +523,10 @@ begin
   -- this dealer and its chart of accounts do not exist yet, so there is nothing
   -- for that loop to map. (The loop still serves a database that is being
   -- upgraded, where the dealer is already present.)
+  -- The COST_OF_SALES marking on 5100–5400 (0076); the accounts themselves are
+  -- in the list above, so this adds none.
+  perform app.seed_standard_accounts(v_dealer_id);
+
   perform app.seed_default_accounting_rules(v_dealer_id);
   perform app.seed_finance_accounting_rules(v_dealer_id);
   perform app.seed_cogs_accounting_rules(v_dealer_id);

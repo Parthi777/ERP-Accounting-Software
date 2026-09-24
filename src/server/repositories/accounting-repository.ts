@@ -246,3 +246,33 @@ export async function getBalanceSheet(asOn: string, branchId: string | null): Pr
     amount: fromDb(row.amount),
   }));
 }
+
+export interface TieoutRow {
+  readonly control: string;
+  readonly code: string;
+  readonly name: string;
+  /** Debit-positive: a payable shows negative. */
+  readonly ledger: Paise;
+  readonly subledger: Paise;
+  readonly difference: Paise;
+  readonly explanation: string | null;
+}
+
+export async function getControlTieout(asOn: string): Promise<TieoutRow[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc('control_account_tieout', { p_as_on: asOn });
+
+  if (error) {
+    throw new Error(`Failed to load the tie-out: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    control: row.control,
+    code: row.account_code,
+    name: row.account_name,
+    ledger: fromDb(row.ledger_balance),
+    subledger: fromDb(row.subledger_balance),
+    difference: fromDb(row.difference),
+    explanation: row.explanation,
+  }));
+}

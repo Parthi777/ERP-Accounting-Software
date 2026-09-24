@@ -224,6 +224,7 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Trial Balance', href: '/accounting/trial-balance', permission: 'accounting.reports.view', status: 'ready' },
       { label: 'Profit & Loss', href: '/accounting/profit-and-loss', permission: 'accounting.reports.view', status: 'ready' },
       { label: 'Balance Sheet', href: '/accounting/balance-sheet', permission: 'accounting.reports.view', status: 'ready' },
+      { label: 'Control Tie-out', href: '/accounting/tie-out', permission: 'accounting.reports.view', status: 'ready' },
     ],
   },
   {
@@ -250,6 +251,7 @@ export const NAVIGATION: readonly NavSection[] = [
     items: [
       { label: 'Bank Accounts', href: '/bank', permission: 'bank.accounts.view', status: 'ready', phase: 5 },
       { label: 'Bank Book', href: '/bank/book', permission: 'bank.book.view', status: 'ready', phase: 5 },
+      { label: 'Contra', href: '/bank/contra', permission: 'bank.book.record', status: 'ready', phase: 5 },
       { label: 'Statement Import', href: '/bank/import', permission: 'bank.statement.import', status: 'ready', phase: 7 },
       { label: 'Reconciliation', href: '/bank/reconciliation', permission: 'bank.reconcile', status: 'ready', phase: 7 },
     ],

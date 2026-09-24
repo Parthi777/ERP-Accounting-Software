@@ -181,19 +181,29 @@ export async function getPostableAccounts(): Promise<
   await requirePermission('accounting.journals.view');
   const supabase = await createSupabaseServerClient();
 
-  const { data, error } = await supabase
-    .from('chart_of_accounts')
-    .select('id, code, name, account_type, is_group, status')
-    // A group account is a heading, not somewhere a balance can sit.
-    .eq('is_group', false)
-    .eq('status', 'ACTIVE')
-    .order('code');
+  const [{ data, error }, { data: cashLedgers }, { data: bankLedgers }] = await Promise.all([
+    supabase
+      .from('chart_of_accounts')
+      .select('id, code, name, account_type, is_group, status')
+      // A group account is a heading, not somewhere a balance can sit.
+      .eq('is_group', false)
+      .eq('status', 'ACTIVE')
+      .order('code'),
+    supabase.from('cash_accounts').select('ledger_account_id'),
+    supabase.from('bank_accounts').select('ledger_account_id'),
+  ]);
 
   if (error) {
     throw new Error(`Failed to load the chart of accounts: ${error.message}`);
   }
 
-  return (data ?? []).map((a) => ({
+  // Cash and bank are written through Bank/Cash entry and Contra, which move
+  // the book with the ledger. A hand-written line would move only the ledger.
+  const moneyLedgers = new Set(
+    [...(cashLedgers ?? []), ...(bankLedgers ?? [])].map((c) => c.ledger_account_id),
+  );
+
+  return (data ?? []).filter((a) => !moneyLedgers.has(a.id)).map((a) => ({
     id: a.id,
     code: a.code,
     name: a.name,
@@ -202,7 +212,16 @@ export async function getPostableAccounts(): Promise<
 }
 
 function describeJournalError(message: string): string {
-  if (message.includes('must balance') || message.includes('debit') && message.includes('credit')) {
+  // The database names the line and the account for these, which is already
+  // the message an operator needs; rewording it would lose the line number.
+  if (
+    message.startsWith('Journal line') ||
+    message.startsWith('The books are locked') ||
+    message.startsWith('A journal entry cannot be dated in the future')
+  ) {
+    return message;
+  }
+  if (message.includes('does not balance') || message.includes('must balance')) {
     return 'The entry does not balance. Total debits must equal total credits (spec §22).';
   }
   if (message.includes('does not belong to this dealer')) {

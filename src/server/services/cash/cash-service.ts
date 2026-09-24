@@ -161,8 +161,11 @@ export async function getCashDay(params: {
 }
 
 /**
- * Contra accounts for the picker. Cash accounts are excluded — a receipt from
- * cash into cash is not a transaction, and offering it invites the mistake.
+ * Counter accounts for the cash and bank entry pickers. Cash and bank ledgers
+ * are excluded: money moving between two of the dealer's own accounts is a
+ * Contra voucher (Bank → Contra), which writes both books. As a receipt or
+ * payment it would move one book and leave the other disagreeing with the
+ * ledger — and since 0076 the database refuses it anyway.
  */
 export async function getContraAccounts(direction: 'RECEIPT' | 'PAYMENT'): Promise<ContraAccount[]> {
   const context = await requirePermission('cashbook.view');
@@ -175,12 +178,14 @@ export async function getContraAccounts(direction: 'RECEIPT' | 'PAYMENT'): Promi
     return [];
   }
 
-  const { data: cashLedgers } = await supabase
-    .from('cash_accounts')
-    .select('ledger_account_id')
-    .eq('dealer_id', context.dealerId);
+  const [{ data: cashLedgers }, { data: bankLedgers }] = await Promise.all([
+    supabase.from('cash_accounts').select('ledger_account_id').eq('dealer_id', context.dealerId),
+    supabase.from('bank_accounts').select('ledger_account_id').eq('dealer_id', context.dealerId),
+  ]);
 
-  const excluded = new Set((cashLedgers ?? []).map((c) => c.ledger_account_id));
+  const excluded = new Set(
+    [...(cashLedgers ?? []), ...(bankLedgers ?? [])].map((c) => c.ledger_account_id),
+  );
 
   const { data, error } = await supabase
     .from('chart_of_accounts')

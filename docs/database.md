@@ -69,6 +69,10 @@ Forward-only, applied in numerical order. Each file opens with its purpose and r
 | `0056_dealer_provisioning.sql` | `provision_dealer()`, `dealer_readiness()`, `purge_dealer()` — onboarding a tenant in one transaction |
 | `0057_purchase_returns.sql` | `purchase_returns` — debit notes: part of a bill goes back at the cost it came in at, its input GST is reversed and the payable falls; `vehicles.status` gains `RETURNED` |
 | `0058_gst_input_tax.sql` | `gst_input_summary()` — input tax credit by HSN, purchases less debit notes; the counterpart to `gst_summary()`, which reports only outward supplies |
+| `0076_ledger_integrity.sql` | `post_journal` validates every line (leaf, active, own-dealer account; one-sided non-negative amount) and refuses hand-written cash/bank lines; `accounting_locks` lock date; chart-of-accounts guard, `create_account()`, `set_account_status()`; fixed-asset, depreciation, loan, drawings and stock-adjustment accounts; cost of sales on the P&L |
+| `0077_contra_and_reconciliation.sql` | `record_contra()` (cash ↔ bank, bank ↔ bank, both books); `bank_reconciliation_statement()` / `_items()` with timing differences; `control_account_tieout()` |
+| `0078_expense_purchase_lines.sql` | `EXPENSE` purchase-bill lines charged to an expense or fixed-asset account, with HSN/SAC and blocked-ITC switch; their ITC reaches `gst_input_summary()` |
+| `0079_stock_adjustment_posting.sql` | Stock adjustments post to 5970; `app.lock_stock_lot()` so adjustments and transfers work under RLS |
 
 No extensions are required. `gen_random_uuid()` has been core since PostgreSQL 13, and
 case-insensitive email uses a `lower()` unique index rather than `citext` — which keeps the
@@ -177,6 +181,22 @@ correction — which is the point.
 
 Lines are one-sided (`jel_one_sided_check`): a line is a debit or a credit, never both and never
 neither.
+
+**Every line names a postable account (0076).** `app.post_journal` refuses, before writing anything,
+a line on a group heading, an inactive account or another dealer's account, and a negative,
+two-sided or non-numeric amount. A trigger on `chart_of_accounts` refuses the changes that would
+strand posted lines: changing a used account's type, making it a heading, deactivating it while it
+carries a balance, or deleting it. `account_balances()` includes every account with posted lines, so
+no report can drop posted money.
+
+**Cash and bank move with their books.** Every bank account posts to 1200 and every cash account to
+1100, and the bank book and cash book are separate tables. So a manual journal may not touch either,
+and a cash/bank entry may not name the other as its counter account; money between the dealer's own
+accounts is a contra (`record_contra()`), which writes both books. `control_account_tieout()` compares
+every control account — party, cash, bank, stock — with its sub-ledger.
+
+**The lock date.** `accounting_locks` is an append-only history; nothing dated on or before the latest
+`locked_through` posts, reversals included. Moving it needs `accounting.periods.manage` and a reason.
 
 ## Document numbering
 

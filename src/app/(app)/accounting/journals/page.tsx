@@ -9,6 +9,8 @@ import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ExportButtons } from '@/components/export/export-buttons';
+import { BooksLockPanel } from '@/components/accounting/books-lock-panel';
+import { getBooksLock } from '@/server/services/accounting/chart-service';
 import { formatINR } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 import { rangeInYear } from '@/lib/period';
@@ -93,7 +95,10 @@ export default async function JournalsPage({
     ? (params.status as JournalStatus)
     : null;
 
-  const rows = await getJournals({ from, to, branchId, module: moduleFilter, status: statusFilter });
+  const [rows, lock] = await Promise.all([
+    getJournals({ from, to, branchId, module: moduleFilter, status: statusFilter }),
+    getBooksLock(),
+  ]);
 
   return (
     <div>
@@ -111,6 +116,11 @@ export default async function JournalsPage({
             )}
           </div>
         }
+      />
+
+      <BooksLockPanel
+        lockedThrough={lock.lockedThrough}
+        canManage={context.permissions.has('accounting.periods.manage')}
       />
 
       <Panel className="mb-4 p-3">

@@ -6,6 +6,8 @@ import { DataTable, PageHeader, type Column } from '@/components/data-table/data
 import { Badge } from '@/components/ui/badge';
 import { ExportButtons } from '@/components/export/export-buttons';
 import { cn } from '@/lib/utils';
+import { requireTenantContext } from '@/server/auth/tenant-context';
+import { AccountForm, AccountStatusToggle } from '@/components/accounting/account-form';
 
 export const metadata: Metadata = { title: 'Chart of Accounts' };
 export const dynamic = 'force-dynamic';
@@ -69,12 +71,30 @@ const columns: Column<ChartAccount>[] = [
   {
     key: 'system',
     header: '',
-    render: (row) => (row.isSystem ? <Badge variant="neutral">System</Badge> : null),
+    render: (row) => (
+      <span className="flex items-center gap-1">
+        {row.isSystem && <Badge variant="neutral">System</Badge>}
+        {row.status !== 'ACTIVE' && <Badge variant="warning">Inactive</Badge>}
+      </span>
+    ),
   },
 ];
 
+// Only people who may change the chart see the switch; the database refuses
+// the rest regardless (0076), including deactivating an account in use.
+const statusColumn: Column<ChartAccount> = {
+  key: 'manage',
+  header: '',
+  render: (row) =>
+    row.isGroup ? null : <AccountStatusToggle accountId={row.id} status={row.status} />,
+};
+
 export default async function ChartOfAccountsPage() {
-  const accounts = await getChartOfAccounts();
+  const [accounts, context] = await Promise.all([getChartOfAccounts(), requireTenantContext()]);
+  const canManage = context.permissions.has('accounting.coa.manage');
+  const headings = accounts
+    .filter((a) => a.isGroup && a.status === 'ACTIVE')
+    .map((a) => ({ id: a.id, code: a.code, name: a.name, type: a.type }));
 
   return (
     <div>
@@ -84,8 +104,13 @@ export default async function ChartOfAccountsPage() {
         count={accounts.length}
         action={<ExportButtons report="chart-of-accounts" />}
       />
+      {canManage && (
+        <div className="mb-4">
+          <AccountForm headings={headings} />
+        </div>
+      )}
       <DataTable
-        columns={columns}
+        columns={canManage ? [...columns, statusColumn] : columns}
         rows={accounts}
         getRowKey={(row) => row.id}
         caption="Chart of accounts"

@@ -640,7 +640,7 @@ export async function getReconciliations(): Promise<ReconciliationRow[]> {
   const { data, error } = await supabase
     .from('bank_reconciliations')
     .select(
-      'id, reconciliation_number, from_date, to_date, statement_closing_balance, book_closing_balance, difference, matched_count, unmatched_count, status, bank_accounts!inner ( name )',
+      'id, reconciliation_number, from_date, to_date, statement_closing_balance, book_closing_balance, difference, unexplained_difference, matched_count, unmatched_count, status, bank_accounts!inner ( name )',
     )
     .order('to_date', { ascending: false })
     .limit(50);
@@ -657,9 +657,154 @@ export async function getReconciliations(): Promise<ReconciliationRow[]> {
     toDate: row.to_date,
     statementClosing: fromDb(row.statement_closing_balance),
     bookClosing: fromDb(row.book_closing_balance),
-    difference: fromDb(row.difference),
+    // What is left once timing and bank-only items are accounted for (0077).
+    // Reconciliations completed before then only stored statement − book.
+    difference: fromDb(row.unexplained_difference ?? row.difference),
     matched: row.matched_count,
     unmatched: row.unmatched_count,
     status: row.status,
   }));
+}
+
+// ── Contra: money between two of the dealer's own accounts ───────────────────
+
+export interface ContraInput {
+  readonly fromKind: 'CASH' | 'BANK';
+  /** A branch id for CASH (each branch has one cash account), a bank account id for BANK. */
+  readonly fromId: string;
+  readonly toKind: 'CASH' | 'BANK';
+  readonly toId: string;
+  readonly amount: number;
+  readonly date: string;
+  readonly reference?: string | null;
+  readonly narration?: string | null;
+  readonly idempotencyKey: string;
+}
+
+/**
+ * Cash deposited, cash withdrawn, a sweep between banks — spec §36, §38.
+ *
+ * One journal, and a row in each book, in one transaction (0077). Recorded as a
+ * receipt or a payment instead, it would move one book and leave the other
+ * disagreeing with the ledger, which is why the database now refuses that.
+ */
+export async function recordContra(input: ContraInput): Promise<BankResult & { journalId?: string }> {
+  const context = await requirePermission('bank.book.record');
+  const supabase = await createSupabaseServerClient();
+
+  if (!(input.amount > 0)) {
+    return { ok: false, error: 'Enter an amount greater than zero.' };
+  }
+  if (input.fromKind === input.toKind && input.fromId === input.toId) {
+    return { ok: false, error: 'The money has to go to a different account.' };
+  }
+
+  const { data, error } = await supabase.rpc('record_contra', {
+    p_from_kind: input.fromKind,
+    p_from_id: input.fromId,
+    p_to_kind: input.toKind,
+    p_to_id: input.toId,
+    p_amount: input.amount,
+    p_date: input.date,
+    p_reference: input.reference?.trim() || null,
+    p_narration: input.narration?.trim() || null,
+    p_idempotency_key: input.idempotencyKey,
+  });
+
+  if (error) {
+    console.error('[bank] contra failed', error.message);
+    return { ok: false, error: describeBankError(error.message) };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+
+  await recordAudit({
+    action: 'CREATE',
+    entityType: 'journal_entries',
+    entityId: String(row?.journal_entry_id ?? ''),
+    dealerId: context.dealerId,
+    branchId: context.activeBranch?.id ?? null,
+    userId: context.userId,
+    userEmail: context.email,
+    newData: { contra: `${input.fromKind} → ${input.toKind}`, amount: input.amount, entry: row?.entry_number },
+  });
+
+  return {
+    ok: true,
+    journalId: row?.journal_entry_id ?? undefined,
+    message: `Contra ${row?.entry_number} recorded — both books moved.`,
+  };
+}
+
+// ── Bank reconciliation statement ─────────────────────────────────────────────
+
+export interface ReconciliationStatement {
+  readonly bookBalance: Paise;
+  readonly bankOnlyCredits: Paise;
+  readonly bankOnlyDebits: Paise;
+  readonly adjustedBookBalance: Paise;
+  readonly unpresentedPayments: Paise;
+  readonly depositsInTransit: Paise;
+  readonly expectedStatementBalance: Paise;
+  readonly statementClosing: Paise | null;
+  readonly unexplainedDifference: Paise | null;
+  readonly items: readonly {
+    readonly kind: 'BANK_CREDIT' | 'BANK_DEBIT' | 'UNPRESENTED' | 'IN_TRANSIT';
+    readonly date: string;
+    readonly particular: string;
+    readonly reference: string | null;
+    readonly amount: Paise;
+  }[];
+}
+
+/**
+ * The textbook BRS (0077): book balance, adjusted for what only the bank knows,
+ * then for what only the books know yet, against the statement. The one figure
+ * that needs investigating is the unexplained difference at the bottom.
+ */
+export async function getReconciliationStatement(params: {
+  readonly bankAccountId: string;
+  readonly asOn: string;
+  readonly statementClosing: number | null;
+}): Promise<ReconciliationStatement> {
+  await requirePermission('bank.reconcile');
+  const supabase = await createSupabaseServerClient();
+
+  const [{ data: summary, error }, { data: items, error: itemError }] = await Promise.all([
+    supabase.rpc('bank_reconciliation_statement', {
+      p_bank_account_id: params.bankAccountId,
+      p_as_on: params.asOn,
+      p_statement_closing: params.statementClosing ?? undefined,
+    }),
+    supabase.rpc('bank_reconciliation_items', {
+      p_bank_account_id: params.bankAccountId,
+      p_as_on: params.asOn,
+    }),
+  ]);
+
+  if (error || itemError) {
+    throw new Error(`Failed to build the reconciliation statement: ${(error ?? itemError)?.message}`);
+  }
+
+  const row = Array.isArray(summary) ? summary[0] : summary;
+  const money = (value: string | null | undefined): Paise => fromDb(value ?? 0);
+
+  return {
+    bookBalance: money(row?.book_balance),
+    bankOnlyCredits: money(row?.bank_only_credits),
+    bankOnlyDebits: money(row?.bank_only_debits),
+    adjustedBookBalance: money(row?.adjusted_book_balance),
+    unpresentedPayments: money(row?.unpresented_payments),
+    depositsInTransit: money(row?.deposits_in_transit),
+    expectedStatementBalance: money(row?.expected_statement_balance),
+    statementClosing: row?.statement_closing_balance == null ? null : money(row.statement_closing_balance),
+    unexplainedDifference: row?.unexplained_difference == null ? null : money(row.unexplained_difference),
+    items: (items ?? []).map((item) => ({
+      kind: item.kind as ReconciliationStatement['items'][number]['kind'],
+      date: item.item_date,
+      particular: item.particular,
+      reference: item.reference,
+      amount: money(item.amount),
+    })),
+  };
 }
