@@ -1,6 +1,13 @@
 import type { Metadata } from 'next';
 
-import { getSettings, type SchemaStatus } from '@/server/services/org/org-service';
+import {
+  DEALER_SWITCHES,
+  getDealerSwitches,
+  getSettings,
+  type SchemaStatus,
+} from '@/server/services/org/org-service';
+import { requireTenantContext } from '@/server/auth/tenant-context';
+import { DealerSwitches } from '@/components/admin/dealer-switches';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
@@ -67,10 +74,29 @@ const sequenceColumns: Column<Tables<'document_sequences'>>[] = [
 ];
 
 export default async function SettingsPage() {
-  const { settings, sequences, schema } = await getSettings();
+  const [{ settings, sequences, schema }, switches, context] = await Promise.all([
+    getSettings(),
+    getDealerSwitches(),
+    requireTenantContext(),
+  ]);
 
   return (
     <div className="space-y-5">
+      {context.dealerId && (
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Controls</PanelTitle>
+          </PanelHeader>
+          <PanelContent>
+            <DealerSwitches
+              switches={DEALER_SWITCHES}
+              values={switches}
+              canManage={context.permissions.has('admin.settings.manage')}
+            />
+          </PanelContent>
+        </Panel>
+      )}
+
       <div>
         <PageHeader
           title="Settings"

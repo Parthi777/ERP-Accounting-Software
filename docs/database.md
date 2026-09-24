@@ -73,6 +73,13 @@ Forward-only, applied in numerical order. Each file opens with its purpose and r
 | `0077_contra_and_reconciliation.sql` | `record_contra()` (cash ↔ bank, bank ↔ bank, both books); `bank_reconciliation_statement()` / `_items()` with timing differences; `control_account_tieout()` |
 | `0078_expense_purchase_lines.sql` | `EXPENSE` purchase-bill lines charged to an expense or fixed-asset account, with HSN/SAC and blocked-ITC switch; their ITC reaches `gst_input_summary()` |
 | `0079_stock_adjustment_posting.sql` | Stock adjustments post to 5970; `app.lock_stock_lot()` so adjustments and transfers work under RLS |
+| `0080_walk_in_settlement_and_ageing.sql` | Walk-in counter invoices must be settled in the same transaction; `settle_counter_invoice()`; `party_ageing()` |
+| `0081_approvals_attachments_place_of_supply.sql` | `approval_requests` maker-checker for manual journals and stock adjustments (settings switches); `document_attachments` (append-only, private `attachments` bucket); `place_of_supply` on sales and service invoices, inter-state lines to IGST, GSTIN/POS validation on posting |
+| `0082_fixed_assets_payroll_loans.sql` | `fixed_assets`, `run_depreciation()`, `dispose_fixed_asset()`; `payroll_runs` / `payroll_lines` → post and pay; `loans`, `loan_transactions`, `loan_schedule()`; `register_tieout()` |
+| `0083_branch_transfers_damaged_consignment.sql` | `branch_transfer_notes` (challan or tax invoice); transfers post through 1850 with a branch per journal line; `DAMAGED` and `CONSIGNMENT` lots, `mark_stock_damaged()`, `move_consignment_stock()` |
+| `0084_gst_categories_notes_rcm_itc.sql` | `tax_codes.tax_category`; `gst_notes` credit/debit notes (`issue_gst_note()`, `cancel_gst_note()`); reverse-charge and ITC-category purchase lines (2590 RCM payable); `itc_adjustments` with 5990; `itc_rule37_candidates()`, `gst_supply_categories()` |
+| `0085_gst_returns_2b_3b.sql` | `app.gst_outward_documents()` behind GSTR-1 (now with notes and transfer invoices); `gstr2b_imports` / `gstr2b_lines` and matching; `itc_claimable()`; `gstr3b_working()`, `gstr3b_setoff()`, `post_gst_setoff()`; `gst_returns` (prepare, sign off, file), `gst_filed_documents`, `itc_claim_lines`; `gstr1_amendments()`, `gst_cross_checks()` |
+| `0086_orphan_branch_reference.sql` | Data repair: a profile's default branch deleted with foreign keys suspended (found by the restore drill) |
 
 No extensions are required. `gen_random_uuid()` has been core since PostgreSQL 13, and
 case-insensitive email uses a `lower()` unique index rather than `citext` — which keeps the
@@ -255,6 +262,10 @@ by the policy's `USING` clause and affect **zero rows without raising**, while `
 **What this does not cover.** The shim is not Supabase. Real `auth.uid()` derived from a JWT, the
 Supabase Auth signup and password-reset flows, and Storage are unverified until the project exists.
 Schema, constraints, triggers, policy expressions and privileges are all exercised for real.
+
+## Backups
+
+See `docs/backup-restore-runbook.md`. `scripts/restore-drill.sh` restores a read-only dump of production locally and proves it identical to the source.
 
 ## Knowing which migration a database is on
 

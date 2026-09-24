@@ -4,6 +4,7 @@ import { requirePermission } from '@/server/auth/tenant-context';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { recordAudit } from '@/server/services/audit/record-audit';
 import { fromDb, toDb, type Paise } from '@/lib/money';
+import { getSetting } from '@/server/services/org/org-service';
 
 /**
  * Journal entries a person writes, and the only sanctioned way to correct one —
@@ -79,6 +80,32 @@ export async function postManualJournal(input: {
     return {
       ok: false,
       error: `Debits and credits differ by ${Math.abs(debits - credits) / 100}. An entry must balance.`,
+    };
+  }
+
+  // With approval switched on (0081) the entry waits for a second person, and
+  // is numbered only when it posts — a rejection leaves no gap in the series.
+  if (await getSetting('approvals.manual_journal')) {
+    const { error: requestError } = await supabase.rpc('request_manual_journal', {
+      p_entry_date: input.entryDate,
+      p_narration: input.narration.trim(),
+      p_lines: usable.map((l) => ({
+        account_id: l.accountId,
+        debit: Number(toDb(l.debit)),
+        credit: Number(toDb(l.credit)),
+        narration: l.narration?.trim() || null,
+        party_type: l.partyType ?? null,
+        party_id: l.partyId ?? null,
+      })) as never,
+      p_branch_id: input.branchId ?? context.activeBranch?.id ?? undefined,
+      p_idempotency_key: input.idempotencyKey,
+    });
+    if (requestError) {
+      return { ok: false, error: describeJournalError(requestError.message) };
+    }
+    return {
+      ok: true,
+      message: 'Submitted for approval. It posts when someone else approves it (Accounting → Approvals).',
     };
   }
 

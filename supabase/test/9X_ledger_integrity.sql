@@ -105,7 +105,7 @@ begin
 
   -- ══ Inactive accounts ════════════════════════════════════════════════════
   select id into v_parent from public.chart_of_accounts where dealer_id = v_dealer and code = '5000';
-  v_new := public.create_account('5990', 'Audit test expense', 'EXPENSE', v_parent);
+  v_new := public.create_account('5991', 'Audit test expense', 'EXPENSE', v_parent);
 
   perform app_test.assert_equals(
     (select normal_balance from public.chart_of_accounts where id = v_new), 'DEBIT',

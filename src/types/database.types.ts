@@ -76,6 +76,26 @@ type AccountingRulesRow = {
 
 type AccountingRulesRowInsert = Insertable<AccountingRulesRow, 'dealer_id' | 'module' | 'event' | 'component' | 'side' | 'account_id'>;
 
+type ApprovalRequestsRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string | null;
+  kind: 'MANUAL_JOURNAL' | 'STOCK_ADJUSTMENT';
+  payload: Json;
+  summary: string;
+  amount: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN';
+  requested_by: string;
+  requested_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  result_id: string | null;
+  idempotency_key: string | null;
+};
+
+type ApprovalRequestsRowInsert = Insertable<ApprovalRequestsRow, 'dealer_id' | 'kind' | 'payload' | 'summary' | 'requested_by'>;
+
 type AttendanceDaysRow = {
   id: string;
   dealer_id: string;
@@ -292,6 +312,32 @@ type BookingsRow = {
 
 type BookingsRowInsert = Insertable<BookingsRow, 'dealer_id' | 'branch_id' | 'booking_number' | 'customer_id' | 'model_id'>;
 
+type BranchTransferNotesRow = {
+  id: string;
+  dealer_id: string;
+  note_number: string;
+  note_date: string;
+  note_kind: 'DELIVERY_CHALLAN' | 'TAX_INVOICE';
+  from_branch_id: string;
+  to_branch_id: string;
+  from_gstin: string | null;
+  to_gstin: string | null;
+  item_id: string | null;
+  vehicle_id: string | null;
+  quantity: string;
+  description: string;
+  taxable_value: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  journal_entry_id: string | null;
+  receipt_journal_id: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type BranchTransferNotesRowInsert = Insertable<BranchTransferNotesRow, 'dealer_id' | 'note_number' | 'note_kind' | 'from_branch_id' | 'to_branch_id' | 'quantity' | 'description' | 'taxable_value'>;
+
 type BranchesRow = {
   id: string;
   dealer_id: string;
@@ -493,6 +539,22 @@ type DeliveriesRow = {
 };
 
 type DeliveriesRowInsert = Insertable<DeliveriesRow, 'dealer_id' | 'branch_id' | 'sale_id' | 'vehicle_id' | 'delivery_number'>;
+
+type DocumentAttachmentsRow = {
+  id: string;
+  dealer_id: string;
+  entity_type: 'JOURNAL_ENTRY' | 'PURCHASE_BILL' | 'SALE' | 'SERVICE_INVOICE' | 'BANK_TRANSACTION' | 'CASH_TRANSACTION' | 'APPROVAL_REQUEST' | 'FIXED_ASSET' | 'PARTY_NOTE' | 'GST_FILING' | 'PAYROLL_RUN' | 'LOAN';
+  entity_id: string;
+  storage_path: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  note: string | null;
+  uploaded_by: string;
+  created_at: string;
+};
+
+type DocumentAttachmentsRowInsert = Insertable<DocumentAttachmentsRow, 'dealer_id' | 'entity_type' | 'entity_id' | 'storage_path' | 'file_name' | 'content_type' | 'size_bytes' | 'uploaded_by'>;
 
 type DocumentSequencesRow = {
   id: string;
@@ -779,6 +841,174 @@ type FinanceTransactionsRow = {
 
 type FinanceTransactionsRowInsert = Insertable<FinanceTransactionsRow, 'dealer_id' | 'branch_id' | 'finance_company_id' | 'transaction_type'>;
 
+type FixedAssetDepreciationRow = {
+  id: string;
+  dealer_id: string;
+  asset_id: string;
+  period: string;
+  amount: string;
+  journal_entry_id: string;
+  created_at: string;
+};
+
+type FixedAssetDepreciationRowInsert = Insertable<FixedAssetDepreciationRow, 'dealer_id' | 'asset_id' | 'period' | 'amount' | 'journal_entry_id'>;
+
+type FixedAssetsRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  asset_code: string;
+  name: string;
+  category: string | null;
+  asset_account_id: string;
+  accumulated_account_id: string;
+  expense_account_id: string;
+  purchase_bill_line_id: string | null;
+  acquired_on: string;
+  depreciation_start: string;
+  cost: string;
+  salvage_value: string;
+  method: string;
+  useful_life_months: number | null;
+  wdv_rate: string | null;
+  status: 'ACTIVE' | 'DISPOSED';
+  disposed_on: string | null;
+  disposal_value: string | null;
+  disposal_journal_id: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type FixedAssetsRowInsert = Insertable<FixedAssetsRow, 'dealer_id' | 'branch_id' | 'asset_code' | 'name' | 'asset_account_id' | 'accumulated_account_id' | 'expense_account_id' | 'acquired_on' | 'depreciation_start' | 'cost' | 'method'>;
+
+type GstFiledDocumentsRow = {
+  id: string;
+  return_id: string;
+  dealer_id: string;
+  document_type: string;
+  document_id: string;
+  document_number: string;
+  document_date: string;
+  party_gstin: string | null;
+  place_of_supply: string | null;
+  section: string;
+  taxable_value: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+};
+
+type GstFiledDocumentsRowInsert = Insertable<GstFiledDocumentsRow, 'return_id' | 'dealer_id' | 'document_type' | 'document_id' | 'document_number' | 'document_date' | 'section' | 'taxable_value' | 'cgst_amount' | 'sgst_amount' | 'igst_amount' | 'total_amount'>;
+
+type GstNotesRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  note_number: string;
+  note_type: 'CREDIT' | 'DEBIT';
+  party_type: string;
+  customer_id: string | null;
+  supplier_id: string | null;
+  party_note_number: string | null;
+  original_document_type: string;
+  original_document_id: string;
+  original_document_number: string;
+  original_document_date: string;
+  note_date: string;
+  reason: 'PRICE_REVISION' | 'DISCOUNT' | 'SHORT_SUPPLY' | 'DEFICIENCY' | 'RATE_CORRECTION' | 'OTHER';
+  description: string;
+  account_id: string;
+  hsn_sac: string | null;
+  gst_rate: string;
+  taxable_value: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  itc_eligible: boolean;
+  status: 'POSTED' | 'CANCELLED';
+  journal_entry_id: string | null;
+  cancel_journal_id: string | null;
+  cancel_reason: string | null;
+  idempotency_key: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+type GstNotesRowInsert = Insertable<GstNotesRow, 'dealer_id' | 'branch_id' | 'note_number' | 'note_type' | 'party_type' | 'original_document_type' | 'original_document_id' | 'original_document_number' | 'original_document_date' | 'note_date' | 'reason' | 'description' | 'account_id' | 'taxable_value' | 'total_amount'>;
+
+type GstReturnsRow = {
+  id: string;
+  dealer_id: string;
+  gstin: string;
+  return_type: 'GSTR1' | 'GSTR3B';
+  period: string;
+  status: 'PREPARED' | 'SIGNED_OFF' | 'FILED';
+  computed: Json;
+  prepared_by: string | null;
+  prepared_at: string;
+  signed_off_by: string | null;
+  signed_off_at: string | null;
+  filed_taxable: string | null;
+  filed_igst: string | null;
+  filed_cgst: string | null;
+  filed_sgst: string | null;
+  filed_itc_igst: string | null;
+  filed_itc_cgst: string | null;
+  filed_itc_sgst: string | null;
+  arn: string | null;
+  filed_on: string | null;
+  filed_by: string | null;
+  filed_at: string | null;
+  challan_cpin: string | null;
+  challan_cin: string | null;
+  challan_amount: string | null;
+  setoff_journal_id: string | null;
+  notes: string | null;
+};
+
+type GstReturnsRowInsert = Insertable<GstReturnsRow, 'dealer_id' | 'gstin' | 'return_type' | 'period' | 'computed'>;
+
+type Gstr2bImportsRow = {
+  id: string;
+  dealer_id: string;
+  gstin: string;
+  period: string;
+  file_name: string | null;
+  line_count: number;
+  status: 'ACTIVE' | 'SUPERSEDED';
+  imported_by: string | null;
+  imported_at: string;
+};
+
+type Gstr2bImportsRowInsert = Insertable<Gstr2bImportsRow, 'dealer_id' | 'gstin' | 'period'>;
+
+type Gstr2bLinesRow = {
+  id: string;
+  import_id: string;
+  dealer_id: string;
+  supplier_gstin: string;
+  supplier_name: string | null;
+  document_type: 'INVOICE' | 'CREDIT_NOTE' | 'DEBIT_NOTE';
+  document_number: string;
+  document_date: string | null;
+  taxable_value: string;
+  igst_amount: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  cess_amount: string;
+  itc_available: boolean;
+  reverse_charge: boolean;
+  match_status: 'MATCHED' | 'VALUE_MISMATCH' | 'NOT_IN_BOOKS' | 'NOT_CLAIMABLE';
+  matched_bill_id: string | null;
+  matched_note_id: string | null;
+  books_taxable: string | null;
+  books_tax: string | null;
+};
+
+type Gstr2bLinesRowInsert = Insertable<Gstr2bLinesRow, 'import_id' | 'dealer_id' | 'supplier_gstin' | 'document_number'>;
+
 type HsnCodesRow = {
   id: string;
   dealer_id: string;
@@ -823,7 +1053,7 @@ type InventoryStockRow = {
   dealer_id: string;
   branch_id: string;
   item_id: string;
-  source: 'LOCAL' | 'COMPANY';
+  source: 'LOCAL' | 'COMPANY' | 'DAMAGED' | 'CONSIGNMENT';
   quantity: string;
   average_cost: string;
   stock_value: string | null;
@@ -837,7 +1067,7 @@ type InventoryTransactionsRow = {
   dealer_id: string;
   branch_id: string;
   item_id: string;
-  source: 'LOCAL' | 'COMPANY';
+  source: 'LOCAL' | 'COMPANY' | 'DAMAGED' | 'CONSIGNMENT';
   transaction_type: 'OPENING' | 'PURCHASE' | 'SALE' | 'CONSUMPTION' | 'RETURN' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'ADJUSTMENT' | 'REVERSAL';
   quantity: string;
   unit_cost: string;
@@ -853,6 +1083,41 @@ type InventoryTransactionsRow = {
 };
 
 type InventoryTransactionsRowInsert = Insertable<InventoryTransactionsRow, 'dealer_id' | 'branch_id' | 'item_id' | 'source' | 'transaction_type' | 'quantity'>;
+
+type ItcAdjustmentsRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  adjustment_date: string;
+  direction: 'REVERSAL' | 'RECLAIM';
+  rule: 'RULE_37' | 'RULE_42' | 'RULE_43' | 'SECTION_17_5' | 'OTHER';
+  purchase_bill_id: string | null;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string | null;
+  note: string;
+  journal_entry_id: string | null;
+  idempotency_key: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+type ItcAdjustmentsRowInsert = Insertable<ItcAdjustmentsRow, 'dealer_id' | 'branch_id' | 'adjustment_date' | 'direction' | 'rule' | 'note'>;
+
+type ItcClaimLinesRow = {
+  id: string;
+  return_id: string;
+  dealer_id: string;
+  claim_kind: 'INVOICE' | 'RCM' | 'CREDIT_NOTE' | 'DEBIT_NOTE';
+  purchase_bill_id: string | null;
+  gst_note_id: string | null;
+  igst_amount: string;
+  cgst_amount: string;
+  sgst_amount: string;
+};
+
+type ItcClaimLinesRowInsert = Insertable<ItcClaimLinesRow, 'return_id' | 'dealer_id' | 'claim_kind'>;
 
 type JobCardsRow = {
   id: string;
@@ -944,6 +1209,42 @@ type LeaveTypesRow = {
 
 type LeaveTypesRowInsert = Insertable<LeaveTypesRow, 'dealer_id' | 'code' | 'name'>;
 
+type LoanTransactionsRow = {
+  id: string;
+  dealer_id: string;
+  loan_id: string;
+  txn_date: string;
+  kind: 'DISBURSEMENT' | 'REPAYMENT';
+  principal: string;
+  interest: string;
+  bank_account_id: string;
+  journal_entry_id: string;
+  idempotency_key: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type LoanTransactionsRowInsert = Insertable<LoanTransactionsRow, 'dealer_id' | 'loan_id' | 'txn_date' | 'kind' | 'bank_account_id' | 'journal_entry_id'>;
+
+type LoansRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  loan_number: string;
+  lender: string;
+  account_id: string;
+  principal: string;
+  interest_rate: string;
+  start_date: string;
+  tenure_months: number;
+  status: 'ACTIVE' | 'CLOSED';
+  notes: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type LoansRowInsert = Insertable<LoansRow, 'dealer_id' | 'branch_id' | 'loan_number' | 'lender' | 'account_id' | 'principal' | 'interest_rate' | 'start_date' | 'tenure_months'>;
+
 type PartyAllocationsRow = {
   id: string;
   dealer_id: string;
@@ -958,6 +1259,41 @@ type PartyAllocationsRow = {
 };
 
 type PartyAllocationsRowInsert = Insertable<PartyAllocationsRow, 'dealer_id' | 'party_type' | 'party_id' | 'debit_line_id' | 'credit_line_id' | 'amount'>;
+
+type PayrollLinesRow = {
+  id: string;
+  run_id: string;
+  dealer_id: string;
+  employee_id: string;
+  gross: string;
+  pf_employee: string;
+  esi_employee: string;
+  professional_tax: string;
+  tds: string;
+  other_deduction: string;
+  pf_employer: string;
+  esi_employer: string;
+  net_pay: string | null;
+};
+
+type PayrollLinesRowInsert = Insertable<PayrollLinesRow, 'run_id' | 'dealer_id' | 'employee_id' | 'gross'>;
+
+type PayrollRunsRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  period: string;
+  status: 'DRAFT' | 'POSTED' | 'PAID';
+  journal_entry_id: string | null;
+  payment_journal_id: string | null;
+  created_at: string;
+  created_by: string | null;
+  posted_at: string | null;
+  posted_by: string | null;
+  paid_at: string | null;
+};
+
+type PayrollRunsRowInsert = Insertable<PayrollRunsRow, 'dealer_id' | 'branch_id' | 'period'>;
 
 type PermissionsRow = {
   code: string;
@@ -993,6 +1329,9 @@ type PurchaseBillLinesRow = {
   account_id: string | null;
   hsn_sac: string | null;
   itc_eligible: boolean;
+  tax_category: 'TAXABLE' | 'ZERO_RATED' | 'NIL_RATED' | 'EXEMPT' | 'NON_GST';
+  reverse_charge: boolean;
+  itc_category: 'ELIGIBLE' | 'CAPITAL_GOODS' | 'COMMON' | 'BLOCKED' | 'PERSONAL';
 };
 
 type PurchaseBillLinesRowInsert = Insertable<PurchaseBillLinesRow, 'purchase_bill_id' | 'dealer_id' | 'line_number' | 'line_type' | 'description' | 'quantity' | 'unit_rate' | 'taxable_value' | 'total_amount'>;
@@ -1020,6 +1359,7 @@ type PurchaseBillsRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  reverse_charge_tax: string;
 };
 
 type PurchaseBillsRowInsert = Insertable<PurchaseBillsRow, 'dealer_id' | 'branch_id' | 'supplier_bill_number' | 'supplier_id'>;
@@ -1193,6 +1533,7 @@ type SalesRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  place_of_supply: string | null;
 };
 
 type SalesRowInsert = Insertable<SalesRow, 'dealer_id' | 'branch_id' | 'invoice_number' | 'customer_id' | 'vehicle_id'>;
@@ -1230,6 +1571,7 @@ type ServiceInvoicesRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  place_of_supply: string | null;
 };
 
 type ServiceInvoicesRowInsert = Insertable<ServiceInvoicesRow, 'dealer_id' | 'branch_id' | 'invoice_number'>;
@@ -1364,6 +1706,7 @@ type TaxCodesRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  tax_category: 'TAXABLE' | 'ZERO_RATED' | 'NIL_RATED' | 'EXEMPT' | 'NON_GST';
 };
 
 type TaxCodesRowInsert = Insertable<TaxCodesRow, 'dealer_id' | 'code' | 'name' | 'effective_from'>;
@@ -1507,6 +1850,9 @@ type VehicleTransfersRow = {
   remarks: string | null;
   created_at: string;
   updated_at: string;
+  transfer_note_id: string | null;
+  dispatch_journal_id: string | null;
+  receipt_journal_id: string | null;
 };
 
 type VehicleTransfersRowInsert = Insertable<VehicleTransfersRow, 'dealer_id' | 'transfer_number' | 'vehicle_id' | 'from_branch_id' | 'to_branch_id'>;
@@ -1647,6 +1993,27 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'branches';
             referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      approval_requests: {
+        Row: ApprovalRequestsRow;
+        Insert: ApprovalRequestsRowInsert;
+        Update: Partial<ApprovalRequestsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'approval_requests_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'approval_requests_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
           },
         ];
       };
@@ -1901,6 +2268,34 @@ export interface Database {
           },
         ];
       };
+      branch_transfer_notes: {
+        Row: BranchTransferNotesRow;
+        Insert: BranchTransferNotesRowInsert;
+        Update: Partial<BranchTransferNotesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'branch_transfer_notes_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'btn_from_fkey';
+            columns: ['from_branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'btn_to_fkey';
+            columns: ['to_branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       branches: {
         Row: BranchesRow;
         Insert: BranchesRowInsert;
@@ -2114,6 +2509,20 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'vehicles';
             referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      document_attachments: {
+        Row: DocumentAttachmentsRow;
+        Insert: DocumentAttachmentsRowInsert;
+        Update: Partial<DocumentAttachmentsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'document_attachments_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
           },
         ];
       };
@@ -2425,6 +2834,174 @@ export interface Database {
           },
         ];
       };
+      fixed_asset_depreciation: {
+        Row: FixedAssetDepreciationRow;
+        Insert: FixedAssetDepreciationRowInsert;
+        Update: Partial<FixedAssetDepreciationRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'fad_asset_fkey';
+            columns: ['asset_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'fixed_assets';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      fixed_assets: {
+        Row: FixedAssetsRow;
+        Insert: FixedAssetsRowInsert;
+        Update: Partial<FixedAssetsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'fixed_assets_accum_acc_fkey';
+            columns: ['accumulated_account_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'chart_of_accounts';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'fixed_assets_asset_acc_fkey';
+            columns: ['asset_account_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'chart_of_accounts';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'fixed_assets_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'fixed_assets_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'fixed_assets_expense_acc_fkey';
+            columns: ['expense_account_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'chart_of_accounts';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      gst_filed_documents: {
+        Row: GstFiledDocumentsRow;
+        Insert: GstFiledDocumentsRowInsert;
+        Update: Partial<GstFiledDocumentsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'gst_filed_documents_return_id_fkey';
+            columns: ['return_id'];
+            isOneToOne: false;
+            referencedRelation: 'gst_returns';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      gst_notes: {
+        Row: GstNotesRow;
+        Insert: GstNotesRowInsert;
+        Update: Partial<GstNotesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'gst_notes_account_tenant_fkey';
+            columns: ['account_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'chart_of_accounts';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'gst_notes_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'gst_notes_customer_tenant_fkey';
+            columns: ['customer_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'customers';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'gst_notes_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'gst_notes_journal_tenant_fkey';
+            columns: ['journal_entry_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'journal_entries';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'gst_notes_supplier_tenant_fkey';
+            columns: ['supplier_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'suppliers';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      gst_returns: {
+        Row: GstReturnsRow;
+        Insert: GstReturnsRowInsert;
+        Update: Partial<GstReturnsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'gst_returns_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'gst_returns_journal_tenant_fkey';
+            columns: ['setoff_journal_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'journal_entries';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      gstr2b_imports: {
+        Row: Gstr2bImportsRow;
+        Insert: Gstr2bImportsRowInsert;
+        Update: Partial<Gstr2bImportsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'gstr2b_imports_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      gstr2b_lines: {
+        Row: Gstr2bLinesRow;
+        Insert: Gstr2bLinesRowInsert;
+        Update: Partial<Gstr2bLinesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'gstr2b_lines_import_fkey';
+            columns: ['import_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'gstr2b_imports';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       hsn_codes: {
         Row: HsnCodesRow;
         Insert: HsnCodesRowInsert;
@@ -2506,6 +3083,55 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'inventory_items';
             referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      itc_adjustments: {
+        Row: ItcAdjustmentsRow;
+        Insert: ItcAdjustmentsRowInsert;
+        Update: Partial<ItcAdjustmentsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'itc_adj_bill_tenant_fkey';
+            columns: ['purchase_bill_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_bills';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'itc_adj_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'itc_adj_journal_tenant_fkey';
+            columns: ['journal_entry_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'journal_entries';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'itc_adjustments_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      itc_claim_lines: {
+        Row: ItcClaimLinesRow;
+        Insert: ItcClaimLinesRowInsert;
+        Update: Partial<ItcClaimLinesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'itc_claim_lines_return_id_fkey';
+            columns: ['return_id'];
+            isOneToOne: false;
+            referencedRelation: 'gst_returns';
+            referencedColumns: ['id'];
           },
         ];
       };
@@ -2642,6 +3268,48 @@ export interface Database {
           },
         ];
       };
+      loan_transactions: {
+        Row: LoanTransactionsRow;
+        Insert: LoanTransactionsRowInsert;
+        Update: Partial<LoanTransactionsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'loan_txn_loan_fkey';
+            columns: ['loan_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'loans';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      loans: {
+        Row: LoansRow;
+        Insert: LoansRowInsert;
+        Update: Partial<LoansRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'loans_account_fkey';
+            columns: ['account_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'chart_of_accounts';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'loans_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'loans_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       party_allocations: {
         Row: PartyAllocationsRow;
         Insert: PartyAllocationsRowInsert;
@@ -2667,6 +3335,48 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'journal_entry_lines';
             referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      payroll_lines: {
+        Row: PayrollLinesRow;
+        Insert: PayrollLinesRowInsert;
+        Update: Partial<PayrollLinesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'payroll_lines_employee_fkey';
+            columns: ['employee_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'employees';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'payroll_lines_run_fkey';
+            columns: ['run_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'payroll_runs';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      payroll_runs: {
+        Row: PayrollRunsRow;
+        Insert: PayrollRunsRowInsert;
+        Update: Partial<PayrollRunsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'payroll_runs_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'payroll_runs_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
           },
         ];
       };
@@ -3455,6 +4165,10 @@ export interface Database {
         Args: { p_from: string; p_to: string };
         Returns: { branch_id: string; branch_code: string; branch_name: string; vehicle_units: number; vehicle_revenue: string; vehicle_cost: string; vehicle_margin: string; service_jobs: number; service_revenue: string; service_cost: string; bookings_open: number; booking_advances: string; cash_in_hand: string; receivables: string }[];
       };
+      cancel_gst_note: {
+        Args: { p_note_id: string; p_reason: string };
+        Returns: string;
+      };
       cancel_purchase_bill: {
         Args: { p_bill_id: string; p_reason: string };
         Returns: string;
@@ -3515,6 +4229,14 @@ export interface Database {
         Args: { p_branch_id: string; p_customer_id: string; p_service_type?: string | null; p_registration_no?: string | null; p_odometer?: number | null; p_complaint?: string | null; p_customer_vehicle_id?: string | null; p_service_advisor_id?: string | null; p_technician_id?: string | null; p_promised_at?: string | null; p_job_date?: string | null };
         Returns: { job_card_id: string; job_card_number: string }[];
       };
+      create_loan: {
+        Args: { p_lender: string; p_principal: number; p_interest_rate: number; p_start_date: string; p_tenure_months: number; p_account_id?: string | null; p_branch_id?: string | null; p_notes?: string | null };
+        Returns: string;
+      };
+      create_payroll_run: {
+        Args: { p_period: string; p_branch_id: string };
+        Returns: string;
+      };
       create_service_invoice: {
         Args: { p_job_card_id: string; p_invoice_date?: string | null };
         Returns: { invoice_id: string; invoice_number: string }[];
@@ -3547,6 +4269,10 @@ export interface Database {
         Args: { p_dealer_id: string };
         Returns: { check_name: string; ok: boolean; detail: string }[];
       };
+      decide_approval: {
+        Args: { p_request_id: string; p_approve: boolean; p_note?: string | null };
+        Returns: string;
+      };
       decide_finance_application: {
         Args: { p_application_id: string; p_decision: string; p_approved_amount?: number | null; p_rejection_reason?: string | null };
         Returns: undefined;
@@ -3566,6 +4292,10 @@ export interface Database {
       dispatch_vehicle_transfer: {
         Args: { p_vehicle_id: string; p_to_branch_id: string; p_remarks?: string | null };
         Returns: { transfer_id: string; transfer_number: string }[];
+      };
+      dispose_fixed_asset: {
+        Args: { p_asset_id: string; p_date: string; p_proceeds: number; p_reason: string };
+        Returns: string;
       };
       einvoice_payload: {
         Args: { p_einvoice_id: string };
@@ -3615,6 +4345,14 @@ export interface Database {
         Args: { p_run_id: string; p_status: string; p_error?: string | null; p_detail?: Json | null };
         Returns: undefined;
       };
+      fixed_asset_register: {
+        Args: { p_as_on?: string | null };
+        Returns: { asset_id: string; asset_code: string; name: string; category: string; branch_name: string; account_code: string; acquired_on: string; method: string; cost: string; accumulated: string; net_book_value: string; status: string; last_period: string; disposed_on: string }[];
+      };
+      gst_cross_checks: {
+        Args: { p_gstin: string; p_period: string };
+        Returns: { check_code: string; description: string; left_label: string; left_value: string; right_label: string; right_value: string; difference: string; status: string }[];
+      };
       gst_document_register: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null; p_section?: string | null };
         Returns: { document_type: string; document_id: string; document_number: string; document_date: string; customer_name: string; gstin: string; place_of_supply: string; section: string; taxable_value: string; cgst_amount: string; sgst_amount: string; igst_amount: string; invoice_value: string; einvoice_status: string; irn: string }[];
@@ -3627,9 +4365,29 @@ export interface Database {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { hsn_code: string; description: string; taxable_value: string; cgst_amount: string; sgst_amount: string; igst_amount: string; total_tax: string; document_count: number }[];
       };
+      gst_supply_categories: {
+        Args: { p_from: string; p_to: string; p_branch_id?: string | null };
+        Returns: { direction: string; tax_category: string; document_count: number; taxable_value: string; total_tax: string }[];
+      };
+      gstr1_amendments: {
+        Args: { p_gstin: string; p_period: string };
+        Returns: { kind: string; filed_period: string; document_type: string; document_id: string; document_number: string; document_date: string; filed_taxable: string; filed_tax: string; current_taxable: string; current_tax: string; detail: string }[];
+      };
       gstr1_summary: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { section: string; document_count: number; taxable_value: string; cgst_amount: string; sgst_amount: string; igst_amount: string; total_tax: string; invoice_value: string }[];
+      };
+      gstr2b_reconciliation: {
+        Args: { p_import_id: string };
+        Returns: { side: string; match_status: string; supplier_gstin: string; supplier_name: string; document_number: string; document_date: string; taxable_2b: string; tax_2b: string; taxable_books: string; tax_books: string; difference: string; purchase_bill_id: string; line_id: string }[];
+      };
+      gstr3b_setoff: {
+        Args: { p_gstin: string; p_period: string };
+        Returns: { tax_head: string; liability: string; rcm_liability: string; opening_credit: string; period_credit: string; paid_by_igst: string; paid_by_cgst: string; paid_by_sgst: string; cash_payable: string; closing_credit: string }[];
+      };
+      gstr3b_working: {
+        Args: { p_gstin: string; p_period: string };
+        Returns: { section: string; description: string; taxable_value: string; igst_amount: string; cgst_amount: string; sgst_amount: string }[];
       };
       ignore_bank_line: {
         Args: { p_statement_line_id: number };
@@ -3643,6 +4401,14 @@ export interface Database {
         Args: { p_bank_account_id: string; p_rows: Json };
         Returns: { import_batch: string; imported: number; skipped: number }[];
       };
+      import_gstr2b: {
+        Args: { p_gstin: string; p_period: string; p_lines: Json; p_file_name?: string | null };
+        Returns: string;
+      };
+      inventory_condition_report: {
+        Args: { p_branch_id?: string | null };
+        Returns: { item_id: string; item_code: string; item_name: string; branch_name: string; damaged_qty: string; damaged_value: string; consignment_qty: string }[];
+      };
       inventory_movement_report: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { item_id: string; item_code: string; item_name: string; item_type: string; received_qty: string; issued_qty: string; received_value: string; issued_value: string; closing_qty: string; closing_value: string }[];
@@ -3651,12 +4417,40 @@ export interface Database {
         Args: { p_branch_id?: string | null; p_item_type?: string | null };
         Returns: { item_id: string; item_code: string; item_name: string; item_type: string; branch_name: string; local_qty: string; company_qty: string; total_qty: string; local_value: string; company_value: string; total_value: string }[];
       };
+      issue_gst_note: {
+        Args: { p_note_type: string; p_original_type: string; p_original_id: string; p_taxable_value: number; p_gst_rate: number; p_account_id: string; p_reason: string; p_description: string; p_note_date?: string | null; p_party_note_number?: string | null; p_itc_eligible?: boolean | null; p_hsn_sac?: string | null; p_idempotency_key?: string | null };
+        Returns: string;
+      };
+      itc_claimable: {
+        Args: { p_gstin: string; p_period: string };
+        Returns: { claim_kind: string; purchase_bill_id: string; gst_note_id: string; document_number: string; document_date: string; supplier_name: string; igst_amount: string; cgst_amount: string; sgst_amount: string; claimable: boolean; reason: string }[];
+      };
+      itc_rule37_candidates: {
+        Args: { p_as_on?: string | null };
+        Returns: { purchase_bill_id: string; bill_number: string; supplier_bill_number: string; supplier_name: string; branch_id: string; bill_date: string; days_outstanding: number; bill_total: string; unpaid: string; cgst_due: string; sgst_due: string; igst_due: string }[];
+      };
+      loan_schedule: {
+        Args: { p_loan_id: string };
+        Returns: { instalment: number; due_date: string; emi: string; principal: string; interest: string; balance: string }[];
+      };
       margin_report: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { stream: string; document_count: number; revenue: string; cost: string; margin: string; margin_percent: string }[];
       };
+      mark_stock_damaged: {
+        Args: { p_item_id: string; p_branch_id: string; p_source: string; p_quantity: number; p_realisable_unit: number; p_reason: string };
+        Returns: string;
+      };
       match_bank_line: {
         Args: { p_statement_line_id: number; p_transaction_id: number };
+        Returns: undefined;
+      };
+      match_gstr2b: {
+        Args: { p_import_id: string };
+        Returns: { match_status: string; line_count: number }[];
+      };
+      move_consignment_stock: {
+        Args: { p_item_id: string; p_branch_id: string; p_quantity: number; p_direction: string; p_reference: string };
         Returns: undefined;
       };
       next_document_number: {
@@ -3679,8 +4473,16 @@ export interface Database {
         Args: { p_party_type: string; p_party_id: string; p_include_settled?: boolean | null };
         Returns: { line_id: string; entry_id: string; entry_date: string; entry_number: string; document_type: string; document_ref: string; account_code: string; account_name: string; particulars: string; side: string; amount: string; allocated: string; outstanding: string; age_days: number }[];
       };
+      pay_payroll_run: {
+        Args: { p_run_id: string; p_bank_account_id: string; p_date?: string | null };
+        Returns: string;
+      };
       post_finance_settlement: {
         Args: { p_settlement_id: string; p_bank_account_id: string };
+        Returns: string;
+      };
+      post_gst_setoff: {
+        Args: { p_return_id: string; p_bank_account_id: string; p_date?: string | null };
         Returns: string;
       };
       post_manual_journal: {
@@ -3690,6 +4492,10 @@ export interface Database {
       post_opening_balances: {
         Args: { p_party_type: string; p_rows: Json; p_as_on?: string | null; p_narration?: string | null; p_idempotency_key?: string | null; p_dealer_id?: string | null };
         Returns: { journal_entry_id: string; parties: number; total: string }[];
+      };
+      post_payroll_run: {
+        Args: { p_run_id: string };
+        Returns: string;
       };
       post_purchase_bill: {
         Args: { p_bill_id: string; p_idempotency_key?: string | null };
@@ -3705,6 +4511,10 @@ export interface Database {
       };
       post_vehicle_sale: {
         Args: { p_sale_id: string; p_idempotency_key?: string | null };
+        Returns: string;
+      };
+      prepare_gst_return: {
+        Args: { p_type: string; p_gstin: string; p_period: string; p_notes?: string | null };
         Returns: string;
       };
       profit_and_loss: {
@@ -3759,6 +4569,18 @@ export interface Database {
         Args: { p_eway_id: string; p_status: string; p_number?: string | null; p_valid_until?: string | null; p_error?: string | null; p_response?: Json | null };
         Returns: undefined;
       };
+      record_gst_filing: {
+        Args: { p_return_id: string; p_arn: string; p_filed_on: string; p_taxable: number; p_igst: number; p_cgst: number; p_sgst: number; p_itc_igst?: number | null; p_itc_cgst?: number | null; p_itc_sgst?: number | null; p_challan_cpin?: string | null; p_challan_cin?: string | null; p_challan_amount?: number | null; p_notes?: string | null };
+        Returns: undefined;
+      };
+      record_itc_adjustment: {
+        Args: { p_direction: string; p_rule: string; p_branch_id: string; p_cgst: number; p_sgst: number; p_igst: number; p_note: string; p_date?: string | null; p_purchase_bill_id?: string | null; p_idempotency_key?: string | null };
+        Returns: string;
+      };
+      record_loan_transaction: {
+        Args: { p_loan_id: string; p_kind: string; p_bank_account_id: string; p_date: string; p_principal: number; p_interest?: number | null; p_idempotency_key?: string | null };
+        Returns: string;
+      };
       record_sale_payment: {
         Args: { p_sale_id: string; p_amount: number; p_payment_mode: string; p_reference?: string | null; p_finance_company_id?: string | null; p_idempotency_key?: string | null };
         Returns: { receipt_number: string; journal_entry_id: string }[];
@@ -3775,6 +4597,14 @@ export interface Database {
         Args: { p_booking_id: string; p_amount: number; p_mode: string; p_reason: string; p_cash_branch_id?: string | null; p_bank_account_id?: string | null; p_date?: string | null };
         Returns: { journal_entry_id: string }[];
       };
+      register_fixed_asset: {
+        Args: { p_name: string; p_asset_account_id: string; p_acquired_on: string; p_cost: number; p_method?: string | null; p_useful_life_months?: number | null; p_wdv_rate?: number | null; p_salvage_value?: number | null; p_category?: string | null; p_branch_id?: string | null; p_purchase_bill_line_id?: string | null };
+        Returns: string;
+      };
+      register_tieout: {
+        Args: { p_as_on?: string | null };
+        Returns: { control: string; account_code: string; account_name: string; ledger_balance: string; subledger_balance: string; difference: string; explanation: string }[];
+      };
       remove_service_line: {
         Args: { p_line_id: string };
         Returns: undefined;
@@ -3782,6 +4612,14 @@ export interface Database {
       reopen_cash_day: {
         Args: { p_branch_id: string; p_date: string; p_reason: string };
         Returns: undefined;
+      };
+      request_manual_journal: {
+        Args: { p_entry_date: string; p_narration: string; p_lines: Json; p_branch_id?: string | null; p_idempotency_key?: string | null };
+        Returns: string;
+      };
+      request_stock_adjustment: {
+        Args: { p_item_id: string; p_branch_id: string; p_source: string; p_quantity: number; p_reason: string; p_idempotency_key?: string | null };
+        Returns: string;
       };
       resolve_account: {
         Args: { p_dealer_id: string; p_module: string; p_event: string; p_component: string; p_branch_id?: string | null };
@@ -3807,6 +4645,10 @@ export interface Database {
         Args: { p_journal_entry_id: string; p_reason: string; p_reversal_date?: string | null };
         Returns: { journal_entry_id: string; entry_number: string }[];
       };
+      run_depreciation: {
+        Args: { p_month: string };
+        Returns: { assets: number; total: string; journals: number }[];
+      };
       sales_summary: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null; p_group_by?: string | null };
         Returns: { group_key: string; group_label: string; unit_count: number; gross_amount: string; tax_amount: string; cost_amount: string; margin: string }[];
@@ -3830,6 +4672,10 @@ export interface Database {
       settle_counter_invoice: {
         Args: { p_invoice_id: string; p_payment_mode?: string | null; p_reference?: string | null; p_idempotency_key?: string | null };
         Returns: { journal_entry_id: string; receipt_number: string; amount_received: string }[];
+      };
+      sign_off_gst_return: {
+        Args: { p_return_id: string };
+        Returns: undefined;
       };
       start_attendance_sync: {
         Args: { p_from: string; p_to: string };
@@ -3862,6 +4708,10 @@ export interface Database {
       vehicle_stock_report: {
         Args: { p_branch_id?: string | null; p_status?: string | null };
         Returns: { vehicle_id: string; chassis_no: string; engine_no: string; brand: string; model_name: string; variant_name: string; branch_name: string; status: string; stock_date: string; age_days: number; age_bucket: string; purchase_cost: string }[];
+      };
+      withdraw_approval: {
+        Args: { p_request_id: string };
+        Returns: undefined;
       };
       work_in_progress: {
         Args: { p_branch_id?: string | null };

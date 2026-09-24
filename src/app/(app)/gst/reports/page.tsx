@@ -23,7 +23,7 @@ const columns: Column<GstDocumentRow>[] = [
     render: (row) => (
       <span>
         <Link
-          href={row.documentType === 'SALE' ? `/sales/${row.documentId}` : `/service/billing/${row.documentId}`}
+          href={row.documentType === 'SALE' ? `/sales/${row.documentId}` : row.documentType.endsWith('_NOTE') ? '/gst/notes' : `/service/billing/${row.documentId}`}
           className="block font-mono text-xs text-brand-600 hover:underline"
         >
           {row.documentNumber}

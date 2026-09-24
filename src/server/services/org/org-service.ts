@@ -153,3 +153,62 @@ export async function getSetting(key: string): Promise<boolean> {
   }
   return data?.value === true;
 }
+
+/** The switches a dealer turns on and off from Settings (spec §33, §6 via 0081). */
+export const DEALER_SWITCHES = [
+  {
+    key: 'approvals.manual_journal',
+    label: 'Manual journals need approval',
+    detail: 'A second person with the approve permission posts every hand-written journal.',
+  },
+  {
+    key: 'approvals.stock_adjustment',
+    label: 'Stock adjustments need approval',
+    detail: 'Count corrections wait for a second person before stock and the ledger move.',
+  },
+  {
+    key: 'counter_sale.require_customer',
+    label: 'Counter sales need a customer',
+    detail: 'No walk-in sales: every counter invoice names who bought.',
+  },
+] as const;
+
+export type DealerSwitchKey = (typeof DEALER_SWITCHES)[number]['key'];
+
+export async function getDealerSwitches(): Promise<Record<DealerSwitchKey, boolean>> {
+  const entries = await Promise.all(DEALER_SWITCHES.map(async (s) => [s.key, await getSetting(s.key)] as const));
+  return Object.fromEntries(entries) as Record<DealerSwitchKey, boolean>;
+}
+
+/**
+ * Turns one dealer switch on or off. The row is dealer-scoped, so it overrides
+ * any platform default; the audit trigger on system_settings records the change.
+ */
+export async function setDealerSwitch(key: DealerSwitchKey, value: boolean): Promise<{ ok: boolean; error?: string }> {
+  const context = await requirePermission('admin.settings.manage');
+  if (!context.dealerId) {
+    return { ok: false, error: 'Only a dealer user changes dealer settings.' };
+  }
+  const known = DEALER_SWITCHES.find((s) => s.key === key);
+  if (!known) {
+    return { ok: false, error: 'Unknown setting.' };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from('system_settings').upsert(
+    {
+      dealer_id: context.dealerId,
+      key,
+      value: value as never,
+      value_type: 'boolean',
+      description: known.detail,
+      is_public: true,
+      updated_by: context.userId,
+    },
+    { onConflict: 'dealer_id,key' },
+  );
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}

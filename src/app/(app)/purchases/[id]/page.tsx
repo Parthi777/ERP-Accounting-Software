@@ -15,6 +15,7 @@ import {
 import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { PurchaseBillEditor } from '@/components/purchases/purchase-bill-editor';
 import { PurchaseReturnForm } from '@/components/purchases/purchase-return-form';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -102,6 +103,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
+          <AttachmentsPanel entityType="PURCHASE_BILL" entityId={bill.id} revalidate={`/purchases/${bill.id}`} />
+
           <PurchaseBillEditor
             gstRates={gstRates}
             bill={bill}

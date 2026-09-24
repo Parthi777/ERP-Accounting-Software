@@ -19,7 +19,7 @@ The *Accounting Web App Audit Checklist* (23 Sep 2026), worked against the code 
 |---|---|---|
 | P0 failures | 3 (group/inactive postings, cash/bank sub-ledger divergence, no closed-period control) | 0 |
 | P1 failures fixed | Stock adjustments unjournalled; stock adjustments and transfers impossible under RLS; BRS without reconciling items; no expense or fixed-asset document; no chart maintenance | 0 open from this list |
-| P1/P2 still open | | GSTR-2B / 3B workings, RCM, ITC categories beyond eligible/blocked, depreciation register, payroll posting, count-adjustment approval, branch-level stock-to-GL on transfers, backup/restore drill |
+| P1/P2 still open | | None from the checklist after round 2 (0081–0086). What remains is listed under *Round 2* below. |
 | Unresolved differences on upgraded demo data | Customer/control 0 · Supplier/control 0 · Stock/GL −₹900 / +₹480 · Bank 0 | All 0 after the one-off correcting journal described below |
 
 **Decision:** fix and retest → ready for the P0 gate. Apply migrations 0076–0079 before deploying the app code that calls them (see *Deploying* at the end).
@@ -131,18 +131,18 @@ Events 4 and 5 are two documents each, as they would be in practice. The net eff
 |---|---|---|
 | Opening balances | P | Existing 9O; bank opening balances since 0073 |
 | Capital and drawings | P | Capital via bank or cash entry (9Y event 1); 3400 Drawings now exists |
-| General journal | Pa | Multi-line, dated, narrated, reversible. **No approval step.** |
+| General journal | P | Multi-line, dated, narrated, reversible. *Round 2:* optional maker-checker approval (`approvals.manual_journal`, 0081). The approver can't be the maker, and a rejection needs a note. 9Z |
 | Contra | P | *Fixed (F2).* 9X |
 | Receipt and payment | P | Party-tagged; partial receipts (9Y event 4); allocation 9B |
 | Cash and credit sales | P | 9Y event 4; existing 50, 98 |
 | Cash and credit purchases | P | 9D, 9Y |
-| Returns and notes | Pa | Sales return (0051) and purchase debit note (0057) exist. **No standalone credit or debit note** for price corrections. |
+| Returns and notes | P | *Round 2:* standalone credit and debit notes against a sale, service invoice or purchase bill (`gst_notes`, 0084). They take the original's tax mode, can't exceed it, and are cancelled by reversal. 9ZC |
 | Expenses and fixed assets | P | *Fixed (F7).* 9Y |
-| Depreciation / accruals | Pa | Postable by journal to the new accounts (9Y event 10). **No depreciation schedule or register.** |
-| Loans and interest | Pa | 2800 Loans and 5960 Interest exist, and a principal/interest split works through bank payments. **No loan module.** |
-| Payroll | F | Salary structures exist (0053), but nothing posts payroll or deductions. Salary is a plain bank payment. |
+| Depreciation / accruals | P | *Round 2:* fixed-asset register, monthly SLM/WDV depreciation run (one journal per branch, once per asset per month) and disposal with gain/loss (0082). The register ties to 1951/1959. 9Y |
+| Loans and interest | P | *Round 2:* loan master, disbursement and repayment split into principal and interest, reducing-balance EMI schedule, register tie-out (0082). 9Y |
+| Payroll | P | *Round 2:* monthly run from salary structures → draft → post (gross, employer PF/ESI, net per employee, PF/ESI/TDS/PT payables) → pay by bank (0082). 9Y |
 | Bank charges / income | P | Bank entry (9Y event 9). BRS lists unmatched statement charges. |
-| GST / RCM adjustment | F | Distinct input/output ledgers exist. **No reverse-charge handling.** |
+| GST / RCM adjustment | P | *Round 2:* reverse-charge purchase lines. The supplier is owed the value only; the tax is credited to 2590 GST Payable (RCM) and claimed as ITC when eligible (0084). 9ZC |
 
 ### 03 Masters and entry validation (P1)
 
@@ -154,7 +154,7 @@ Events 4 and 5 are two documents each, as they would be in practice. The net eff
 | Vehicle identity | P | Unique chassis, movement log, transfers; existing 50, 80 |
 | Mandatory fields | P | DB checks plus server validation |
 | Date and period rules | P | *Fixed (F3):* lock date, no future-dated manual journals |
-| Source and attachments | Pa | Every journal links its source document. **No file attachments.** |
+| Source and attachments | P | *Round 2:* append-only attachments on journals, bills, invoices, notes and GST filings. Stored in the private `attachments` bucket under the dealer's folder (0081). 9Z |
 | Validation feedback | P | Line-numbered DB messages passed through; forms keep entered values |
 
 ### 04 Receivables and payables (P1)
@@ -187,37 +187,37 @@ Events 4 and 5 are two documents each, as they would be in practice. The net eff
 | Cost valuation | P | Lot average cost; the tie-out compares stock value with the GL (9Y) |
 | COGS on sale | P | 9Y event 4, local-first lots (98) |
 | Chassis and locations | P | Existing 49/50 concurrency and unique chassis |
-| Transfers | Pa | Quantity moves (*fixed, F5*). **No journal between branches**, so a branch-level trial balance misplaces stock value (the dealer total is right). **Inter-GSTIN transfers aren't treated as supplies.** |
-| Counts and exceptions | Pa | *Fixed (F4):* posted, reasoned, audited. **No approval step.** |
-| Damaged / consignment | F | No separate status or valuation. |
+| Transfers | P | *Round 2:* every transfer issues a transfer note and posts through 1850 Inter-Branch Stock in Transit, so each branch's trial balance balances on its own. Between two GSTINs the note is a tax invoice with output tax at the sender and input tax at the receiver. A vehicle on the road sits in 1850 until it's received (0083). 9ZB |
+| Counts and exceptions | P | *Fixed (F4)*; *round 2:* optional approval (`approvals.stock_adjustment`, 0081). 9Z |
+| Damaged / consignment | P | *Round 2:* DAMAGED lot written down to realisable value (to 5970); CONSIGNMENT lot held at nil value and not adjustable. The sale allocator reads neither (0083). 9ZB |
 | Negative stock | P | Blocked in sales, adjustments and transfers |
 
 ### 07 GST entry and documents (P1)
 
 | Row | Mark | Evidence |
 |---|---|---|
-| GSTIN and place of supply | Pa | Dealer/customer GSTIN and state; place of supply in the e-invoice payload (99, 9V). **Not validated on every document.** |
+| GSTIN and place of supply | P | *Round 2:* place of supply is set on every sale and service invoice. Inter-state lines are converted to IGST. On posting, the GSTIN format, the GSTIN/state agreement and the tax mode against the place of supply are validated (0081). 9Z |
 | Tax computation | P | Configured rates; CGST+SGST vs IGST split checks; cess column |
-| Tax categories | F | No exempt, nil or non-GST classification. |
-| Document lifecycle | Pa | Numbered, status-tracked invoices, bills and returns. **No bill of supply or delivery challan.** |
-| Original link | Pa | Returns point at the original sale or bill. **No standalone notes.** |
+| Tax categories | P | *Round 2:* `tax_codes.tax_category` (taxable, zero-rated, nil, exempt, non-GST; the last three carry no rate), with a supply-category report (0084). 9ZC |
+| Document lifecycle | P | *Round 2:* a delivery challan for every transfer within a GSTIN (0083). An invoice with no tax prints and shows as a **bill of supply** (0084). |
+| Original link | P | Returns and every credit/debit note name the document they amend (0084). |
 | Output/input ledger | P | Posted with the document; 9Y |
-| ITC eligibility | Pa | *New:* eligible or blocked per expense line. **No personal, common, capital, reversal or reclaim categories.** |
-| 2B matching | F | Not built |
-| ITC claim controls | F | Not built |
+| ITC eligibility | P | *Round 2:* ITC categories eligible / capital goods / common / blocked / personal (personal purchases may be charged to Drawings). Reversals and re-claims under rules 37/42/43 and s.17(5) post ITC ⇄ 5990, and a re-claim can't exceed what was reversed. Rule 37 candidates are listed (0084). 9ZC |
+| 2B matching | P | *Round 2:* GSTR-2B import (CSV; refused whole if any line is bad), matched on supplier GSTIN plus normalised document number: MATCHED, VALUE_MISMATCH, NOT_IN_BOOKS, NOT_CLAIMABLE, NOT_IN_2B (0085). 9ZD |
+| ITC claim controls | P | *Round 2:* only credit in 2B is claimable, at the lower of 2B and the books head by head. RCM credit needs no 2B. Personal and blocked credit is never offered. A filed 3B records what it claimed, so nothing is claimed twice (0085). 9ZD |
 
 ### 08 GST return workpapers (P1/P2)
 
 | Row | Mark |
 |---|---|
-| GSTR-1 working | Pa: `gstr1_summary`, document register; no amendments |
-| Sales reconciliation | Pa: sales register, output summary, e-invoice queue; no automated comparison |
-| GSTR-2B working | F |
-| GSTR-3B working | F |
-| Cross-return checks | F |
+| GSTR-1 working | P: sections, including CDNR/CDNUR notes and transfer tax invoices; the filed snapshot is frozen; `gstr1_amendments` lists changed, cancelled and missed documents (0085). 9ZD |
+| Sales reconciliation | P: `gst_cross_checks` compares ledger output tax with GSTR-1 and GSTR-1 with 3B (Test C) (0085). 9ZD |
+| GSTR-2B working | P: import, matching, reconciliation both ways (0085). 9ZD |
+| GSTR-3B working | P: 3.1(a)–(e), 4(A)(3)/(5), 4(B)(1)/(2), 4(C), 4(D), 5, and set-off in the rule 88A order with RCM paid in cash. The set-off journal is posted after filing (0085). 9ZD |
+| Cross-return checks | P: seven checks; Test D's ₹18,000 difference between filed GSTR-1 and GSTR-3B is flagged (0085). 9ZD |
 | E-invoice controls | P: existing 99, 9V |
 | E-way bill controls | P: existing 9Q |
-| Filing evidence | F |
+| Filing evidence | P: prepared, then signed off by a second person, then filed with ARN, date, figures and challan; permanent once filed; acknowledgement attached as GST_FILING (0085). 9ZD |
 | Configurable rules | P: effective-dated tax codes |
 
 ### 09 Reports and controls (P1/P2)
@@ -226,13 +226,35 @@ Events 4 and 5 are two documents each, as they would be in practice. The net eff
 |---|---|---|
 | Core reports | P | Journal register, account ledger, trial balance, P&L (now with gross profit), balance sheet. There's no day-book screen; the journal register serves. |
 | Operational reports | P | Registers, cash and bank books, receivable and payable ageing (0080) |
-| Asset and inventory | Pa | Stock ledger and valuation. **No fixed-asset register.** |
+| Asset and inventory | P | Stock ledger and valuation; fixed-asset register (0082); damaged/consignment condition report (0083) |
 | Reconciliation reports | P | *New:* BRS, tie-out; GST summaries |
 | Cutoff and filters | P | As-on and branch filters across statements and exports |
 | Drill-down/export | P | Trial balance → ledger → journal → source; 31 export reports |
-| Permissions and backup | Pa | Permissions enforced server-side and by RLS (9X cashier refusals). **No backup restore has been tested.** |
+| Permissions and backup | P | Permissions enforced server-side and by RLS. *Round 2:* restore drill on 24 Sep 2026: production dumped read-only, restored locally, identical in every row count and in the ledger and trial-balance checksums (`scripts/restore-drill.sh`, `docs/backup-restore-runbook.md`). It found one orphan reference that a plain restore refused; repaired by 0086. |
 
 ---
+
+
+## Round 2: the open items built (migrations 0081–0086)
+
+| Group | Migration | Test | What it closes |
+|---|---|---|---|
+| Approvals, attachments, place of supply | 0081 | 9Z | Maker-checker for manual journals and stock adjustments (switches under **Administration → Settings**); append-only attachments; place of supply and GSTIN validation on every invoice |
+| Fixed assets, payroll, loans | 0082 | 9Y | Asset register and depreciation; payroll with statutory payables; loans with principal and interest; register tie-outs |
+| Transfers, damaged, consignment | 0083 | 9ZB | Branch transfers post through 1850, with a challan or tax invoice; damaged and consignment lots |
+| Tax categories, notes, RCM, ITC | 0084 | 9ZC | Supply categories; credit and debit notes; bill of supply; reverse charge; ITC categories, reversals and re-claims |
+| GST returns | 0085 | 9ZD | GSTR-2B import and matching; ITC claim controls; GSTR-3B working and set-off; cross-checks (Tests C and D); filing evidence and GSTR-1 amendments |
+| Restore drill | 0086 | drill | `scripts/restore-drill.sh` and the runbook. It found and repaired an orphan left by `remove-demo-dealer.sql` |
+
+Chart of accounts: new dealers now get 62 accounts (1850, 2590, 5990 are new). The three non-taxable tax codes are seeded with them.
+
+**Known limits:**
+- GSTR-2B is imported from CSV (the portal's Excel saved as CSV); there is no direct portal pull.
+- 2B lines that don't match are listed but can't be linked to a bill by hand.
+- The 3B opening credit is carried from the last *filed* 3B, so the first month starts from zero. Enter any earlier balance as a re-claim.
+- Rule 42/43 apportionment is entered as a figure, with its working in the note, not computed.
+- Consignment stock is counted but can't be sold until bought in on a purchase bill.
+- The Storage bucket (attachment files) isn't in the logical backup. The runbook says how to keep it.
 
 ## What changed, file by file
 
@@ -243,10 +265,16 @@ Events 4 and 5 are two documents each, as they would be in practice. The net eff
 
 ## Deploying
 
-Railway deploys on push and migrations are applied by hand, so the order matters:
+Railway deploys on push and migrations are applied by hand, so the order matters.
 
-1. Apply `supabase/INCREMENTAL-0076-to-0079.sql` to production. Read its NOTICE lines: they count any legacy group-account postings, hand-posted cash/bank lines and unjournalled stock adjustments.
-2. Push the app. The schema-version panel will show 0079.
-3. Open **Accounting → Control Tie-out**. Clear each legacy difference with a manual journal whose narration says what it corrects.
+**Round 1 (done):** 0076–0080 are in production.
 
-The new screens were not opened in a browser. The Playwright screen suite defaults to `.env.local`, which points at production, and production doesn't have these migrations yet. Run it against staging (see `docs/testing-staging.md`) once 0076–0079 are applied there.
+**Round 2:**
+
+1. Apply `supabase/INCREMENTAL-0081-to-0086.sql` to production in the SQL Editor. It is one transaction, so it applies whole or not at all.
+2. Check that `select max(version) from public.schema_migrations` returns `0086`.
+3. Push the app. The schema-version panel should show 0086.
+4. Run `bash scripts/restore-drill.sh`. It should now pass with no orphans reported. Then remove the 0086 statement from `scripts/drill-repairs.sql`.
+5. Optionally, turn on journal and stock-adjustment approval under **Administration → Settings → Controls**.
+
+The round 2 screens were checked by typecheck, lint and build, not in a browser. Run the Playwright suite against staging once 0081–0086 are applied there (see `docs/testing-staging.md`).

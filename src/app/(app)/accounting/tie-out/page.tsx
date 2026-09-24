@@ -21,6 +21,9 @@ const CONTROL_LABEL: Record<string, string> = {
   VEHICLE_STOCK: 'Vehicle stock',
   ACCESSORY_STOCK: 'Accessory stock',
   SPARE_STOCK: 'Spare stock',
+  FIXED_ASSETS: 'Asset register',
+  ACCUMULATED_DEPRECIATION: 'Depreciation register',
+  LOANS: 'Loan register',
 };
 
 /**

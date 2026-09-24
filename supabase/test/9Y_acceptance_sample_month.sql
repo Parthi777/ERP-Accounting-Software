@@ -746,5 +746,117 @@ begin
     5000::numeric, 'an earlier as-on date sees only what existed then');
 end $$;
 
+-- ═══ Fixed assets, loans and payroll (0082) ════════════════════════════════════
+do $$
+declare
+  v_dealer uuid := app.current_dealer_id();
+  v_branch uuid;
+  v_bank   uuid;
+  v_asset  uuid;
+  v_line   uuid;
+  v_loan   uuid;
+  v_emp    uuid;
+  v_run    uuid;
+  v_entry  uuid;
+  r        record;
+  s        record;
+  v_n      bigint;
+begin
+  select id into v_branch from public.branches where dealer_id = v_dealer;
+  select id into v_bank from public.bank_accounts where dealer_id = v_dealer and name = 'Main current account';
+
+  -- ── The Test A computer joins the register from its bill line ──────────────
+  select l.id into v_line from public.purchase_bill_lines l
+    join public.purchase_bills b on b.id = l.purchase_bill_id
+   where b.supplier_bill_number = 'AT/COMP/001';
+  v_asset := public.register_fixed_asset('Desktop computer',
+    (select id from public.chart_of_accounts where dealer_id = v_dealer and code = '1951'),
+    current_date, null, 'SLM', 36, null, 0, 'Computers', v_branch, v_line);
+  perform app_test.assert_equals((select cost from public.fixed_assets where id = v_asset), 100000::numeric,
+    'registering from the bill line takes its cost: 1,00,000');
+
+  -- Test A depreciated it by hand, outside the register: the tie-out says so.
+  select * into r from public.register_tieout(current_date) where control = 'ACCUMULATED_DEPRECIATION';
+  perform app_test.assert_equals(r.difference, -2000::numeric,
+    'the register tie-out finds the 2,000 depreciation posted by hand, outside the register');
+
+  select * into r from public.run_depreciation(current_date);
+  perform app_test.assert_equals(r.total, 2777.78::numeric, 'straight line over 36 months: 2,777.78 a month');
+  select count(*) into v_n from public.journal_entries;
+  select * into r from public.run_depreciation(current_date);
+  perform app_test.assert_equals(r.assets, 0, 'running the month again charges nothing more');
+  perform app_test.assert_equals((select count(*) from public.journal_entries), v_n, 'and posts nothing');
+
+  select * into r from public.fixed_asset_register(current_date) where asset_id = v_asset;
+  perform app_test.assert_equals(r.net_book_value, 97222.22::numeric, 'the register shows NBV 97,222.22');
+
+  -- Sold for 90,000: loss 7,222.22.
+  v_entry := public.dispose_fixed_asset(v_asset, current_date, 90000, 'Replaced with a laptop');
+  perform app_test.assert_equals(
+    (select debit from public.journal_entry_lines l join public.chart_of_accounts c on c.id = l.account_id
+      where l.journal_entry_id = v_entry and c.code = '5980'),
+    7222.22::numeric, 'disposal below book value posts the loss, 7,222.22');
+  perform app_test.assert_equals(
+    (select total_debit = total_credit from public.journal_entries where id = v_entry), true,
+    'and the disposal journal balances');
+
+  -- ── A loan: principal and interest kept apart ──────────────────────────────
+  v_loan := public.create_loan('Canara Bank term loan', 500000, 12, current_date, 24);
+  perform public.record_loan_transaction(v_loan, 'DISBURSEMENT', v_bank, current_date, 500000, 0, 'loan-in-1');
+  select * into s from public.loan_schedule(v_loan) where instalment = 1;
+  perform app_test.assert_equals(s.interest, 5000.00::numeric, 'first instalment interest: 1% of 5,00,000');
+  perform public.record_loan_transaction(v_loan, 'REPAYMENT', v_bank, current_date, s.principal, s.interest, 'loan-emi-1');
+  perform app_test.assert_equals(
+    (select credit_balance from public.trial_balance(current_date) where account_code = '2800'),
+    500000 - s.principal, 'the liability falls by the principal only');
+  perform app_test.assert_equals(
+    (select debit_balance from public.trial_balance(current_date) where account_code = '5960'),
+    5000::numeric, 'and the interest is an expense, not a repayment');
+  perform app_test.assert_raises(
+    format($q$select public.record_loan_transaction(%L, 'REPAYMENT', %L, current_date, 999999, 0)$q$, v_loan, v_bank),
+    'repaying more principal than is outstanding is refused');
+  perform app_test.assert_raises(
+    format($q$select public.record_loan_transaction(%L, 'DISBURSEMENT', %L, current_date, 1, 0)$q$, v_loan, v_bank),
+    'drawing beyond the sanctioned amount is refused');
+
+  -- ── Payroll ────────────────────────────────────────────────────────────────
+  insert into public.employees (dealer_id, branch_id, employee_code, name)
+  values (v_dealer, v_branch, 'EMP-ACPT-1', 'Payroll Tester') returning id into v_emp;
+  insert into public.employee_salary_structures
+    (dealer_id, employee_id, effective_from, basic, hra, conveyance,
+     pf_employee, esi_employee, professional_tax, pf_employer, esi_employer, revision_note)
+  values (v_dealer, v_emp, date_trunc('month', current_date)::date - 31, 20000, 8000, 2000,
+          2400, 225, 200, 2400, 975, 'Test');
+
+  v_run := public.create_payroll_run(current_date, v_branch);
+  update public.payroll_lines set tds = 1000 where run_id = v_run;
+  perform app_test.assert_equals((select gross from public.payroll_lines where run_id = v_run), 30000::numeric,
+    'the run takes gross pay from the salary structure: 30,000');
+  perform app_test.assert_equals((select net_pay from public.payroll_lines where run_id = v_run), 26175::numeric,
+    'net pay after PF, ESI, PT and TDS: 26,175');
+
+  v_entry := public.post_payroll_run(v_run);
+  perform app_test.assert_equals(
+    (select string_agg(c.code || case when l.debit > 0 then ' Dr ' || l.debit::numeric(18, 0) else ' Cr ' || l.credit::numeric(18, 0) end,
+                       ', ' order by l.debit = 0, c.code)
+       from public.journal_entry_lines l join public.chart_of_accounts c on c.id = l.account_id
+      where l.journal_entry_id = v_entry),
+    '5500 Dr 30000, 5510 Dr 3375, 2710 Cr 26175, 2720 Cr 4800, 2730 Cr 1200, 2740 Cr 1000, 2750 Cr 200',
+    'payroll posts gross and employer cost, and owes net pay and each statutory payable');
+  perform app_test.assert_raises(format('update public.payroll_lines set tds = 0 where run_id = %L', v_run),
+    'a posted payroll cannot be edited');
+
+  perform public.pay_payroll_run(v_run, v_bank, current_date);
+  perform app_test.assert_equals(
+    (select credit_balance - debit_balance from public.trial_balance(current_date) where account_code = '2710'),
+    0::numeric, 'paying it clears salaries payable');
+  perform app_test.assert_equals(
+    (select count(*)::int from public.control_account_tieout(current_date) where control = 'BANK' and difference <> 0), 0,
+    'and the bank book moved with the ledger');
+  perform app_test.assert_equals(
+    (select count(*)::int from public.register_tieout(current_date) where control = 'LOANS' and difference <> 0), 0,
+    'the loans register ties to the ledger');
+end $$;
+
 reset role;
 select app_test.logout();

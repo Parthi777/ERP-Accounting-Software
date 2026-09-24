@@ -40,6 +40,7 @@ export const taxCodeSchema = z
     cgst_rate: z.coerce.number().min(0).max(50),
     sgst_rate: z.coerce.number().min(0).max(50),
     cess_rate: z.coerce.number().min(0).max(50).default(0),
+    tax_category: z.enum(['TAXABLE', 'ZERO_RATED', 'NIL_RATED', 'EXEMPT', 'NON_GST']).default('TAXABLE'),
     effective_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a start date.'),
     effective_to: z
       .string()
@@ -51,6 +52,11 @@ export const taxCodeSchema = z
   .refine(
     (v) => !v.effective_to || v.effective_to >= v.effective_from,
     { message: 'The end date cannot precede the start date.', path: ['effective_to'] },
+  )
+  .refine(
+    (v) => ['TAXABLE', 'ZERO_RATED'].includes(v.tax_category)
+      || (v.cgst_rate === 0 && v.sgst_rate === 0 && (v.cess_rate ?? 0) === 0),
+    { message: 'Nil-rated, exempt and non-GST supplies carry no tax.', path: ['tax_category'] },
   );
 export type TaxCodeInput = z.input<typeof taxCodeSchema>;
 

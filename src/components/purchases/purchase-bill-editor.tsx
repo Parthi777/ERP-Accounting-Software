@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 
 import type {
+  ItcCategory,
   PurchaseBill,
   PurchaseLineType,
   StockSource,
+  SupplyCategory,
   UnbilledVehicle,
 } from '@/server/services/purchases/purchase-service';
 import {
@@ -187,6 +189,9 @@ function AddLine({
     accountId?: string | null;
     hsnSac?: string | null;
     itcEligible?: boolean;
+    itcCategory?: ItcCategory;
+    reverseCharge?: boolean;
+    taxCategory?: SupplyCategory;
     description: string;
     quantity: number;
     unitRate: number;
@@ -206,7 +211,9 @@ function AddLine({
   const [accountId, setAccountId] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [hsnSac, setHsnSac] = React.useState('');
-  const [itcEligible, setItcEligible] = React.useState(true);
+  const [itcCategory, setItcCategory] = React.useState<ItcCategory>('ELIGIBLE');
+  const [reverseCharge, setReverseCharge] = React.useState(false);
+  const [taxCategory, setTaxCategory] = React.useState<SupplyCategory>('TAXABLE');
 
   const isVehicle = lineType === 'VEHICLE';
   const isExpense = lineType === 'EXPENSE';
@@ -217,7 +224,9 @@ function AddLine({
   const qty = isVehicle ? 1 : Number(quantity) || 0;
   const rateValue = Number(rate) || 0;
   const taxable = fromRupees(rateValue * qty);
-  const tax = fromRupees((rateValue * qty * gst) / 100);
+  const taxed = taxCategory === 'TAXABLE' || taxCategory === 'ZERO_RATED';
+  const gstRate = taxed ? gst : 0;
+  const tax = fromRupees((rateValue * qty * gstRate) / 100);
 
   const reset = () => {
     setVehicleId('');
@@ -227,7 +236,9 @@ function AddLine({
     setAccountId('');
     setDescription('');
     setHsnSac('');
-    setItcEligible(true);
+    setItcCategory('ELIGIBLE');
+    setReverseCharge(false);
+    setTaxCategory('TAXABLE');
   };
 
   const submit = () => {
@@ -245,14 +256,16 @@ function AddLine({
       source: isVehicle || isExpense ? null : source,
       accountId: isExpense ? accountId : null,
       hsnSac: isExpense ? hsnSac.trim() || null : null,
-      itcEligible: isExpense ? itcEligible : true,
+      itcCategory: isExpense ? itcCategory : 'ELIGIBLE',
+      reverseCharge: isExpense && reverseCharge,
+      taxCategory,
       description: text,
       quantity: qty,
       unitRate: rateValue,
       // Intra-state splits in half; inter-state is one IGST figure (spec §16).
-      cgstRate: interState ? 0 : gst / 2,
-      sgstRate: interState ? 0 : gst / 2,
-      igstRate: interState ? gst : 0,
+      cgstRate: interState ? 0 : gstRate / 2,
+      sgstRate: interState ? 0 : gstRate / 2,
+      igstRate: interState ? gstRate : 0,
     });
     reset();
   };
@@ -375,20 +388,41 @@ function AddLine({
 
         <div>
           <Label htmlFor="line-gst" className="mb-1.5 block">GST</Label>
-          <select id="line-gst" value={gst} onChange={(e) => setGst(Number(e.target.value))}
-            className="h-9 w-full field px-3 text-sm">
+          <select id="line-gst" value={gstRate} onChange={(e) => setGst(Number(e.target.value))}
+            disabled={!taxed} className="h-9 w-full field px-3 text-sm">
             {gstRates.map((r) => <option key={r} value={r}>{r}%</option>)}
           </select>
           <label className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-500">
             <input type="checkbox" checked={interState} onChange={(e) => setInterState(e.target.checked)} />
             Inter-state (IGST)
           </label>
-          {isExpense && (
-            <label className="mt-1 flex items-center gap-1.5 text-xs text-ink-500"
-              title="Uncheck for a blocked credit under s.17(5) — food, personal use, own-use vehicles. The GST is then charged to the expense and not claimed.">
-              <input type="checkbox" checked={itcEligible} onChange={(e) => setItcEligible(e.target.checked)} />
-              Input tax claimable
-            </label>
+          <select aria-label="Supply category" value={taxCategory}
+            onChange={(e) => setTaxCategory(e.target.value as SupplyCategory)}
+            className="mt-1.5 h-8 w-full field px-2 text-xs">
+            <option value="TAXABLE">Taxable</option>
+            <option value="ZERO_RATED">Zero rated</option>
+            <option value="NIL_RATED">Nil rated</option>
+            <option value="EXEMPT">Exempt</option>
+            <option value="NON_GST">Non-GST</option>
+          </select>
+          {isExpense && taxed && (
+            <>
+              <select aria-label="Input tax credit" value={itcCategory}
+                onChange={(e) => setItcCategory(e.target.value as ItcCategory)}
+                title="Blocked (s.17(5)) and personal purchases are not claimed: the GST is charged to the account with the value. Personal purchases may be charged to Drawings."
+                className="mt-1 h-8 w-full field px-2 text-xs">
+                <option value="ELIGIBLE">ITC: eligible</option>
+                <option value="CAPITAL_GOODS">ITC: capital goods</option>
+                <option value="COMMON">ITC: common (apportioned)</option>
+                <option value="BLOCKED">ITC: blocked, s.17(5)</option>
+                <option value="PERSONAL">ITC: personal use</option>
+              </select>
+              <label className="mt-1 flex items-center gap-1.5 text-xs text-ink-500"
+                title="GTA freight, legal fees, an unregistered landlord: the supplier charges no GST and the dealer pays it. The supplier is owed the value only.">
+                <input type="checkbox" checked={reverseCharge} onChange={(e) => setReverseCharge(e.target.checked)} />
+                Reverse charge (RCM)
+              </label>
+            </>
           )}
         </div>
       </div>
@@ -397,7 +431,7 @@ function AddLine({
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-brand-800">
           <span>Taxable <span className="numeric font-semibold">{formatINR(taxable)}</span></span>
           <span>GST <span className="numeric font-semibold">{formatINR(tax)}</span></span>
-          <span>Line total <span className="numeric font-semibold">{formatINR(add(taxable, tax))}</span></span>
+          <span>{reverseCharge && isExpense ? 'Owed to supplier' : 'Line total'} <span className="numeric font-semibold">{formatINR(reverseCharge && isExpense ? taxable : add(taxable, tax))}</span></span>
         </div>
         <Button type="button" size="sm" disabled={pending || !ready} onClick={submit}>
           {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Plus aria-hidden />}
@@ -459,7 +493,13 @@ function Lines({
                         <Badge variant={tone[line.lineType] ?? 'neutral'}>{line.lineType}</Badge>
                         <span className="text-ink-800">{line.description}</span>
                         {line.source && <Badge variant="neutral">{line.source}</Badge>}
-                        {!line.itcEligible && <Badge variant="warning">ITC blocked</Badge>}
+                        {!line.itcEligible && (
+                          <Badge variant="warning">{line.itcCategory === 'PERSONAL' ? 'Personal' : 'ITC blocked'}</Badge>
+                        )}
+                        {line.itcCategory === 'CAPITAL_GOODS' && <Badge variant="info">Capital goods</Badge>}
+                        {line.itcCategory === 'COMMON' && <Badge variant="info">Common credit</Badge>}
+                        {line.reverseCharge && <Badge variant="warning">RCM</Badge>}
+                        {line.taxCategory !== 'TAXABLE' && <Badge variant="neutral">{line.taxCategory.replace('_', ' ')}</Badge>}
                       </span>
                       {(line.chassisNo || line.itemCode || line.accountLabel) && (
                         <span className="mt-0.5 block font-mono text-[11px] text-ink-400">

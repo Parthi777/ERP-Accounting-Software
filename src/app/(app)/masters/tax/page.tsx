@@ -22,6 +22,10 @@ export default async function Page() {
   const columns: Column<TaxCodeRow>[] = [
     { key: 'code', header: 'Code', render: (r) => <span className="font-mono text-xs text-ink-700">{r.code}</span> },
     { key: 'name', header: 'Name', render: (r) => <span className="font-medium text-ink-900">{r.name}</span> },
+    { key: 'category', header: 'Category', render: (r) => (
+      r.tax_category === 'TAXABLE' ? <span className="text-ink-500">Taxable</span>
+        : <Badge variant="info">{r.tax_category.replace('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())}</Badge>
+    ) },
     { key: 'cgst', header: 'CGST', numeric: true, render: (r) => `${Number(r.cgst_rate)}%` },
     { key: 'sgst', header: 'SGST', numeric: true, render: (r) => `${Number(r.sgst_rate)}%` },
     { key: 'igst', header: 'IGST', numeric: true, render: (r) => `${Number(r.igst_rate)}%` },

@@ -57,7 +57,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             .filter(Boolean)
             .join(' · ')
         }
-        action={<Badge variant={STATUS_TONE[invoice.status] ?? 'neutral'}>{invoice.status}</Badge>}
+        action={
+          <span className="flex gap-2">
+            {/* Rule 49: an invoice that carries no tax at all is a bill of supply. */}
+            {invoice.lines.length > 0 && invoice.cgst + invoice.sgst + invoice.igst === 0 && (
+              <Badge variant="info">Bill of supply</Badge>
+            )}
+            <Badge variant={STATUS_TONE[invoice.status] ?? 'neutral'}>{invoice.status}</Badge>
+          </span>
+        }
       />
 
       <ServiceInvoiceEditor

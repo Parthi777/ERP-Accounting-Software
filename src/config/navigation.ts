@@ -172,6 +172,8 @@ export const NAVIGATION: readonly NavSection[] = [
     status: 'ready',
     phase: 3,
     items: [
+      { label: 'Transfer Notes', href: '/inventory/transfer-notes', permission: 'inventory.view', status: 'ready' },
+      { label: 'Damaged & Consignment', href: '/inventory/damaged-consignment', permission: 'inventory.view', status: 'ready' },
       { label: 'Accessories', href: '/inventory/accessories', permission: 'inventory.view', status: 'ready' },
       { label: 'Spares', href: '/inventory/spares', permission: 'inventory.view', status: 'ready' },
       { label: 'Stock Upload', href: '/inventory/upload', permission: 'inventory.stock.upload', status: 'ready', phase: 3 },
@@ -218,6 +220,7 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Account Ledger', href: '/accounting/ledger', permission: 'accounting.ledgers.view', status: 'ready' },
       { label: 'Journal Entries', href: '/accounting/journals', permission: 'accounting.journals.view', status: 'ready' },
       { label: 'New Journal Entry', href: '/accounting/journals/new', permission: 'accounting.journals.post', status: 'ready' },
+      { label: 'Approvals', href: '/accounting/approvals', permission: 'accounting.journals.view', status: 'ready' },
       { label: 'Opening Balances', href: '/accounting/opening-balances', permission: 'accounting.journals.post', status: 'ready' },
       { label: 'Customer Ledger', href: '/accounting/customer-ledger', permission: 'accounting.ledgers.view', status: 'ready', phase: 5 },
       { label: 'Supplier Ledger', href: '/accounting/supplier-ledger', permission: 'accounting.ledgers.view', status: 'ready', phase: 5 },
@@ -226,6 +229,8 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Profit & Loss', href: '/accounting/profit-and-loss', permission: 'accounting.reports.view', status: 'ready' },
       { label: 'Balance Sheet', href: '/accounting/balance-sheet', permission: 'accounting.reports.view', status: 'ready' },
       { label: 'Control Tie-out', href: '/accounting/tie-out', permission: 'accounting.reports.view', status: 'ready' },
+      { label: 'Fixed Assets', href: '/accounting/fixed-assets', permission: 'assets.view', status: 'ready' },
+      { label: 'Loans', href: '/accounting/loans', permission: 'loans.view', status: 'ready' },
     ],
   },
   {
@@ -269,6 +274,10 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'E-Invoice', href: '/gst/e-invoice', permission: 'gst.einvoice.generate', status: 'ready', phase: 7 },
       { label: 'E-Way Bill', href: '/gst/e-way-bill', permission: 'gst.ewaybill.generate', status: 'ready', phase: 7 },
       { label: 'GST Reports', href: '/gst/reports', permission: 'gst.reports.view', status: 'ready', phase: 7 },
+      { label: 'GST Returns', href: '/gst/returns', permission: 'gst.reports.view', status: 'ready', phase: 7 },
+      { label: 'GSTR-2B', href: '/gst/gstr-2b', permission: 'gst.reports.view', status: 'ready', phase: 7 },
+      { label: 'Credit & Debit Notes', href: '/gst/notes', permission: 'gst.reports.view', status: 'ready', phase: 7 },
+      { label: 'ITC Reversals', href: '/gst/itc', permission: 'gst.reports.view', status: 'ready', phase: 7 },
     ],
   },
   {
@@ -296,6 +305,7 @@ export const NAVIGATION: readonly NavSection[] = [
     items: [
       { label: 'Employees', href: '/hr', permission: 'masters.employees.view', status: 'ready' },
       { label: 'Attendance', href: '/hr/attendance', permission: 'hr.attendance.view', status: 'ready' },
+      { label: 'Payroll', href: '/hr/payroll', permission: 'hr.payroll.run', status: 'ready' },
       { label: 'Shifts & Leave', href: '/hr/settings', permission: 'masters.employees.view', status: 'ready' },
     ],
   },

@@ -9,6 +9,7 @@ import { Panel, PanelContent, PanelHeader, PanelTitle, SolidPanel } from '@/comp
 import { Badge } from '@/components/ui/badge';
 import { JournalReverseAction } from '@/components/accounting/journal-reverse-action';
 import { Button } from '@/components/ui/button';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { add, formatINR, fromDb, ZERO, type Paise } from '@/lib/money';
 import { formatDate, formatDateTime } from '@/lib/format';
 
@@ -136,6 +137,10 @@ export default async function JournalDetailPage({
           )}
         </PanelContent>
       </Panel>
+
+      <div className="mt-4">
+        <AttachmentsPanel entityType="JOURNAL_ENTRY" entityId={id} revalidate={`/accounting/journals/${id}`} />
+      </div>
     </div>
   );
 }

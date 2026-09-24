@@ -13,6 +13,7 @@ import {
 import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Panel } from '@/components/ui/panel';
+import { getSupplyCategories, type SupplyCategoryRow } from '@/server/services/gst/gst-compliance-service';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { add, formatINR, paise, subtract } from '@/lib/money';
@@ -73,6 +74,26 @@ const hsnColumns: Column<HsnSummaryRow>[] = [
   },
 ];
 
+const CATEGORY_LABEL: Record<string, string> = {
+  TAXABLE: 'Taxable', ZERO_RATED: 'Zero rated', NIL_RATED: 'Nil rated', EXEMPT: 'Exempt',
+  NON_GST: 'Non-GST', UNCLASSIFIED: 'Unclassified',
+};
+
+const categoryColumns: Column<SupplyCategoryRow>[] = [
+  { key: 'direction', header: 'Supplies', render: (row) => (row.direction === 'OUTWARD' ? 'Outward (sales)' : 'Inward (purchases)') },
+  {
+    key: 'category', header: 'Category',
+    render: (row) => (
+      <Badge variant={row.category === 'UNCLASSIFIED' ? 'warning' : row.category === 'TAXABLE' ? 'neutral' : 'info'}>
+        {CATEGORY_LABEL[row.category] ?? row.category}
+      </Badge>
+    ),
+  },
+  { key: 'count', header: 'Documents', numeric: true, render: (row) => row.documentCount },
+  { key: 'taxable', header: 'Value', numeric: true, render: (row) => formatINR(row.taxable) },
+  { key: 'tax', header: 'Tax', numeric: true, render: (row) => formatINR(row.tax) },
+];
+
 export default async function Page({
   searchParams,
 }: {
@@ -82,11 +103,12 @@ export default async function Page({
   const params = await searchParams;
   const range = rangeInYear(context.activeFinancialYear, params.from, params.to);
 
-  const [sections, hsn, inputTax, portal] = await Promise.all([
+  const [sections, hsn, inputTax, portal, categories] = await Promise.all([
     getGstr1Summary({ from: range.from, to: range.to }),
     getHsnSummary({ from: range.from, to: range.to }),
     getInputTaxSummary({ from: range.from, to: range.to }),
     getGstPortalStatus(),
+    getSupplyCategories(range.from, range.to),
   ]);
 
   const totalTax = sections.reduce((sum, s) => add(sum, s.totalTax), paise(0));
@@ -211,6 +233,20 @@ export default async function Page({
         getRowKey={(row) => row.hsnCode}
         emptyMessage="No posted invoices in this period."
         caption="GST summary by HSN"
+      />
+
+      <h2 className="mb-1 mt-6 text-sm font-semibold text-ink-900">Supplies by category</h2>
+      <p className="mb-3 text-xs text-ink-500">
+        GSTR-3B 3.1 and 5: taxable, zero-rated, nil-rated, exempt and non-GST supplies, read from the
+        tax code on each line as it stood on the invoice date. &ldquo;Unclassified&rdquo; is a zero-tax
+        line with no code — give it one on the tax master.
+      </p>
+      <DataTable
+        columns={categoryColumns}
+        rows={categories}
+        getRowKey={(row) => `${row.direction}-${row.category}`}
+        emptyMessage="No posted documents in this period."
+        caption="Supplies by GST category"
       />
 
       <h2 className="mb-1 mt-6 text-sm font-semibold text-ink-900">Input tax credit by HSN</h2>

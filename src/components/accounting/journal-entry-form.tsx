@@ -114,7 +114,9 @@ export function JournalEntryForm({
       idempotency.renew();
 
       if (afterPost === 'navigate') {
-        router.push(`/accounting/journals/${result.id}`);
+        // Submitted for approval rather than posted (0081): there is no journal
+        // yet, so show the queue it is waiting in.
+        router.push(result.id ? `/accounting/journals/${result.id}` : '/accounting/approvals');
         router.refresh();
         return;
       }

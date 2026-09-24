@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { getSetting } from '@/server/services/org/org-service';
+
 import { requirePermission, type TenantContext } from '@/server/auth/tenant-context';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { fromDb, type Paise } from '@/lib/money';
@@ -215,6 +217,25 @@ export async function adjustStock(input: {
   }
   if (!context.accessibleBranches.some((b) => b.id === input.branchId)) {
     return { ok: false, error: 'That is not a branch you can adjust stock at.' };
+  }
+
+  // With approval switched on (0081) the adjustment waits for a second person;
+  // nothing moves until they accept it.
+  if (await getSetting('approvals.stock_adjustment')) {
+    const { error: requestError } = await supabase.rpc('request_stock_adjustment', {
+      p_item_id: input.itemId,
+      p_branch_id: input.branchId,
+      p_source: input.source,
+      p_quantity: input.quantity,
+      p_reason: reason,
+    });
+    if (requestError) {
+      return { ok: false, error: describeInventoryError(requestError.message) };
+    }
+    return {
+      ok: true,
+      message: 'Submitted for approval. The stock moves when someone else approves it (Accounting → Approvals).',
+    };
   }
 
   const { error } = await supabase.rpc('adjust_inventory_stock', {

@@ -288,6 +288,21 @@ const RPC = new Set([
   'bank_reconciliation_statement', 'bank_reconciliation_items', 'control_account_tieout',
   // Walk-in settlement and ageing (0080).
   'settle_counter_invoice', 'party_ageing',
+  // Approvals (0081).
+  'request_manual_journal', 'request_stock_adjustment', 'decide_approval', 'withdraw_approval',
+  // Fixed assets, payroll, loans (0082).
+  'register_fixed_asset', 'run_depreciation', 'dispose_fixed_asset', 'fixed_asset_register',
+  'create_payroll_run', 'post_payroll_run', 'pay_payroll_run',
+  'create_loan', 'record_loan_transaction', 'loan_schedule', 'register_tieout',
+  // Transfers, damaged and consignment stock (0083).
+  'mark_stock_damaged', 'move_consignment_stock', 'inventory_condition_report',
+  // Tax categories, notes, reverse charge, ITC (0084).
+  'issue_gst_note', 'cancel_gst_note', 'record_itc_adjustment', 'itc_rule37_candidates',
+  'gst_supply_categories',
+  // GST returns (0085).
+  'import_gstr2b', 'match_gstr2b', 'gstr2b_reconciliation', 'itc_claimable', 'gstr3b_working',
+  'gstr3b_setoff', 'prepare_gst_return', 'sign_off_gst_return', 'record_gst_filing', 'post_gst_setoff',
+  'gstr1_amendments', 'gst_cross_checks',
 ]);
 
 function argsType(args) {

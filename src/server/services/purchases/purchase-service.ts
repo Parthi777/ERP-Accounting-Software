@@ -29,6 +29,9 @@ export type PurchaseStatus = 'DRAFT' | 'POSTED' | 'CANCELLED';
 export type PurchaseLineType = 'VEHICLE' | 'ACCESSORY' | 'SPARE' | 'EXPENSE';
 export type StockSource = 'LOCAL' | 'COMPANY';
 
+export type ItcCategory = 'ELIGIBLE' | 'CAPITAL_GOODS' | 'COMMON' | 'BLOCKED' | 'PERSONAL';
+export type SupplyCategory = 'TAXABLE' | 'ZERO_RATED' | 'NIL_RATED' | 'EXEMPT' | 'NON_GST';
+
 export interface PurchaseListRow {
   readonly id: string;
   readonly billNumber: string;
@@ -58,6 +61,11 @@ export interface PurchaseLine {
   readonly hsnSac: string | null;
   /** False when the input tax is a blocked credit and was charged to the expense. */
   readonly itcEligible: boolean;
+  /** Why the credit is or is not claimed (0084). */
+  readonly itcCategory: ItcCategory;
+  /** Tax paid by the dealer under reverse charge, not owed to the supplier. */
+  readonly reverseCharge: boolean;
+  readonly taxCategory: SupplyCategory;
   readonly quantity: number;
   readonly unitRate: Paise;
   readonly taxableValue: Paise;
@@ -236,7 +244,7 @@ export async function getPurchaseBill(id: string): Promise<PurchaseBill | null> 
   const { data: rawLines, error: lineError } = await supabase
     .from('purchase_bill_lines')
     .select(
-      'id, line_number, line_type, description, source, quantity, unit_rate, taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount, vehicle_id, item_id, account_id, hsn_sac, itc_eligible',
+      'id, line_number, line_type, description, source, quantity, unit_rate, taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount, vehicle_id, item_id, account_id, hsn_sac, itc_eligible, itc_category, reverse_charge, tax_category',
     )
     .eq('purchase_bill_id', id)
     .order('line_number');
@@ -278,6 +286,9 @@ export async function getPurchaseBill(id: string): Promise<PurchaseBill | null> 
     accountLabel: line.account_id ? (accountById.get(line.account_id) ?? null) : null,
     hsnSac: line.hsn_sac,
     itcEligible: line.itc_eligible,
+    itcCategory: line.itc_category as ItcCategory,
+    reverseCharge: line.reverse_charge,
+    taxCategory: line.tax_category as SupplyCategory,
     quantity: Number(line.quantity),
     unitRate: fromDb(line.unit_rate),
     taxableValue: fromDb(line.taxable_value),
@@ -481,6 +492,12 @@ export interface PurchaseLineInput {
   readonly hsnSac?: string | null;
   /** EXPENSE lines: false for a blocked credit (s.17(5)); its GST becomes cost. */
   readonly itcEligible?: boolean;
+  /** EXPENSE lines: why the credit is or is not claimed; overrides itcEligible. */
+  readonly itcCategory?: ItcCategory;
+  /** EXPENSE lines: GST payable by the dealer under reverse charge. */
+  readonly reverseCharge?: boolean;
+  /** The supplier's supply category; anything but TAXABLE/ZERO_RATED carries no tax. */
+  readonly taxCategory?: SupplyCategory;
   readonly description: string;
   readonly quantity: number;
   /** Rupees, per unit, before tax. */
@@ -523,6 +540,18 @@ export async function addPurchaseLine(input: PurchaseLineInput): Promise<Purchas
   }
   const stock = input.lineType === 'ACCESSORY' || input.lineType === 'SPARE';
   const expense = input.lineType === 'EXPENSE';
+  const taxCategory = input.taxCategory ?? 'TAXABLE';
+  const reverseCharge = expense && input.reverseCharge === true;
+  if (!['TAXABLE', 'ZERO_RATED'].includes(taxCategory)
+      && (input.cgstRate > 0 || input.sgstRate > 0 || input.igstRate > 0)) {
+    return { ok: false, error: 'A nil-rated, exempt or non-GST supply carries no tax. Set GST to 0%.' };
+  }
+  if (reverseCharge && taxCategory !== 'TAXABLE') {
+    return { ok: false, error: 'Reverse charge applies to a taxable supply.' };
+  }
+  const itcCategory: ItcCategory = expense
+    ? (input.itcCategory ?? (input.itcEligible === false ? 'BLOCKED' : 'ELIGIBLE'))
+    : 'ELIGIBLE';
   if (input.igstRate > 0 && (input.cgstRate > 0 || input.sgstRate > 0)) {
     return { ok: false, error: 'A line carries CGST and SGST, or IGST — never both.' };
   }
@@ -555,7 +584,10 @@ export async function addPurchaseLine(input: PurchaseLineInput): Promise<Purchas
     source: stock ? input.source! : null,
     account_id: expense ? input.accountId! : null,
     hsn_sac: expense ? input.hsnSac?.trim() || null : null,
-    itc_eligible: expense ? input.itcEligible !== false : true,
+    itc_eligible: ['ELIGIBLE', 'CAPITAL_GOODS', 'COMMON'].includes(itcCategory),
+    itc_category: itcCategory,
+    reverse_charge: reverseCharge,
+    tax_category: taxCategory,
     description: input.description.trim() || 'Purchase line',
     quantity: String(quantity),
     unit_rate: String(input.unitRate),
@@ -566,7 +598,8 @@ export async function addPurchaseLine(input: PurchaseLineInput): Promise<Purchas
     cgst_amount: toDb(cgst),
     sgst_amount: toDb(sgst),
     igst_amount: toDb(igst),
-    total_amount: toDb(add(taxable, cgst, sgst, igst)),
+    // Under reverse charge the supplier is owed the value; the tax is the dealer's.
+    total_amount: toDb(reverseCharge ? taxable : add(taxable, cgst, sgst, igst)),
   });
 
   if (error) {

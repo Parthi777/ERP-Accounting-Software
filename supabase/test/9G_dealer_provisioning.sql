@@ -62,10 +62,13 @@ begin
   perform app_test.assert_equals(v_new is not null, true, 'provisioning returns the new dealer');
   -- 43 since 0066 added 3300 Opening Balance Equity; 51 since 0076 added fixed
   -- assets, accumulated depreciation, loans, drawings, depreciation, interest
-  -- and stock adjustments. Asserting the exact
+  -- and stock adjustments; 59 since 0082 added the payroll payables, employer
+  -- contributions and gain/loss on asset sales; 60 since 0083 added 1850
+  -- Inter-Branch Stock in Transit; 62 since 0084 added 2590 GST Payable (RCM)
+  -- and 5990 Input Tax Credit Reversed. Asserting the exact
   -- number is deliberate: an account silently missing from a new dealer's chart
   -- is not visible until a posting rule cannot resolve it.
-  perform app_test.assert_equals(v_res.accounts_created, 51, 'the full chart of accounts is seeded');
+  perform app_test.assert_equals(v_res.accounts_created, 62, 'the full chart of accounts is seeded');
   perform app_test.assert_equals(v_res.rules_created > 0, true, 'and the accounting rules with it');
 
   -- ═══ It can actually trade ═══════════════════════════════════════════════
@@ -153,7 +156,7 @@ begin
 
   -- Their own chart of accounts, however, is there and complete.
   select count(*)::int into v_count from public.chart_of_accounts;
-  perform app_test.assert_equals(v_count, 51,
+  perform app_test.assert_equals(v_count, 62,
     'but their own chart of accounts is fully visible to them');
 end;
 $$;
@@ -223,7 +226,7 @@ do $$
 declare v_count int;
 begin
   select count(*)::int into v_count from public.chart_of_accounts;
-  perform app_test.assert_equals(v_count, 51,
+  perform app_test.assert_equals(v_count, 62,
     'and reactivating restores it — suspension is a switch, not a deletion');
 end;
 $$;

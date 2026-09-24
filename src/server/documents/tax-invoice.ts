@@ -59,6 +59,11 @@ export async function renderTaxInvoice(
   generatedAt: Date,
 ): Promise<RenderedDocument> {
   const fonts = loadFonts();
+  // Rule 49: a supply that carries no tax at all (exempt, nil rated, non-GST)
+  // is billed on a bill of supply, not a tax invoice.
+  const billOfSupply =
+    toRupees(invoice.cgstAmount) + toRupees(invoice.sgstAmount) + toRupees(invoice.igstAmount) === 0;
+  const heading = billOfSupply ? 'Bill of Supply' : 'Tax Invoice';
 
   const doc = new PDFDocument({
     size: 'A4',
@@ -66,7 +71,7 @@ export async function renderTaxInvoice(
     margin: MARGIN,
     bufferPages: true,
     info: {
-      Title: `Tax Invoice ${invoice.invoiceNumber}`,
+      Title: `${heading} ${invoice.invoiceNumber}`,
       Author: invoice.supplier.name,
       Creator: 'Two-Wheeler Dealer ERP',
       CreationDate: generatedAt,
@@ -89,7 +94,7 @@ export async function renderTaxInvoice(
 
   // ── Heading ───────────────────────────────────────────────────────────────
   doc.font('bold').fontSize(15).fillColor(INK)
-    .text('TAX INVOICE', left, y, { width, align: 'center' });
+    .text(heading.toUpperCase(), left, y, { width, align: 'center' });
   y = doc.y + 3;
 
   doc.font('body').fontSize(7.5).fillColor(MUTED)
@@ -279,7 +284,7 @@ export async function renderTaxInvoice(
   return {
     body: Buffer.concat(chunks),
     contentType: 'application/pdf',
-    filename: `Tax-Invoice-${invoice.invoiceNumber.replace(/[^\w.-]+/g, '-')}.pdf`,
+    filename: `${heading.replace(/ /g, '-')}-${invoice.invoiceNumber.replace(/[^\w.-]+/g, '-')}.pdf`,
   };
 }
 

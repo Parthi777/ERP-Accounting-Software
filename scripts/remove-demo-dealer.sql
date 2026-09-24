@@ -80,6 +80,17 @@ begin
   select coalesce(array_agg(id), '{}') into v_users
     from public.user_profiles where dealer_id = v_dealer;
 
+  -- Replica mode suspends the foreign keys' own actions as well as their
+  -- checks, so an ON DELETE SET NULL does not fire. A profile outside the
+  -- dealer — the platform admin's — that last worked in one of its branches
+  -- kept pointing at a branch that no longer existed, and a restore of the
+  -- database then failed on it (found by the restore drill; repaired by 0086).
+  -- Clear such references first, while the branches still exist.
+  update public.user_profiles p
+     set default_branch_id = null
+   where p.dealer_id is distinct from v_dealer
+     and p.default_branch_id in (select b.id from public.branches b where b.dealer_id = v_dealer);
+
   -- Every table carrying a dealer_id, discovered rather than hardcoded, so a
   -- table added later is covered without editing this script.
   --

@@ -24,11 +24,16 @@ export default async function Page() {
     },
     {
       title: 'Rates',
-      description: 'IGST is not entered: the database requires it to equal CGST + SGST, so it is derived on save.',
+      description: 'IGST is not entered: the database requires it to equal CGST + SGST, so it is derived on save. Nil-rated, exempt and non-GST codes carry no rate; an invoice made only of them prints as a bill of supply.',
       fields: [
         { name: 'cgst_rate', label: 'CGST', type: 'number' as const, required: true, step: '0.001', suffix: '%' },
         { name: 'sgst_rate', label: 'SGST', type: 'number' as const, required: true, step: '0.001', suffix: '%' },
         { name: 'cess_rate', label: 'Cess', type: 'number' as const, step: '0.001', suffix: '%' },
+        { name: 'tax_category', label: 'Supply category', type: 'select' as const, required: true, wide: true, options: [
+          { value: 'TAXABLE', label: 'Taxable' }, { value: 'ZERO_RATED', label: 'Zero rated (export / SEZ)' },
+          { value: 'NIL_RATED', label: 'Nil rated' }, { value: 'EXEMPT', label: 'Exempt' },
+          { value: 'NON_GST', label: 'Non-GST (outside GST)' },
+        ] },
       ],
     },
     {
@@ -43,7 +48,7 @@ export default async function Page() {
       ],
     },
   ];
-  const defaults = { status: 'ACTIVE', cgst_rate: 0, sgst_rate: 0, cess_rate: 0, effective_from: new Date().toISOString().slice(0, 10) };
+  const defaults = { status: 'ACTIVE', tax_category: 'TAXABLE', cgst_rate: 0, sgst_rate: 0, cess_rate: 0, effective_from: new Date().toISOString().slice(0, 10) };
 
   return (
     <div className="mx-auto max-w-3xl">

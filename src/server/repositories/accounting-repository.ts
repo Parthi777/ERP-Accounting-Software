@@ -260,13 +260,18 @@ export interface TieoutRow {
 
 export async function getControlTieout(asOn: string): Promise<TieoutRow[]> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc('control_account_tieout', { p_as_on: asOn });
+  // Control accounts (0077) and the registers kept beside them — fixed assets,
+  // accumulated depreciation, loans (0082) — read in one pass.
+  const [{ data: controls, error }, { data: registers, error: registerError }] = await Promise.all([
+    supabase.rpc('control_account_tieout', { p_as_on: asOn }),
+    supabase.rpc('register_tieout', { p_as_on: asOn }),
+  ]);
 
-  if (error) {
-    throw new Error(`Failed to load the tie-out: ${error.message}`);
+  if (error || registerError) {
+    throw new Error(`Failed to load the tie-out: ${(error ?? registerError)?.message}`);
   }
 
-  return (data ?? []).map((row) => ({
+  return [...(controls ?? []), ...(registers ?? [])].map((row) => ({
     control: row.control,
     code: row.account_code,
     name: row.account_name,

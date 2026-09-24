@@ -66,6 +66,7 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('inventory.stock.upload',          'inventory',  'Upload accessory/spare stock', false),
   ('inventory.stock.transfer',        'inventory',  'Transfer stock between branches', false),
   ('inventory.stock.adjust',          'inventory',  'Adjust stock quantities', false),
+  ('inventory.stock.approve',         'inventory',  'Approve or reject stock adjustments submitted by someone else', false),
   ('inventory.ledger.view',           'inventory',  'View the stock ledger', false),
   ('inventory.counter_sale.create',   'inventory',  'Create counter sales invoices', false),
   ('inventory.view_cost',             'inventory',  'View item purchase cost', true),
@@ -91,6 +92,12 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('accounting.journals.create',      'accounting', 'Create draft journal entries', false),
   ('accounting.journals.post',        'accounting', 'Post journal entries', false),
   ('accounting.journals.reverse',     'accounting', 'Reverse a posted journal entry', false),
+  ('accounting.journals.approve',     'accounting', 'Approve or reject manual journals submitted by someone else', false),
+  ('attachments.upload',              'accounting', 'Attach supporting files to documents', false),
+  ('assets.view',                     'accounting', 'View the fixed asset register', false),
+  ('assets.manage',                   'accounting', 'Register, depreciate and dispose of fixed assets', false),
+  ('loans.view',                      'accounting', 'View loans and their statements', false),
+  ('loans.manage',                    'accounting', 'Record loans, disbursements and repayments', false),
   ('accounting.periods.manage',       'accounting', 'Open, close and lock accounting periods', false),
   ('accounting.ledgers.view',         'accounting', 'View customer, supplier and finance ledgers', false),
   ('accounting.allocations.manage',   'accounting', 'Split payments against bills and settle party ledgers', false),
@@ -102,6 +109,7 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('hr.settings.manage',              'hr',         'Manage shifts and leave types', false),
   ('hr.salary.view',                  'hr',         'View employee salary structures', true),
   ('hr.salary.manage',                'hr',         'Set and revise employee salary structures', true),
+  ('hr.payroll.run',                  'hr',         'Prepare, post and pay monthly payroll', true),
   ('hr.leave.view',                   'hr',         'View employee leave balances', false),
   ('hr.leave.manage',                 'hr',         'Set and adjust leave balances', false),
   ('hr.documents.view',               'hr',         'View employee documents', false),
@@ -130,6 +138,10 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('gst.einvoice.retry',              'gst',        'Retry failed e-invoice requests', false),
   ('gst.ewaybill.generate',           'gst',        'Generate e-way bills', false),
   ('gst.reports.view',                'gst',        'View GST reports', false),
+  ('gst.notes.manage',                'gst',        'Issue and cancel credit and debit notes', false),
+  ('gst.itc.manage',                  'gst',        'Reverse and re-claim input tax credit', false),
+  ('gst.returns.prepare',             'gst',        'Import GSTR-2B and prepare GST returns', false),
+  ('gst.returns.file',                'gst',        'Sign off and record the filing of GST returns', false),
 
   ('reports.sales.view',              'reports',    'View sales reports', false),
   ('reports.inventory.view',          'reports',    'View inventory reports', false),
@@ -454,6 +466,7 @@ begin
       ('1600', 'Accessories Inventory',     'ASSET',     'DEBIT',  false, '1000', true),
       ('1700', 'Spare Inventory',           'ASSET',     'DEBIT',  false, '1000', true),
       ('1800', 'Other Receivables',         'ASSET',     'DEBIT',  false, '1000', false),
+      ('1850', 'Inter-Branch Stock in Transit', 'ASSET',   'DEBIT',  false, '1000', true),
       ('1900', 'Input CGST',                'ASSET',     'DEBIT',  false, '1000', false),
       ('1910', 'Input SGST',                'ASSET',     'DEBIT',  false, '1000', false),
       ('1920', 'Input IGST',                'ASSET',     'DEBIT',  false, '1000', false),
@@ -469,6 +482,12 @@ begin
       ('2500', 'Output IGST',               'LIABILITY', 'CREDIT', false, '2000', false),
       ('2600', 'Finance Company Payable',   'LIABILITY', 'CREDIT', false, '2000', false),
       ('2700', 'Other Payables',            'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2710', 'Salaries Payable',          'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2720', 'PF Payable',                'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2730', 'ESI Payable',               'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2740', 'TDS Payable',               'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2750', 'Professional Tax Payable',  'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2590', 'GST Payable — Reverse Charge', 'LIABILITY', 'CREDIT', false, '2000', false),
       ('2800', 'Loans',                     'LIABILITY', 'CREDIT', false, '2000', false),
 
       ('3000', 'Equity',                    'EQUITY',    'CREDIT', true,  null,   false),
@@ -486,6 +505,7 @@ begin
       ('4600', 'Insurance Commission',      'INCOME',    'CREDIT', false, '4000', true),
       ('4700', 'Forwarding Income',         'INCOME',    'CREDIT', false, '4000', true),
       ('4800', 'Other Income',              'INCOME',    'CREDIT', false, '4000', true),
+      ('4810', 'Gain on Sale of Assets',    'INCOME',    'CREDIT', false, '4000', false),
 
       ('5000', 'Costs and Expenses',        'EXPENSE',   'DEBIT',  true,  null,   false),
       ('5100', 'Vehicle COGS',              'EXPENSE',   'DEBIT',  false, '5000', true),
@@ -493,13 +513,16 @@ begin
       ('5300', 'Spare COGS',                'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5400', 'Service Cost',              'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5500', 'Salaries',                  'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5510', 'Employer PF & ESI',         'EXPENSE',   'DEBIT',  false, '5000', false),
       ('5600', 'Rent',                      'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5700', 'Utilities',                 'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5800', 'Bank Charges',              'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5900', 'Other Expenses',            'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5950', 'Depreciation',              'EXPENSE',   'DEBIT',  false, '5000', false),
       ('5960', 'Interest Expense',          'EXPENSE',   'DEBIT',  false, '5000', false),
-      ('5970', 'Stock Adjustments',         'EXPENSE',   'DEBIT',  false, '5000', false)
+      ('5970', 'Stock Adjustments',         'EXPENSE',   'DEBIT',  false, '5000', false),
+      ('5980', 'Loss on Sale of Assets',    'EXPENSE',   'DEBIT',  false, '5000', false),
+      ('5990', 'Input Tax Credit Reversed', 'EXPENSE',   'DEBIT',  false, '5000', false)
     ) as t(code, name, account_type, normal_balance, is_group, parent_code, branch_scoped)
     order by code
   loop
@@ -531,6 +554,8 @@ begin
   perform app.seed_finance_accounting_rules(v_dealer_id);
   perform app.seed_cogs_accounting_rules(v_dealer_id);
   perform app.seed_purchase_accounting_rules(v_dealer_id);
+  -- RCM payable, ITC reversed and the nil/exempt/non-GST tax codes (0084).
+  perform app.seed_gst_compliance(v_dealer_id);
 
   -- ── One cash account per branch (spec §36) ────────────────────────────────
   -- Here rather than with the branches above, because a cash account needs a
