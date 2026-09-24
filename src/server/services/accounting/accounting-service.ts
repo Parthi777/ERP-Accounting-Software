@@ -15,6 +15,8 @@ export type {
   TrialBalanceRow,
   StatementRow,
   TieoutRow,
+  AgeingRow,
+  AgeingPartyType,
 } from '@/server/repositories/accounting-repository';
 
 /**
@@ -84,4 +86,13 @@ export async function getBalanceSheet(asOn: string, branchId: string | null) {
 export async function getControlTieout(asOn: string) {
   await requirePermission('accounting.reports.view');
   return repository.getControlTieout(asOn);
+}
+
+/**
+ * Who owes what, and for how long (0080). Dealer-wide: a customer's balance is
+ * not a branch's, and ageing it per branch would split one debt in two.
+ */
+export async function getPartyAgeing(partyType: repository.AgeingPartyType, asOn: string) {
+  await requirePermission('accounting.ledgers.view');
+  return repository.getPartyAgeing(partyType, asOn);
 }

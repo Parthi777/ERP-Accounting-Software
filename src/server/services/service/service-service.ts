@@ -53,6 +53,11 @@ export interface ServiceInvoiceDetail {
   readonly customerName: string | null;
   readonly jobCardNumber: string | null;
   readonly jobCardId: string | null;
+  /**
+   * A counter sale with no customer. It is posted and paid in one step (0080):
+   * left owing, it would be a receivable nobody can be asked for.
+   */
+  readonly isWalkIn: boolean;
   readonly taxableValue: Paise;
   readonly cgst: Paise;
   readonly sgst: Paise;
@@ -195,6 +200,7 @@ export async function getServiceInvoice(id: string): Promise<ServiceInvoiceDetai
     customerName: data.customers?.name ?? null,
     jobCardNumber: data.job_cards?.job_card_number ?? null,
     jobCardId: data.job_card_id,
+    isWalkIn: !data.customers && !data.job_card_id,
     taxableValue: fromDb(data.taxable_value),
     cgst: fromDb(data.cgst_amount),
     sgst: fromDb(data.sgst_amount),
@@ -409,6 +415,54 @@ export async function postServiceInvoice(invoiceId: string): Promise<ServiceResu
   });
 
   return { ok: true, message: 'Posted. Revenue, GST, cost and stock all moved together.' };
+}
+
+/**
+ * A walk-in counter sale, posted and paid in full in one transaction (0080).
+ *
+ * The database refuses to commit a posted walk-in with a balance, so this is
+ * the only way one gets posted: a counter sale with no customer is paid for
+ * before the customer leaves, and anything on credit needs a named customer.
+ */
+export async function settleCounterInvoice(input: {
+  readonly invoiceId: string;
+  readonly mode: string;
+  readonly reference?: string | null;
+  readonly idempotencyKey: string;
+}): Promise<ServiceResult> {
+  const context = await requirePermission('service.billing.create', 'service.payments.collect');
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.rpc('settle_counter_invoice', {
+    p_invoice_id: input.invoiceId,
+    p_payment_mode: input.mode,
+    p_reference: input.reference?.trim() || null,
+    p_idempotency_key: input.idempotencyKey,
+  });
+
+  if (error) {
+    console.error('[service] walk-in settlement failed', error.message);
+    return { ok: false, error: describeServiceError(error.message) };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+
+  await recordAudit({
+    action: 'POST',
+    entityType: 'service_invoices',
+    entityId: input.invoiceId,
+    dealerId: context.dealerId,
+    branchId: context.activeBranch?.id ?? null,
+    userId: context.userId,
+    userEmail: context.email,
+    newData: { journal_entry_id: row?.journal_entry_id, receipt_number: row?.receipt_number, mode: input.mode },
+  });
+
+  return {
+    ok: true,
+    number: row?.receipt_number ?? undefined,
+    message: `Posted and paid — receipt ${row?.receipt_number}.`,
+  };
 }
 
 export async function recordServicePayment(input: {

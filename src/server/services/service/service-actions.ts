@@ -99,6 +99,21 @@ export async function recordServicePaymentAction(input: {
   }
 }
 
+export async function settleCounterInvoiceAction(input: {
+  invoiceId: string;
+  mode: string;
+  reference?: string | null;
+  idempotencyKey: string;
+}): Promise<service.ServiceResult> {
+  try {
+    const result = await service.settleCounterInvoice(input);
+    if (result.ok) refreshService(input.invoiceId);
+    return result;
+  } catch (error) {
+    return { ok: false, error: toAppError(error).userMessage };
+  }
+}
+
 export async function createCounterInvoiceAction(
   customerId: string | null | undefined,
   idempotencyKey: string,

@@ -12,6 +12,7 @@ import {
   addServiceLineAction,
   postServiceInvoiceAction,
   recordServicePaymentAction,
+  settleCounterInvoiceAction,
   removeServiceLineAction,
 } from '@/server/services/service/service-actions';
 import type { ServiceInvoiceDetail } from '@/server/services/service/service-service';
@@ -57,7 +58,7 @@ export function ServiceInvoiceEditor({
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
-  const [dialog, setDialog] = React.useState<'payment' | null>(null);
+  const [dialog, setDialog] = React.useState<'payment' | 'settle' | null>(null);
 
   const [lineType, setLineType] = React.useState('LABOUR');
   const [itemId, setItemId] = React.useState('');
@@ -308,7 +309,7 @@ export function ServiceInvoiceEditor({
 
       <Panel className="p-4">
         <div className="flex flex-wrap items-center gap-2">
-          {draft && canBill && (
+          {draft && canBill && !invoice.isWalkIn && (
             <Button size="sm" disabled={pending || invoice.lines.length === 0}
               onClick={() => run(() => postServiceInvoiceAction(invoice.id))}>
               {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />}
@@ -316,8 +317,24 @@ export function ServiceInvoiceEditor({
             </Button>
           )}
 
+          {/* A walk-in pays before leaving: posting and payment are one step, and
+              the database refuses a posted walk-in left owing (0080). */}
+          {draft && canBill && canCollect && invoice.isWalkIn && (
+            <Button size="sm" disabled={pending || invoice.lines.length === 0}
+              onClick={() => setDialog('settle')}>
+              <Wallet aria-hidden />
+              Post &amp; take payment
+            </Button>
+          )}
+
+          {/* A walk-in posted before 0080 and never paid is collected in full: the
+              database refuses a part payment that would leave it owing. */}
           {posted && canCollect && invoice.balance > 0 && (
-            <Button size="sm" onClick={() => setDialog('payment')} disabled={pending}>
+            <Button size="sm" disabled={pending}
+              onClick={() => {
+                if (invoice.isWalkIn) setAmount(String(invoice.balance / 100));
+                setDialog('payment');
+              }}>
               <Wallet aria-hidden />
               Collect payment
             </Button>
@@ -334,9 +351,61 @@ export function ServiceInvoiceEditor({
           <p className="mt-2 text-xs text-ink-500">
             Posting recognises revenue and GST, relieves the parts from stock and records their cost —
             all in one transaction. After that the invoice cannot be edited.
+            {invoice.isWalkIn &&
+              ' No customer is named, so this is a walk-in sale and is paid in full as it is posted. To sell on credit, start the sale with the customer.'}
           </p>
         )}
       </Panel>
+
+      {dialog === 'settle' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/25 p-4 backdrop-blur-sm"
+          role="dialog" aria-modal="true" onClick={() => setDialog(null)}>
+          <div className="glass-strong w-full max-w-md rounded-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-sm font-semibold text-ink-900">Post and take payment</h2>
+            <p className="mt-1 text-sm text-ink-600">
+              {formatINR(invoice.total)} for {invoice.number}, received in full now.
+            </p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <Label htmlFor="settle-mode" className="mb-1.5 block">Mode</Label>
+                <select id="settle-mode" value={mode} onChange={(e) => setMode(e.target.value)}
+                  className="h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm shadow-sm">
+                  {['CASH', 'UPI', 'CARD', 'NEFT', 'RTGS', 'IMPS', 'CHEQUE'].map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="settle-ref" className="mb-1.5 block">Reference</Label>
+                <Input id="settle-ref" value={reference} onChange={(e) => setReference(e.target.value)}
+                  placeholder={mode === 'CASH' ? 'Optional' : 'UPI / card / cheque reference'} />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setDialog(null)} disabled={pending}>Cancel</Button>
+              <Button size="sm" disabled={pending}
+                onClick={() =>
+                  run(
+                    () =>
+                      settleCounterInvoiceAction({
+                        invoiceId: invoice.id,
+                        mode,
+                        reference: reference || null,
+                        idempotencyKey: idempotency.key(),
+                      }),
+                    () => {
+                      idempotency.renew();
+                      setDialog(null); setReference('');
+                    },
+                  )
+                }>
+                {pending && <Loader2 className="animate-spin" aria-hidden />}
+                Post and receive {formatINR(invoice.total)}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {dialog === 'payment' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/25 p-4 backdrop-blur-sm"

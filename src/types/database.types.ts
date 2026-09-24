@@ -3663,6 +3663,10 @@ export interface Database {
         Args: { p_dealer_id: string; p_branch_id: string; p_doc_type: string; p_financial_year: string };
         Returns: string;
       };
+      party_ageing: {
+        Args: { p_party_type: string; p_as_on?: string | null };
+        Returns: { party_id: string; party_name: string; balance: string; bucket_0_30: string; bucket_31_60: string; bucket_61_90: string; bucket_90_plus: string; unallocated_credit: string; advance_held: string; oldest_open_date: string }[];
+      };
       party_ledger: {
         Args: { p_party_type: string; p_party_id: string; p_from: string; p_to: string };
         Returns: { entry_date: string; entry_number: string; narration: string; debit: string; credit: string; running_balance: string }[];
@@ -3822,6 +3826,10 @@ export interface Database {
       set_books_lock: {
         Args: { p_locked_through: string; p_reason: string };
         Returns: { locked_through: string; previous: string }[];
+      };
+      settle_counter_invoice: {
+        Args: { p_invoice_id: string; p_payment_mode?: string | null; p_reference?: string | null; p_idempotency_key?: string | null };
+        Returns: { journal_entry_id: string; receipt_number: string; amount_received: string }[];
       };
       start_attendance_sync: {
         Args: { p_from: string; p_to: string };

@@ -286,6 +286,8 @@ const RPC = new Set([
   // Ledger integrity — the chart, the lock date, contra, BRS and tie-out (0076, 0077).
   'create_account', 'set_account_status', 'set_books_lock', 'record_contra',
   'bank_reconciliation_statement', 'bank_reconciliation_items', 'control_account_tieout',
+  // Walk-in settlement and ageing (0080).
+  'settle_counter_invoice', 'party_ageing',
 ]);
 
 function argsType(args) {

@@ -276,3 +276,43 @@ export async function getControlTieout(asOn: string): Promise<TieoutRow[]> {
     explanation: row.explanation,
   }));
 }
+
+export type AgeingPartyType = 'CUSTOMER' | 'SUPPLIER' | 'FINANCE_COMPANY';
+
+export interface AgeingRow {
+  readonly partyId: string;
+  readonly partyName: string;
+  /** Owed after every receipt or payment, allocated or not. */
+  readonly balance: Paise;
+  readonly current: Paise;
+  readonly days31to60: Paise;
+  readonly days61to90: Paise;
+  readonly over90: Paise;
+  /** Money received or paid beyond every open bill. */
+  readonly unallocatedCredit: Paise;
+  /** Held on the advance account — shown apart, never netted. */
+  readonly advance: Paise;
+  readonly oldestOpenDate: string | null;
+}
+
+export async function getPartyAgeing(partyType: AgeingPartyType, asOn: string): Promise<AgeingRow[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc('party_ageing', { p_party_type: partyType, p_as_on: asOn });
+
+  if (error) {
+    throw new Error(`Failed to load the ageing: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    partyId: row.party_id,
+    partyName: row.party_name,
+    balance: fromDb(row.balance),
+    current: fromDb(row.bucket_0_30),
+    days31to60: fromDb(row.bucket_31_60),
+    days61to90: fromDb(row.bucket_61_90),
+    over90: fromDb(row.bucket_90_plus),
+    unallocatedCredit: fromDb(row.unallocated_credit),
+    advance: fromDb(row.advance_held),
+    oldestOpenDate: row.oldest_open_date,
+  }));
+}

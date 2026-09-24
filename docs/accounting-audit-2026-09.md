@@ -19,7 +19,7 @@ The *Accounting Web App Audit Checklist* (23 Sep 2026), worked against the code 
 |---|---|---|
 | P0 failures | 3 (group/inactive postings, cash/bank sub-ledger divergence, no closed-period control) | 0 |
 | P1 failures fixed | Stock adjustments unjournalled; stock adjustments and transfers impossible under RLS; BRS without reconciling items; no expense or fixed-asset document; no chart maintenance | 0 open from this list |
-| P1/P2 still open | | GSTR-2B / 3B workings, RCM, ITC categories beyond eligible/blocked, depreciation register, payroll posting, ageing buckets, count-adjustment approval, branch-level stock-to-GL on transfers, backup/restore drill |
+| P1/P2 still open | | GSTR-2B / 3B workings, RCM, ITC categories beyond eligible/blocked, depreciation register, payroll posting, count-adjustment approval, branch-level stock-to-GL on transfers, backup/restore drill |
 | Unresolved differences on upgraded demo data | Customer/control 0 · Supplier/control 0 · Stock/GL −₹900 / +₹480 · Bank 0 | All 0 after the one-off correcting journal described below |
 
 **Decision:** fix and retest → ready for the P0 gate. Apply migrations 0076–0079 before deploying the app code that calls them (see *Deploying* at the end).
@@ -39,6 +39,7 @@ The *Accounting Web App Audit Checklist* (23 Sep 2026), worked against the code 
 | F7 / P1 | Computer or rent with input GST (Test A events 2 and 5) | A supplier document; ITC in the GST summary. **Actual:** purchase bills carried stock only, so overheads were hand journals and their ITC never reached `gst_input_summary`. No account existed for fixed assets or depreciation, and none could be added. | EXPENSE lines on purchase bills (account, HSN/SAC, "input tax claimable" switch for s.17(5) blocked credit). Chart of accounts gets **Add account** / deactivate. Standard accounts seeded: 1950/1951/1959 fixed assets and accumulated depreciation, 2800 Loans, 3400 Drawings, 5950 Depreciation, 5960 Interest, 5970 Stock Adjustments. *0076, 0078; test 9Y* |
 | F8 / P2 | Test A gross profit | Read off the P&L. **Actual:** no cost-of-sales section. | COGS accounts marked COST_OF_SALES; the P&L page and export show Cost of sales → Gross profit → Expenses → Net. *0076* |
 | F9 / P1 | Sub-ledger tie-out | A report compares control accounts with their detail. **Actual:** none. | **Accounting → Control Tie-out** (`control_account_tieout()`): party controls, cash, bank and stock at cost. *0077; test 9Y* |
+| F11 / P1 | Post-deploy tie-out on production (DHARANI) | Every receivable belongs to a customer. **Actual:** ₹1,115.10 on 1300 with no customer: walk-in counter sale CSI-2026-000001, posted 16 Sep, never paid. Posting and collecting were separate steps, so a walk-in could be left owing with nobody to chase. | `settle_counter_invoice()` posts and collects in one step ("Post & take payment"). A deferred trigger refuses, at commit, any posted walk-in with a balance. The existing invoice is left alone, and collecting it in full clears it. *0080; test 9Y* |
 | F10 / tooling | Generated TS types | `chart_of_accounts.account_type` typed `'ASSET' \| 'EXPENSE'` and attendance status missing four values, because the generator read unions from compound CHECKs. | `scripts/generate-types.mjs` skips compound checks. |
 
 **Legacy data the migrations deliberately don't fix silently.** Postings made before 0076 to group accounts, manual cash/bank lines, and stock adjustments made before 0079 are counted by `RAISE NOTICE` when the migration runs, and they show on the Tie-out page. On the demo data, one manual journal (1600 Dr 900 / 5970 Cr 900; 5970 Dr 480 / 1700 Cr 480) brought every control to zero. Do the same on production after reading the tie-out.
@@ -162,8 +163,8 @@ Events 4 and 5 are two documents each, as they would be in practice. The net eff
 |---|---|---|
 | Invoice-level balance | P | `party_open_items` |
 | Allocations | P | Existing 9B |
-| Advance and credits | P | Booking advances (97) held apart from receivables |
-| Ageing | Pa | Per-item `age_days`. **No 30/60/90 bucket report.** Purchase bills have due dates; sales invoices don't. |
+| Advance and credits | P | Booking advances (97) held apart from receivables; ageing shows advances and unallocated credit in their own columns (9Y) |
+| Ageing | P | **Accounting → Ageing** (`party_ageing()`, 0080): customers, suppliers and finance companies in 0–30/31–60/61–90/90+ buckets; allocations first, then oldest-first; exportable. 9Y asserts the buckets, an as-on date in the past, and a total equal to the 2200 control. Aged from the document date, because sales invoices carry no due date. |
 | Control account tie-out | P | *Fixed (F9)* |
 | Statements and reversals | P | Party ledgers are built from GL lines, so reversals appear |
 
@@ -224,7 +225,7 @@ Events 4 and 5 are two documents each, as they would be in practice. The net eff
 | Row | Mark | Evidence |
 |---|---|---|
 | Core reports | P | Journal register, account ledger, trial balance, P&L (now with gross profit), balance sheet. There's no day-book screen; the journal register serves. |
-| Operational reports | Pa | Registers, cash and bank books. **Ageing buckets missing.** |
+| Operational reports | P | Registers, cash and bank books, receivable and payable ageing (0080) |
 | Asset and inventory | Pa | Stock ledger and valuation. **No fixed-asset register.** |
 | Reconciliation reports | P | *New:* BRS, tie-out; GST summaries |
 | Cutoff and filters | P | As-on and branch filters across statements and exports |

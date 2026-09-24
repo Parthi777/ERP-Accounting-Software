@@ -221,6 +221,7 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Opening Balances', href: '/accounting/opening-balances', permission: 'accounting.journals.post', status: 'ready' },
       { label: 'Customer Ledger', href: '/accounting/customer-ledger', permission: 'accounting.ledgers.view', status: 'ready', phase: 5 },
       { label: 'Supplier Ledger', href: '/accounting/supplier-ledger', permission: 'accounting.ledgers.view', status: 'ready', phase: 5 },
+      { label: 'Ageing', href: '/accounting/ageing', permission: 'accounting.ledgers.view', status: 'ready' },
       { label: 'Trial Balance', href: '/accounting/trial-balance', permission: 'accounting.reports.view', status: 'ready' },
       { label: 'Profit & Loss', href: '/accounting/profit-and-loss', permission: 'accounting.reports.view', status: 'ready' },
       { label: 'Balance Sheet', href: '/accounting/balance-sheet', permission: 'accounting.reports.view', status: 'ready' },

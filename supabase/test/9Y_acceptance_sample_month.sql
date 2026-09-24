@@ -628,5 +628,123 @@ begin
     'every adjustment movement points at its journal');
 end $$;
 
+-- ═══ Walk-in counter sales are paid when they are made (0080) ══════════════════
+-- Found on production: a walk-in invoice posted and never paid, leaving a
+-- receivable that belongs to nobody.
+do $$
+declare
+  v_dealer  uuid := app.current_dealer_id();
+  v_branch  uuid;
+  v_item    uuid;
+  v_invoice uuid;
+  r         record;
+begin
+  select id into v_branch from public.branches where dealer_id = v_dealer;
+  select id into v_item from public.inventory_items where dealer_id = v_dealer and item_code = 'ACC-KIT-01';
+
+  select invoice_id into v_invoice from public.create_counter_invoice(v_branch, null);
+  perform public.add_service_line(v_invoice, 'ACCESSORY', 'Accessory kit', 1, 7031.25, v_item, 'GST18');
+
+  -- The rule is checked at commit; made immediate here so the refusal can be seen.
+  set constraints service_invoices_walk_in_settled immediate;
+  perform app_test.assert_raises(
+    format('select public.post_service_invoice(%L)', v_invoice),
+    'a walk-in sale cannot be posted and left unpaid');
+  set constraints service_invoices_walk_in_settled deferred;
+
+  select * into r from public.settle_counter_invoice(v_invoice, 'CASH', null, 'acpt-walk-in-1');
+  perform app_test.assert_equals(r.amount_received, 8296.87::numeric,
+    'settling posts the walk-in and takes its whole balance in one step');
+  perform app_test.assert_equals(
+    (select status || ':' || (total_amount - paid_amount)::numeric(18, 2)
+       from public.service_invoices where id = v_invoice),
+    'POSTED:0.00', 'the invoice is posted with nothing owed');
+  perform app_test.assert_equals(
+    (select count(*)::int from public.cash_transactions
+      where journal_entry_id = (select sp.journal_entry_id from public.service_payments sp
+                                 where sp.invoice_id = v_invoice)), 1,
+    'and the cash reached the cash book');
+  perform app_test.assert_equals(
+    (select (public.settle_counter_invoice(v_invoice, 'CASH', null, 'acpt-walk-in-1')).amount_received),
+    0::numeric, 'settling again takes nothing more');
+  perform app_test.assert_equals(
+    (select difference from public.control_account_tieout(current_date) where account_code = '1300'),
+    0::numeric, 'and no receivable is left without a customer');
+end $$;
+
+-- ═══ Ageing (0080) ═════════════════════════════════════════════════════════════
+do $$
+declare
+  v_dealer uuid := app.current_dealer_id();
+  v_bank   uuid;
+  v_cust   uuid;
+  v_ar     uuid;
+  v_inc    uuid;
+  r        record;
+begin
+  select id into v_bank from public.bank_accounts where dealer_id = v_dealer and name = 'Main current account';
+  select id into v_ar  from public.chart_of_accounts where dealer_id = v_dealer and code = '1300';
+  select id into v_inc from public.chart_of_accounts where dealer_id = v_dealer and code = '4800';
+
+  -- Test A's customer: one invoice this month, part paid → 81,000 current.
+  select * into r from public.party_ageing('CUSTOMER', current_date)
+   where party_name = 'Acceptance Customer';
+  perform app_test.assert_equals(r.bucket_0_30, 81000::numeric, 'Test A customer: 81,000 in 0–30 days');
+  perform app_test.assert_equals(r.balance, 81000::numeric, 'which is the whole balance');
+
+  -- Test A's supplier: 1,18,000 + 5,90,000 billed, 4,00,000 paid unallocated —
+  -- 3,08,000 — plus the 1,050 staff-lunch bill posted in the expense-line block.
+  select * into r from public.party_ageing('SUPPLIER', current_date)
+   where party_name = 'Alpha Traders';
+  perform app_test.assert_equals(r.balance, 309050::numeric,
+    'Test A supplier: 3,08,000 from the month plus the 1,050 blocked-ITC bill');
+  perform app_test.assert_equals(
+    (select sum(balance) from public.party_ageing('SUPPLIER', current_date)),
+    (select -ledger_balance from public.control_account_tieout(current_date) where account_code = '2200'),
+    'and the payables ageing totals to the 2200 control account');
+  perform app_test.assert_equals(
+    (select count(*)::int from public.party_ageing('SUPPLIER', current_date)
+      where party_name = 'Showroom Landlord'), 0,
+    'a supplier paid in full does not appear');
+
+  -- An older customer: bills 100 and 45 days ago, a 3,000 receipt with no
+  -- allocation, and a 1,500 advance on account.
+  insert into public.customers (dealer_id, name, mobile, city, state, state_code)
+  values (v_dealer, 'Ageing Customer', '9840044444', 'Chennai', 'Tamil Nadu', '33')
+  returning id into v_cust;
+
+  perform public.post_manual_journal(current_date - 100, 'Old service bill',
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_ar, 'debit', 5000, 'credit', 0, 'party_type', 'CUSTOMER', 'party_id', v_cust),
+      jsonb_build_object('account_id', v_inc, 'debit', 0, 'credit', 5000)));
+  perform public.post_manual_journal(current_date - 45, 'Later service bill',
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_ar, 'debit', 10000, 'credit', 0, 'party_type', 'CUSTOMER', 'party_id', v_cust),
+      jsonb_build_object('account_id', v_inc, 'debit', 0, 'credit', 10000)));
+  perform public.record_bank_transaction(
+    p_bank_account_id => v_bank, p_direction => 'RECEIPT', p_amount => 3000,
+    p_particular => 'Part payment', p_account_id => v_ar, p_customer_id => v_cust);
+  perform public.post_manual_journal(current_date, 'Advance on a future booking',
+    jsonb_build_array(
+      jsonb_build_object('account_id', (select id from public.chart_of_accounts where dealer_id = v_dealer and code = '5900'),
+                         'debit', 1500, 'credit', 0),
+      jsonb_build_object('account_id', (select id from public.chart_of_accounts where dealer_id = v_dealer and code = '2100'),
+                         'debit', 0, 'credit', 1500, 'party_type', 'CUSTOMER', 'party_id', v_cust)));
+
+  select * into r from public.party_ageing('CUSTOMER', current_date) where party_id = v_cust;
+  perform app_test.assert_equals(r.bucket_90_plus, 2000::numeric,
+    'an unallocated receipt settles the oldest bill first: 2,000 of it left, over 90 days');
+  perform app_test.assert_equals(r.bucket_31_60, 10000::numeric, 'the later bill is untouched, 31–60 days');
+  perform app_test.assert_equals(r.balance, 12000::numeric, 'balance 12,000');
+  perform app_test.assert_equals(r.advance_held, 1500::numeric,
+    'the advance is its own column — never netted into what is owed');
+  perform app_test.assert_equals(r.oldest_open_date, current_date - 100, 'and the oldest open bill is named');
+
+  -- As it stood 60 days ago: only the first bill existed, and was unpaid.
+  select * into r from public.party_ageing('CUSTOMER', current_date - 60) where party_id = v_cust;
+  perform app_test.assert_equals(r.bucket_31_60 + r.bucket_0_30 + r.bucket_61_90 + r.bucket_90_plus,
+    5000::numeric, 'an earlier as-on date sees only what existed then');
+end $$;
+
 reset role;
 select app_test.logout();

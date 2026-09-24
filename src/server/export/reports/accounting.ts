@@ -4,8 +4,11 @@ import {
   getBalanceSheet,
   getChartOfAccounts,
   getJournals,
+  getPartyAgeing,
   getProfitAndLoss,
   getTrialBalance,
+  type AgeingPartyType,
+  type AgeingRow,
   type ChartAccount,
   type JournalSummary,
   type SourceModule,
@@ -121,6 +124,44 @@ export const accountingReports: AnyExportReport[] = [
       { key: 'code', header: 'Code', width: 10, value: (row) => row.code },
       { key: 'name', header: 'Account', width: 36, value: (row) => row.name },
       { key: 'amount', header: 'Amount', type: 'money', value: (row) => row.amount },
+    ],
+  }),
+
+  defineReport<AgeingRow>({
+    id: 'party-ageing',
+    title: 'Ageing',
+    description: 'Receivables or payables by age: 0–30, 31–60, 61–90 and over 90 days. Spec §41.',
+    permission: 'accounting.ledgers.view',
+    orientation: 'landscape',
+    load: async (_context, params) => {
+      const asOn = dateParam(params, 'asOn');
+      const type = params.get('type');
+      const partyType: AgeingPartyType =
+        type === 'SUPPLIER' || type === 'FINANCE_COMPANY' ? type : 'CUSTOMER';
+      const rows = await getPartyAgeing(partyType, asOn);
+      const total = rows.reduce((sum, row) => sum + row.balance, 0) as Paise;
+
+      return {
+        rows,
+        facts: [
+          { label: 'As on', value: formatDate(asOn) },
+          { label: 'Of', value: partyType === 'SUPPLIER' ? 'Suppliers' : partyType === 'FINANCE_COMPANY' ? 'Finance companies' : 'Customers' },
+        ],
+        notes: [
+          `${rows.length} parties, ${money(total)} outstanding.`,
+          'Aged from the document date. Allocated receipts settle their bills; unallocated ones settle the oldest first. Advances are shown apart, not netted.',
+        ],
+      };
+    },
+    columns: () => [
+      { key: 'party', header: 'Party', width: 30, value: (row) => row.partyName },
+      { key: 'current', header: '0–30 days', type: 'money', total: true, value: (row) => row.current },
+      { key: 'd31', header: '31–60', type: 'money', total: true, value: (row) => row.days31to60 },
+      { key: 'd61', header: '61–90', type: 'money', total: true, value: (row) => row.days61to90 },
+      { key: 'd90', header: 'Over 90', type: 'money', total: true, value: (row) => row.over90 },
+      { key: 'unallocated', header: 'Unallocated', type: 'money', total: true, value: (row) => row.unallocatedCredit },
+      { key: 'balance', header: 'Balance', type: 'money', total: true, value: (row) => row.balance },
+      { key: 'advance', header: 'Advance held', type: 'money', total: true, value: (row) => row.advance },
     ],
   }),
 
