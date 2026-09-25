@@ -176,13 +176,6 @@ export default async function CustomerDetailPage({
                 href={`/customers/ledger?customer=${customer.id}`}
               />
               <Related
-                label="Finance"
-                count={summary.financeCount}
-                value={summary.financeAmount}
-                valueLabel="financed"
-                href={`/finance/hp-sales?q=${encodeURIComponent(customer.customer_code)}`}
-              />
-              <Related
                 label="Service"
                 count={summary.serviceCount}
                 value={summary.serviceValue}

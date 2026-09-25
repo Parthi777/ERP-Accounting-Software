@@ -64,7 +64,15 @@ export default async function JournalDetailPage({
           )}
           {/* The action that sentence has always described and nothing offered. */}
           {entry.status === 'POSTED' && context.permissions.has('accounting.journals.reverse') && (
-            <JournalReverseAction journalId={entry.id} entryNumber={entry.entry_number} />
+            <>
+              {/* Cash and bank entries move a book as well as the ledger; they are
+                  re-entered through the cash or bank book, not re-posted by hand. */}
+              {context.permissions.has('accounting.journals.post')
+                && !['CASH', 'BANK'].includes(entry.source_module) && (
+                <JournalReverseAction journalId={entry.id} entryNumber={entry.entry_number} mode="correct" />
+              )}
+              <JournalReverseAction journalId={entry.id} entryNumber={entry.entry_number} />
+            </>
           )}
         </div>
       </div>

@@ -305,6 +305,8 @@ const RPC = new Set([
   'gstr1_amendments', 'gst_cross_checks',
   // Finance DD with deductions (0087).
   'receive_finance_dd',
+  // Quick service and counter bills (0088).
+  'create_quick_bill', 'party_statement', 'party_statement_opening',
 ]);
 
 function argsType(args) {

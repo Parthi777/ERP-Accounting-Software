@@ -29,6 +29,10 @@ export default async function Page({
   const context = await requirePermission('accounting.ledgers.view');
   const params = await searchParams;
   const { from, to } = rangeInYear(context.activeFinancialYear, params.from, params.to);
+  // The accountant tallies from here: a journal against this party, and each
+  // entry opens to be corrected.
+  const canPost = context.permissions.has('accounting.journals.post');
+  const canOpen = context.permissions.has('accounting.journals.view');
   const supplierId = params.supplier ?? '';
 
   const [suppliers, ledger] = await Promise.all([
@@ -55,6 +59,8 @@ export default async function Page({
         to={to}
         labels={SUPPLIER_LEDGER_LABELS}
         detailHref={(l) => `/masters/suppliers/${l.partyId}/edit`}
+        journalHref={canPost ? (l) => `/accounting/journals/new?party=SUPPLIER:${l.partyId}` : null}
+        linkEntries={canOpen}
       />
     </>
   );

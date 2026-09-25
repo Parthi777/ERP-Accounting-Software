@@ -186,11 +186,11 @@ export const NAVIGATION: readonly NavSection[] = [
     label: 'Service',
     group: 'Daily operation',
     icon: 'service',
-    permission: 'service.jobcards.view',
+    // Job cards are gone (0088): billing is the way in, so a cashier sees it.
+    permission: 'service.billing.create',
     status: 'ready',
     phase: 6,
     items: [
-      { label: 'Job Cards', href: '/service', permission: 'service.jobcards.view', status: 'ready', phase: 6 },
       { label: 'Service Billing', href: '/service/billing', permission: 'service.billing.create', status: 'ready', phase: 6 },
       { label: 'Service History', href: '/service/history', permission: 'service.history.view', status: 'ready', phase: 6 },
     ],
@@ -204,7 +204,7 @@ export const NAVIGATION: readonly NavSection[] = [
     phase: 4,
     items: [
       { label: 'Finance Companies', href: '/finance/companies', permission: 'finance.companies.view', status: 'ready' },
-      { label: 'HP Sales', href: '/finance/hp-sales', permission: 'finance.applications.view', status: 'ready', phase: 4 },
+      { label: 'Finance Ledger', href: '/finance/ledger', permission: 'finance.companies.view', status: 'ready' },
       { label: 'Trade Advances', href: '/finance/trade-advances', permission: 'finance.trade_advance.view', status: 'ready', phase: 4 },
       { label: 'Finance Settlement', href: '/finance/settlements', permission: 'finance.settlements.manage', status: 'ready', phase: 4 },
     ],

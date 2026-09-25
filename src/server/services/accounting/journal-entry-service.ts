@@ -264,6 +264,37 @@ export async function getJournalParties(options: { readonly customers?: boolean 
   ];
 }
 
+/**
+ * A posted entry's lines, to start its replacement from (0088). Correcting a
+ * journal is reverse-then-repost (spec §23); this is the "repost" half's
+ * starting point, so the accountant edits what was there instead of retyping.
+ */
+export async function getJournalForCorrection(id: string): Promise<{
+  readonly entryNumber: string;
+  readonly narration: string;
+  readonly lines: readonly { accountId: string; debit: number; credit: number; narration: string | null; party: string }[];
+} | null> {
+  await requirePermission('accounting.journals.post');
+  const supabase = await createSupabaseServerClient();
+  const [{ data: entry }, { data: lines }] = await Promise.all([
+    supabase.from('journal_entries').select('entry_number, narration').eq('id', id).maybeSingle(),
+    supabase.from('journal_entry_lines').select('account_id, debit, credit, narration, party_type, party_id, line_number')
+      .eq('journal_entry_id', id).order('line_number'),
+  ]);
+  if (!entry) return null;
+  return {
+    entryNumber: entry.entry_number,
+    narration: entry.narration ?? '',
+    lines: (lines ?? []).map((l) => ({
+      accountId: l.account_id,
+      debit: Number(l.debit),
+      credit: Number(l.credit),
+      narration: l.narration,
+      party: l.party_type && l.party_id ? `${l.party_type}:${l.party_id}` : '',
+    })),
+  };
+}
+
 /** The account a customer's balance sits on: the invoice rule's receivable. */
 export async function getReceivableAccountId(): Promise<string | null> {
   await requirePermission('accounting.journals.view');

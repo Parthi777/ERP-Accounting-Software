@@ -20,7 +20,7 @@ import type { Permission } from '@/lib/permissions';
  * arithmetic.
  */
 
-export type PartyType = 'CUSTOMER' | 'SUPPLIER';
+export type PartyType = 'CUSTOMER' | 'SUPPLIER' | 'FINANCE_COMPANY';
 
 /**
  * Reached from routes with different audiences and different permissions —
@@ -41,8 +41,11 @@ const CUSTOMER_PERMISSIONS = ['customers.view_ledger', 'accounting.ledgers.view'
 const SUPPLIER_PERMISSIONS = ['masters.suppliers.view', 'accounting.ledgers.view'] as const;
 
 export interface LedgerLine {
+  readonly entryId: string;
   readonly date: string;
   readonly entryNumber: string;
+  /** The account(s) on the other side of the entry — "HDFC Bank", "Spare Sales". */
+  readonly contra: string | null;
   readonly narration: string | null;
   readonly debit: Paise;
   readonly credit: Paise;
@@ -103,6 +106,16 @@ async function readParty(partyType: PartyType, id: string): Promise<PartyRecord 
       : null;
   }
 
+  if (partyType === 'FINANCE_COMPANY') {
+    const { data, error } = await supabase
+      .from('finance_companies')
+      .select('id, name, code, mobile')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new Error(`Failed to load the finance company: ${error.message}`);
+    return data ? { id: data.id, name: data.name, code: data.code, contact: data.mobile } : null;
+  }
+
   const { data, error } = await supabase
     .from('suppliers')
     .select('id, name, supplier_code, mobile')
@@ -130,12 +143,14 @@ async function loadPartyLedger(
 
   const [party, opening, ledger] = await Promise.all([
     readParty(partyType, params.partyId),
-    supabase.rpc('party_ledger_opening', {
+    // party_statement* (0088): readable by whoever may see this party's balance,
+    // and carrying the other side of each entry and its id.
+    supabase.rpc('party_statement_opening', {
       p_party_type: partyType,
       p_party_id: params.partyId,
       p_as_on: params.from,
     }),
-    supabase.rpc('party_ledger', {
+    supabase.rpc('party_statement', {
       p_party_type: partyType,
       p_party_id: params.partyId,
       p_from: params.from,
@@ -156,8 +171,10 @@ async function loadPartyLedger(
   const openingBalance = fromDb((opening.data ?? 0) as string | number);
 
   const lines: LedgerLine[] = (ledger.data ?? []).map((row) => ({
+    entryId: row.entry_id,
     date: row.entry_date,
     entryNumber: row.entry_number,
+    contra: row.contra,
     narration: row.narration,
     debit: fromDb(row.debit),
     credit: fromDb(row.credit),
@@ -213,6 +230,18 @@ async function loadPartyOptions(
         code: row.customer_code,
         contact: row.mobile,
       }),
+    }));
+  }
+
+  if (partyType === 'FINANCE_COMPANY') {
+    const { data, error } = await supabase
+      .from('finance_companies')
+      .select('id, name, code, mobile')
+      .order('name');
+    if (error) throw new Error(`Failed to load finance companies: ${error.message}`);
+    return (data ?? []).map((row) => ({
+      id: row.id,
+      label: optionLabel({ id: row.id, name: row.name, code: row.code, contact: row.mobile }),
     }));
   }
 
@@ -273,4 +302,21 @@ export async function getSupplierLedger(params: {
 export async function getLedgerSupplierOptions(search?: string): Promise<readonly LedgerPartyOption[]> {
   await requireEither(...SUPPLIER_PERMISSIONS);
   return loadPartyOptions('SUPPLIER', search);
+}
+
+const FINANCE_PERMISSIONS = ['finance.companies.view', 'accounting.ledgers.view'] as const;
+
+/** A finance company's running account — what it owes on loans, less DDs received. */
+export async function getFinanceCompanyLedger(params: {
+  readonly companyId: string;
+  readonly from: string;
+  readonly to: string;
+}): Promise<PartyLedger | null> {
+  await requireEither(...FINANCE_PERMISSIONS);
+  return loadPartyLedger('FINANCE_COMPANY', { partyId: params.companyId, from: params.from, to: params.to });
+}
+
+export async function getLedgerFinanceCompanyOptions(): Promise<readonly LedgerPartyOption[]> {
+  await requireEither(...FINANCE_PERMISSIONS);
+  return loadPartyOptions('FINANCE_COMPANY');
 }

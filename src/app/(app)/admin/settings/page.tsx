@@ -8,6 +8,9 @@ import {
 } from '@/server/services/org/org-service';
 import { requireTenantContext } from '@/server/auth/tenant-context';
 import { DealerSwitches } from '@/components/admin/dealer-switches';
+import { ActionForm } from '@/components/forms/action-form';
+import { getQuickBillTaxCodes, HEAD_LABEL, type BillHead } from '@/server/services/billing/quick-bill-service';
+import { saveQuickBillTaxCodesAction } from '@/server/services/billing/quick-bill-actions';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
@@ -79,6 +82,8 @@ export default async function SettingsPage() {
     getDealerSwitches(),
     requireTenantContext(),
   ]);
+  const quickBill = context.dealerId && context.permissions.has('admin.settings.manage')
+    ? await getQuickBillTaxCodes() : null;
 
   return (
     <div className="space-y-5">
@@ -93,6 +98,25 @@ export default async function SettingsPage() {
               values={switches}
               canManage={context.permissions.has('admin.settings.manage')}
             />
+          </PanelContent>
+        </Panel>
+      )}
+
+      {quickBill && (
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>GST on service and counter bills</PanelTitle>
+          </PanelHeader>
+          <PanelContent>
+            <p className="mb-3 text-xs text-ink-500">
+              The cashier types what the customer pays; GST is worked out of that amount at the code chosen here
+              for each head. A change applies to bills made from now on — earlier bills keep their tax.
+            </p>
+            <ActionForm action={saveQuickBillTaxCodesAction} submitLabel="Save GST codes" columns={3} resetOnSuccess={false}
+              fields={(Object.keys(HEAD_LABEL) as BillHead[]).map((head) => ({
+                name: head, label: HEAD_LABEL[head], type: 'select' as const, required: true,
+                defaultValue: quickBill.codes[head], options: quickBill.options,
+              }))} />
           </PanelContent>
         </Panel>
       )}

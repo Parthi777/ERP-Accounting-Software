@@ -39,6 +39,12 @@ export const CUSTOMER_LEDGER_LABELS: PartyLedgerLabels = {
   creditMeaning: 'Held in advance for the customer',
 };
 
+export const FINANCE_LEDGER_LABELS: PartyLedgerLabels = {
+  party: 'Finance company',
+  debitMeaning: 'Still to come from the financier',
+  creditMeaning: 'Received ahead (trade advance)',
+};
+
 export const SUPPLIER_LEDGER_LABELS: PartyLedgerLabels = {
   party: 'Supplier',
   // The mirror of a customer: the dealer owes a supplier, so the sign that reads
@@ -57,6 +63,8 @@ export function PartyLedgerView({
   to,
   labels,
   detailHref,
+  journalHref,
+  linkEntries = false,
 }: {
   /** The route this is mounted at, so the filter form posts back to itself. */
   readonly basePath: string;
@@ -70,6 +78,10 @@ export function PartyLedgerView({
   readonly labels: PartyLedgerLabels;
   /** Where "Open …" links to, or null when the party has no detail page. */
   readonly detailHref?: ((ledger: PartyLedger) => string) | null;
+  /** Where "Journal entry" goes for this party — only for someone who may post one. */
+  readonly journalHref?: ((ledger: PartyLedger) => string) | null;
+  /** Entry numbers open the journal (and its Correct button) — accountants only. */
+  readonly linkEntries?: boolean;
 }) {
   const lower = labels.party.toLowerCase();
 
@@ -78,7 +90,19 @@ export function PartyLedgerView({
     {
       key: 'entry',
       header: 'Entry',
-      render: (row) => <span className="font-mono text-xs text-ink-600">{row.entryNumber}</span>,
+      render: (row) =>
+        linkEntries ? (
+          <Link href={`/accounting/journals/${row.entryId}`} className="font-mono text-xs text-brand-700 hover:underline">
+            {row.entryNumber}
+          </Link>
+        ) : (
+          <span className="font-mono text-xs text-ink-600">{row.entryNumber}</span>
+        ),
+    },
+    {
+      key: 'account',
+      header: 'Account',
+      render: (row) => <span className="block max-w-xs font-medium text-ink-800">{row.contra ?? '—'}</span>,
     },
     {
       key: 'narration',
@@ -198,11 +222,18 @@ export function PartyLedgerView({
               <span className="font-medium text-ink-800">{ledger.partyName}</span>
               <span className="ml-2 font-mono text-xs text-ink-400">{ledger.partyCode}</span>
             </p>
-            {detailHref && (
-              <Button variant="ghost" size="sm" asChild>
-                <Link href={detailHref(ledger)}>Open {lower}</Link>
-              </Button>
-            )}
+            <span className="flex gap-2">
+              {journalHref && (
+                <Button size="sm" asChild>
+                  <Link href={journalHref(ledger)}>Journal entry</Link>
+                </Button>
+              )}
+              {detailHref && (
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={detailHref(ledger)}>Open {lower}</Link>
+                </Button>
+              )}
+            </span>
           </div>
 
           <DataTable

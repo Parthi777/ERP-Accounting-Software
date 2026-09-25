@@ -138,7 +138,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
         text: 'Counter Sales — selling accessories and spares over the counter.',
         note: 'Sales → Counter Sales, plus taking the receipt for it.',
       },
-      { text: 'Service Advisor — job cards, service billing, collecting service payment.' },
+      { text: 'Service Advisor — service billing and collecting service payment.' },
       {
         text: 'Accounts — verifying and approving sales, posting, the books, GST, banking.',
         note: 'Sees purchase cost and margin, because it is their job to check them.',
@@ -154,7 +154,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     who: 'Sales Executive, Cashier, Service Advisor, Counter Sales',
     where: 'Customers → Customer Master',
     why: [
-      'Every sale, booking, job card and receipt hangs off a customer record, so this is usually '
+      'Every sale, booking, service bill and receipt hangs off a customer record, so this is usually '
         + 'the first thing you create. The customer ID is issued by the system — you never '
         + 'type one.',
     ],
@@ -288,54 +288,45 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   {
     id: 'counter-sale',
     title: 'Selling accessories and spares over the counter',
-    who: 'Counter Sales, Service Advisor',
+    who: 'Cashier, Counter Sales',
     where: 'Sales → Counter Sales',
     why: [
-      'A walk-in buying a helmet, a floor mat or a spare part. Same screen for both accessories '
-        + 'and spares — the line type tells the system which it is.',
+      'A walk-in buying a helmet, a floor mat or a spare part: the product name and the price, nothing more.',
     ],
     steps: [
-      { text: 'Sales → Counter Sales → new invoice. A customer is optional for a cash sale.' },
-      { text: 'Add a line per item, choosing Spare part or Accessory, and the quantity.' },
-      {
-        text: 'Check the stock it drew from.',
-        note:
-          'Local stock is consumed before company stock, and the invoice shows which was used. '
-          + 'That split matters to the accounts, so do not hide it or override it without reason.',
-      },
-      { text: 'Post the invoice, then take the payment.' },
+      { text: 'Type the mobile number (a returning customer is found) and the name.' },
+      { text: 'Type each product name, choose Spare or Accessory, and the amount the customer pays.' },
+      { text: 'Amount received fills itself with the total. Save — the receipt opens to print.' },
     ],
     watchOut: [
-      'If stock is short the invoice will refuse rather than go negative. Count the shelf — '
-        + 'if the figure is genuinely wrong, it is a stock adjustment, which Accounts records with '
-        + 'a reason.',
+      'Counter sales do not pick from stock. The accountant keeps the stock figure right by counting '
+        + 'the shelf and posting an adjustment with a reason.',
     ],
     navPaths: ['/inventory/counter-sales'],
   },
 
   {
     id: 'service',
-    title: 'Service and job cards',
-    who: 'Service Advisor',
-    where: 'Service → Job Cards',
+    title: 'Service billing',
+    who: 'Cashier, Service Advisor',
+    where: 'Service → Service Billing',
     why: [
-      'A job card is the workshop’s record of a vehicle in for work. It becomes a service '
-        + 'invoice when the work is done and priced.',
+      'One screen, no job card: the bill is made when the vehicle is handed back and paid for.',
     ],
     steps: [
-      { text: 'Find the customer, then the vehicle. Create the job card with the odometer reading.' },
-      { text: 'Work is done. Go to Service → Service Billing and open the job card.' },
+      { text: 'Type the mobile number or the vehicle number. A customer who has been before is found and filled in.' },
+      { text: 'New customer: type the name as well. They get a customer ID and the vehicle is remembered against them.' },
       {
-        text: 'Add labour, spares and any accessories fitted.',
-        note: 'Spares come out of stock as you add them, so the parts shelf and the invoice agree.',
+        text: 'Enter the values for spares, labour, water wash and other consumables — what the customer pays.',
+        note: 'GST is worked out of each amount at the rate the accountant has set for it.',
       },
-      { text: 'Post the invoice, then collect payment.' },
+      { text: 'Amount received fills itself with the bill total; change it for a part payment. Save — the receipt opens to print.' },
     ],
     watchOut: [
-      'The service history stays attached to the customer and the vehicle, so the next advisor '
-        + 'can see what was done last time. It is only as good as what you type into the job card.',
+      'A part payment leaves the rest on the customer’s account, where it shows on their ledger until collected.',
+      'The same mobile or vehicle number always lands on the same customer, so their service history stays in one place.',
     ],
-    navPaths: ['/service'],
+    navPaths: ['/service/billing'],
   },
 
   {

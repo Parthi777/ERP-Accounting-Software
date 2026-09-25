@@ -49,6 +49,8 @@ export interface CashResult {
   readonly ok: boolean;
   readonly error?: string;
   readonly message?: string;
+  /** The cash-book row, for printing its receipt or voucher. */
+  readonly id?: string;
 }
 
 /** Accounts a receipt or payment can be posted against, minus cash itself. */
@@ -290,7 +292,11 @@ export async function recordCashTransaction(input: CashTransactionInput): Promis
     },
   });
 
-  return { ok: true, message: `Recorded. Cash in hand is now ${formatINR(fromDb(row?.balance_after ?? 0))}.` };
+  return {
+    ok: true,
+    id: row?.transaction_id != null ? String(row.transaction_id) : undefined,
+    message: `Recorded. Cash in hand is now ${formatINR(fromDb(row?.balance_after ?? 0))}.`,
+  };
 }
 
 export async function closeCashDay(input: {
@@ -433,4 +439,46 @@ export async function getCashDayHistory(days = 30): Promise<CashDayHistoryRow[]>
     counted: row.physical_cash != null ? fromDb(row.physical_cash) : null,
     difference: row.difference != null ? fromDb(row.difference) : null,
   }));
+}
+
+export interface PrintableCashEntry {
+  readonly direction: 'RECEIPT' | 'PAYMENT';
+  readonly number: string;
+  readonly date: string;
+  readonly time: string;
+  readonly amount: Paise;
+  readonly particular: string;
+  readonly party: string | null;
+  readonly mobile: string | null;
+  readonly seller: { name: string; address: string; gstin: string | null; phone: string | null };
+}
+
+/** One cash-book row as a receipt (money in) or voucher (money out). */
+export async function getPrintableCashEntry(id: string): Promise<PrintableCashEntry | null> {
+  await requirePermission('cashbook.view');
+  const supabase = await createSupabaseServerClient();
+  const { data: t } = await supabase.from('cash_transactions')
+    .select('id, direction, business_date, transaction_time, amount, particular, reference_number, branch_id, dealer_id, customers ( name, mobile ), suppliers ( name, mobile )')
+    .eq('id', Number(id)).maybeSingle();
+  if (!t) return null;
+  const [{ data: branch }, { data: dealer }] = await Promise.all([
+    supabase.from('branches').select('gstin, address_line1, address_line2, city, pincode, phone').eq('id', t.branch_id).maybeSingle(),
+    supabase.from('dealers').select('legal_name, trade_name, gstin, phone').eq('id', t.dealer_id).maybeSingle(),
+  ]);
+  return {
+    direction: t.direction,
+    number: t.reference_number ?? `CB-${t.id}`,
+    date: t.business_date,
+    time: t.transaction_time,
+    amount: fromDb(t.amount),
+    particular: t.particular,
+    party: t.customers?.name ?? t.suppliers?.name ?? null,
+    mobile: t.customers?.mobile ?? t.suppliers?.mobile ?? null,
+    seller: {
+      name: dealer?.trade_name || dealer?.legal_name || '',
+      address: [branch?.address_line1, branch?.address_line2, branch?.city, branch?.pincode].filter(Boolean).join(', '),
+      gstin: branch?.gstin || dealer?.gstin || null,
+      phone: branch?.phone || dealer?.phone || null,
+    },
+  };
 }

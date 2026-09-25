@@ -39,6 +39,14 @@ interface Line {
 }
 
 const blank = (key: number): Line => ({ key, accountId: '', debit: '', credit: '', narration: '', party: '' });
+
+/** A ready-made entry: accounts, sides and parties; the amount is typed once. */
+export interface JournalTemplate {
+  readonly label: string;
+  readonly narration: string;
+  readonly lines: readonly { accountId: string; side: 'DEBIT' | 'CREDIT'; party: string }[];
+  readonly hint?: string;
+}
 const partyKey = (p: { type: string; id: string }) => `${p.type}:${p.id}`;
 const TYPE_LABEL: Record<JournalPartyType, string> = {
   CUSTOMER: 'Customer', SUPPLIER: 'Supplier', FINANCE_COMPANY: 'Finance co.',
@@ -62,6 +70,8 @@ export function JournalEntryForm({
   parties = [],
   defaultParty,
   defaultNarration = '',
+  templates = [],
+  initialLines,
   afterPost = 'navigate',
   onDone,
 }: {
@@ -77,6 +87,9 @@ export function JournalEntryForm({
   /** Pre-fills the first line's party — entering from a customer's page. */
   readonly defaultParty?: PartyOption;
   readonly defaultNarration?: string;
+  readonly templates?: readonly JournalTemplate[];
+  /** Pre-filled lines — correcting a posted entry starts from its lines. */
+  readonly initialLines?: readonly { accountId: string; debit: number; credit: number; narration: string | null; party: string }[];
   /**
    * 'navigate' opens the new entry; 'stay' refreshes in place, which is what an
    * inline panel on a ledger wants — the point of entering there is to see the
@@ -96,8 +109,24 @@ export function JournalEntryForm({
     accountId: defaultAccountId ?? '',
     party: defaultParty ? partyKey(defaultParty) : '',
   });
-  const [lines, setLines] = React.useState<Line[]>(() => [firstLine(1), blank(2)]);
-  const nextKey = React.useRef(3);
+  const [lines, setLines] = React.useState<Line[]>(() =>
+    initialLines && initialLines.length > 0
+      ? initialLines.map((l, i) => ({
+          key: i + 1, accountId: l.accountId, narration: l.narration ?? '', party: l.party,
+          debit: l.debit > 0 ? String(l.debit) : '', credit: l.credit > 0 ? String(l.credit) : '',
+        }))
+      : [firstLine(1), blank(2)]);
+  const nextKey = React.useRef(Math.max(3, (initialLines?.length ?? 0) + 1));
+  const [formKey, setFormKey] = React.useState(0);
+  const [hint, setHint] = React.useState<string | null>(null);
+
+  const applyTemplate = (t: JournalTemplate) => {
+    setNarration(t.narration);
+    setHint(t.hint ?? null);
+    setLines(t.lines.map((l) => ({ ...blank(nextKey.current++), accountId: l.accountId, party: l.party })));
+    // The pickers keep their own state; a new key makes them start from these values.
+    setFormKey((k) => k + 1);
+  };
 
   const idempotency = useIdempotencyKey('manual-journal');
 
@@ -122,8 +151,19 @@ export function JournalEntryForm({
   const difference = Math.round((totals.debit - totals.credit) * 100) / 100;
   const balanced = difference === 0 && totals.debit > 0;
 
+  // On a two-line entry the other line mirrors the amount typed, on the other
+  // side — the entry is balanced as soon as one figure is in.
   const update = (key: number, patch: Partial<Line>) =>
-    setLines((current) => current.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+    setLines((current) => {
+      const next = current.map((l) => (l.key === key ? { ...l, ...patch } : l));
+      if (next.length === 2 && ('debit' in patch || 'credit' in patch)) {
+        const other = next.find((l) => l.key !== key)!;
+        const amount = patch.debit || patch.credit || '';
+        const side = patch.debit ? 'credit' : 'debit';
+        return next.map((l) => (l.key === other.key ? { ...l, debit: '', credit: '', [side]: amount } : l));
+      }
+      return next;
+    });
 
   const submit = () => {
     setError(null);
@@ -162,6 +202,8 @@ export function JournalEntryForm({
       // entries against one account is usually adding several.
       setLines([firstLine(nextKey.current++), blank(nextKey.current++)]);
       setNarration(defaultNarration);
+      setHint(null);
+      setFormKey((k) => k + 1);
       router.refresh();
       onDone?.();
     });
@@ -172,6 +214,18 @@ export function JournalEntryForm({
       {error && (
         <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
           {error}
+        </div>
+      )}
+
+      {templates.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-ink-500">Template:</span>
+          {templates.map((t) => (
+            <Button key={t.label} type="button" size="sm" variant="secondary" onClick={() => applyTemplate(t)}>
+              {t.label}
+            </Button>
+          ))}
+          {hint && <span className="text-xs text-warning-700">{hint}</span>}
         </div>
       )}
 
@@ -211,7 +265,7 @@ export function JournalEntryForm({
             </thead>
             <tbody>
               {lines.map((line) => (
-                <tr key={line.key} className="border-b border-ink-50">
+                <tr key={`${formKey}-${line.key}`} className="border-b border-ink-50">
                   <td className="min-w-64 px-3 py-2">
                     <SearchSelect
                       name={`account-${line.key}`}

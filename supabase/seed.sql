@@ -245,8 +245,9 @@ select r.id, p.code
         )
    );
 
--- CASHIER: bookings, receipts, sale drafts, selling price and customer balance.
--- Explicitly excludes every sensitive permission (spec §6, §52).
+-- CASHIER: sales, receipts and payments only (0088) — customers, bookings,
+-- vehicle sale drafts, service and counter bills, cash receipts and payments.
+-- No journals, inventory or reports, and no sensitive permission (spec §6, §52).
 insert into public.role_permissions (role_id, permission_code)
 select r.id, p.code
   from public.roles r
@@ -255,12 +256,13 @@ select r.id, p.code
    and not p.is_sensitive
    and p.code in (
      'dashboard.view',
-     'customers.view', 'customers.create', 'customers.edit', 'customers.view_ledger',
+     'customers.view', 'customers.create', 'customers.view_ledger',
      'bookings.view', 'bookings.create',
      'sales.view', 'sales.create', 'sales.submit',
      'vehicles.stock.view', 'vehicles.pricing.view',
-     'inventory.view',
-     'cashbook.view', 'cashbook.receipts.create'
+     'service.billing.create', 'service.payments.collect',
+     'inventory.counter_sale.create',
+     'cashbook.view', 'cashbook.receipts.create', 'cashbook.payments.create'
    );
 
 -- SALES_EXECUTIVE: customers, bookings, sale preparation, vehicle availability.
@@ -506,6 +508,8 @@ begin
       ('4700', 'Forwarding Income',         'INCOME',    'CREDIT', false, '4000', true),
       ('4800', 'Other Income',              'INCOME',    'CREDIT', false, '4000', true),
       ('4810', 'Gain on Sale of Assets',    'INCOME',    'CREDIT', false, '4000', false),
+      ('4410', 'Waterwash Income',          'INCOME',    'CREDIT', false, '4000', true),
+      ('4420', 'Consumables Sales',         'INCOME',    'CREDIT', false, '4000', true),
 
       ('5000', 'Costs and Expenses',        'EXPENSE',   'DEBIT',  true,  null,   false),
       ('5100', 'Vehicle COGS',              'EXPENSE',   'DEBIT',  false, '5000', true),
@@ -560,6 +564,8 @@ begin
   perform app.seed_gst_compliance(v_dealer_id);
   -- Document charges and freight a financier keeps back from its DD (0087).
   perform app.seed_finance_deduction_accounts(v_dealer_id);
+  -- Waterwash and consumables heads, and the quick-bill GST codes (0088).
+  perform app.seed_quick_bill_accounts(v_dealer_id);
 
   -- ── One cash account per branch (spec §36) ────────────────────────────────
   -- Here rather than with the branches above, because a cash account needs a

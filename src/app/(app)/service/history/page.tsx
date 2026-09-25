@@ -110,7 +110,7 @@ export default async function Page({
         count={searching ? rows.length : undefined}
         action={
           <Button variant="secondary" size="sm" asChild>
-            <Link href="/service"><ArrowLeft aria-hidden />Job cards</Link>
+            <Link href="/service/billing"><ArrowLeft aria-hidden />Service billing</Link>
           </Button>
         }
       />

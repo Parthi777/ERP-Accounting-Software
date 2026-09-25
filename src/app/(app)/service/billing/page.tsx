@@ -1,159 +1,29 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 
-import { getServiceInvoices, getServiceInvoiceTotals, type ServiceInvoiceRow } from '@/server/services/service/service-service';
+import { getRecentBills } from '@/server/services/billing/quick-bill-service';
 import { requirePermission } from '@/server/auth/tenant-context';
-import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
-import { Panel } from '@/components/ui/panel';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ExportButtons } from '@/components/export/export-buttons';
-import { formatINR } from '@/lib/money';
-import { formatDate } from '@/lib/format';
+import { PageHeader } from '@/components/data-table/data-table';
+import { QuickBillForm } from '@/components/billing/quick-bill-form';
+import { BillsTable } from '@/components/billing/bills-table';
 
 export const metadata: Metadata = { title: 'Service billing' };
 export const dynamic = 'force-dynamic';
 
-const STATUS_TONE: Record<string, 'positive' | 'neutral' | 'danger' | 'warning'> = {
-  DRAFT: 'warning',
-  POSTED: 'positive',
-  CANCELLED: 'danger',
-  RETURNED: 'neutral',
-};
-
-const STATUSES = ['ALL', 'DRAFT', 'POSTED', 'CANCELLED', 'RETURNED'];
-
-const columns: Column<ServiceInvoiceRow>[] = [
-  {
-    key: 'number',
-    header: 'Invoice',
-    render: (row) => (
-      <span>
-        <Link href={`/service/billing/${row.id}`} className="block font-mono text-xs text-brand-600 hover:underline">
-          {row.number}
-        </Link>
-        <span className="block text-[11px] text-ink-400">{formatDate(row.invoiceDate)}</span>
-      </span>
-    ),
-  },
-  {
-    key: 'customer',
-    header: 'Customer',
-    render: (row) => row.customerName ?? <span className="text-ink-300">Counter sale</span>,
-  },
-  {
-    key: 'jobcard',
-    header: 'Job card',
-    render: (row) =>
-      row.jobCardNumber ? (
-        <span className="font-mono text-xs text-ink-600">{row.jobCardNumber}</span>
-      ) : (
-        <span className="text-ink-300">—</span>
-      ),
-  },
-  { key: 'branch', header: 'Branch', render: (row) => row.branchName },
-  { key: 'total', header: 'Total', numeric: true, render: (row) => formatINR(row.total) },
-  {
-    key: 'paid',
-    header: 'Received',
-    numeric: true,
-    render: (row) => <span className="text-positive-700">{formatINR(row.paid)}</span>,
-  },
-  {
-    key: 'balance',
-    header: 'Balance',
-    numeric: true,
-    render: (row) =>
-      row.balance > 0 ? (
-        <span className="font-medium text-warning-700">{formatINR(row.balance)}</span>
-      ) : (
-        <span className="text-positive-700">Settled</span>
-      ),
-  },
-  {
-    key: 'status',
-    header: 'Status',
-    render: (row) => <Badge variant={STATUS_TONE[row.status] ?? 'neutral'}>{row.status}</Badge>,
-  },
-];
-
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ status?: string }>;
-}) {
-  await requirePermission('service.jobcards.view');
-  const params = await searchParams;
-  const status = params.status ?? 'ALL';
-
-  // The tiles are their own query. Reducing over `rows` summed only what the row
-  // cap had returned, so the figures were right until the 201st invoice and
-  // short from then on — and they collapsed to zero whenever the list was
-  // filtered to drafts, which reads as "nothing outstanding".
-  const [rows, totals] = await Promise.all([
-    getServiceInvoices({ status }),
-    getServiceInvoiceTotals({}),
-  ]);
-
-  const billed = totals.billed;
-  const outstanding = totals.outstanding;
+/**
+ * Service billing as the workshop runs it (0088): customer name, vehicle
+ * number and mobile — matched to an earlier customer where one exists — and a
+ * value for spares, labour, water wash and other consumables. No job card.
+ */
+export default async function ServiceBillingPage() {
+  const context = await requirePermission('service.billing.create');
+  const bills = await getRecentBills('SERVICE');
 
   return (
-    <>
-      <PageHeader
-        title="Service billing"
-        description="Workshop invoices (spec §32). Posting recognises revenue, GST, cost and stock together."
-        count={totals.invoices}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <ExportButtons report="service-invoices" />
-            <Button variant="secondary" size="sm" asChild>
-              <Link href="/service"><ArrowLeft aria-hidden />Job cards</Link>
-            </Button>
-          </div>
-        }
-      />
-
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <Panel className="p-4">
-          <p className="text-xs text-ink-500">Billed (posted)</p>
-          <p className="numeric mt-1 text-xl font-semibold text-ink-900">{formatINR(billed)}</p>
-        </Panel>
-        <Panel className="p-4">
-          <p className="text-xs text-ink-500">Outstanding</p>
-          <p className={`numeric mt-1 text-xl font-semibold ${outstanding > 0 ? 'text-warning-700' : 'text-positive-700'}`}>
-            {formatINR(outstanding)}
-          </p>
-        </Panel>
-        <Panel className="p-4">
-          <p className="text-xs text-ink-500">Drafts awaiting posting</p>
-          <p className="numeric mt-1 text-xl font-semibold text-ink-900">
-            {rows.filter((r) => r.status === 'DRAFT').length}
-          </p>
-        </Panel>
-      </div>
-
-      <Panel className="mb-4 p-4">
-        <form method="get" className="flex flex-wrap items-end gap-3">
-          <div>
-            <label htmlFor="status" className="mb-1.5 block text-xs font-medium text-ink-600">Status</label>
-            <select id="status" name="status" defaultValue={status}
-              className="h-9 field px-3 text-sm">
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <Button type="submit" variant="secondary" size="sm">Filter</Button>
-        </form>
-      </Panel>
-
-      <DataTable
-        columns={columns}
-        rows={rows}
-        getRowKey={(row) => row.id}
-        emptyMessage="No service invoices yet. Bill a job card to create one."
-        caption="Service invoices"
-      />
-    </>
+    <div className="space-y-5">
+      <PageHeader title="Service billing" description="Name, vehicle number and mobile; the values for spares, labour, water wash and consumables. Saving posts the bill and the receipt." />
+      <QuickBillForm kind="SERVICE" branches={context.accessibleBranches.map((b) => ({ id: b.id, name: b.name }))}
+        defaultBranchId={context.activeBranch?.id ?? null} />
+      <BillsTable rows={bills} showVehicle />
+    </div>
   );
 }

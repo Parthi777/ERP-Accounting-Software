@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Undo2 } from 'lucide-react';
+import { Loader2, Pencil, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
@@ -19,9 +19,15 @@ import { reverseJournalAction } from '@/server/services/accounting/journal-actio
 export function JournalReverseAction({
   journalId,
   entryNumber,
+  mode = 'reverse',
 }: {
   readonly journalId: string;
   readonly entryNumber: string;
+  /**
+   * 'correct' is how an accountant edits a posted entry: it is reversed, and
+   * the journal form opens with its lines to change and post again.
+   */
+  readonly mode?: 'reverse' | 'correct';
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -39,23 +45,24 @@ export function JournalReverseAction({
       }
       setOpen(false);
       setReason('');
-      router.push(`/accounting/journals/${result.id}`);
+      router.push(mode === 'correct' ? `/accounting/journals/new?correct=${journalId}` : `/accounting/journals/${result.id}`);
       router.refresh();
     });
   };
 
   return (
     <>
-      <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
-        <Undo2 aria-hidden />
-        Reverse
+      <Button variant={mode === 'correct' ? 'primary' : 'danger'} size="sm" onClick={() => setOpen(true)}>
+        {mode === 'correct' ? <Pencil aria-hidden /> : <Undo2 aria-hidden />}
+        {mode === 'correct' ? 'Correct' : 'Reverse'}
       </Button>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/20 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-            <h2 className="text-sm font-semibold text-ink-900">Reverse {entryNumber}?</h2>
+            <h2 className="text-sm font-semibold text-ink-900">{mode === 'correct' ? `Correct ${entryNumber}?` : `Reverse ${entryNumber}?`}</h2>
             <p className="mt-1 text-sm text-ink-600">
+              {mode === 'correct' && 'You will edit the lines and post them again. '}
               This posts an opposite entry. {entryNumber} stays on the record, marked reversed and
               linked to the one that undid it — nothing is removed, because an entry that vanishes
               takes the evidence of the mistake with it.
@@ -86,8 +93,8 @@ export function JournalReverseAction({
                 Cancel
               </Button>
               <Button variant="danger" size="sm" onClick={submit} disabled={pending || !reason.trim()}>
-                {pending && <Loader2 className="animate-spin" ariaatrue-hidden />}
-                Reverse entry
+                {pending && <Loader2 className="animate-spin" aria-hidden />}
+                {mode === 'correct' ? 'Reverse and edit' : 'Reverse entry'}
               </Button>
             </div>
           </div>

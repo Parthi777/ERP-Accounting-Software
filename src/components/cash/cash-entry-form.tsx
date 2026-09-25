@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Loader2, Printer } from 'lucide-react';
 
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
@@ -50,6 +50,7 @@ export function CashEntryForm({
 }) {
   const router = useRouter();
   const [error, setError] = React.useState<string | null>(null);
+  const [printId, setPrintId] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
   const [amount, setAmount] = React.useState('');
   const [particular, setParticular] = React.useState('');
@@ -98,6 +99,11 @@ export function CashEntryForm({
       // retry of a failed submission a fresh key, which is the case the key
       // exists for.
       idempotency.renew();
+      // The customer's receipt (or the payment voucher), straight to the printer.
+      if (result.id) {
+        setPrintId(result.id);
+        window.open(`/print/cash/${result.id}?print=1`, '_blank', 'noopener');
+      }
       setAmount('');
       setParticular('');
       setReference('');
@@ -121,6 +127,15 @@ export function CashEntryForm({
 
   return (
     <form onSubmit={submit} className="space-y-4" noValidate>
+      {printId && (
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-positive-50 px-3 py-2 text-sm text-positive-800">
+          <span>Recorded.</span>
+          <Button type="button" size="sm" variant="secondary"
+            onClick={() => window.open(`/print/cash/${printId}?print=1`, '_blank', 'noopener')}>
+            <Printer aria-hidden />Print {direction === 'RECEIPT' ? 'receipt' : 'voucher'}
+          </Button>
+        </div>
+      )}
       {error && (
         <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
           {error}

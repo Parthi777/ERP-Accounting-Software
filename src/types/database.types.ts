@@ -1573,6 +1573,7 @@ type ServiceInvoicesRow = {
   created_by: string | null;
   updated_by: string | null;
   place_of_supply: string | null;
+  vehicle_registration: string | null;
 };
 
 type ServiceInvoicesRowInsert = Insertable<ServiceInvoicesRow, 'dealer_id' | 'branch_id' | 'invoice_number'>;
@@ -1582,7 +1583,7 @@ type ServiceLinesRow = {
   dealer_id: string;
   invoice_id: string;
   line_number: number;
-  line_type: 'LABOUR' | 'SPARE' | 'ACCESSORY' | 'OTHER_CHARGE' | 'DISCOUNT';
+  line_type: 'LABOUR' | 'SPARE' | 'ACCESSORY' | 'OTHER_CHARGE' | 'DISCOUNT' | 'WATERWASH' | 'CONSUMABLES';
   description: string;
   item_id: string | null;
   hsn_code: string | null;
@@ -4238,6 +4239,10 @@ export interface Database {
         Args: { p_period: string; p_branch_id: string };
         Returns: string;
       };
+      create_quick_bill: {
+        Args: { p_kind: string; p_branch_id: string; p_customer_name: string; p_mobile: string; p_vehicle_no: string; p_lines: Json; p_payment_mode?: string | null; p_amount_received?: number | null; p_reference?: string | null; p_date?: string | null; p_idempotency_key?: string | null };
+        Returns: { invoice_id: string; invoice_number: string; customer_id: string; total_amount: string; receipt_number: string; balance_due: string }[];
+      };
       create_service_invoice: {
         Args: { p_job_card_id: string; p_invoice_date?: string | null };
         Returns: { invoice_id: string; invoice_number: string }[];
@@ -4473,6 +4478,14 @@ export interface Database {
       party_open_items: {
         Args: { p_party_type: string; p_party_id: string; p_include_settled?: boolean | null };
         Returns: { line_id: string; entry_id: string; entry_date: string; entry_number: string; document_type: string; document_ref: string; account_code: string; account_name: string; particulars: string; side: string; amount: string; allocated: string; outstanding: string; age_days: number }[];
+      };
+      party_statement: {
+        Args: { p_party_type: string; p_party_id: string; p_from: string; p_to: string };
+        Returns: { entry_id: string; entry_date: string; entry_number: string; source_module: string; narration: string; contra: string; debit: string; credit: string; running_balance: string }[];
+      };
+      party_statement_opening: {
+        Args: { p_party_type: string; p_party_id: string; p_as_on: string };
+        Returns: unknown;
       };
       pay_payroll_run: {
         Args: { p_run_id: string; p_bank_account_id: string; p_date?: string | null };

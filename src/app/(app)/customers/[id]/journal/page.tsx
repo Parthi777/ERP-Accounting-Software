@@ -10,16 +10,13 @@ import {
   getPostableAccounts,
   getReceivableAccountId,
 } from '@/server/services/accounting/journal-entry-service';
-import { getFinanceApplications, getFinancePickers } from '@/server/services/finance/finance-service';
-import { hasPermission, requirePermission } from '@/server/auth/tenant-context';
+import { requirePermission } from '@/server/auth/tenant-context';
 import { NotFoundError } from '@/server/errors';
 import { JournalEntryForm } from '@/components/accounting/journal-entry-form';
-import { ApplicationActions } from '@/components/finance/application-actions';
 import { PageHeader } from '@/components/data-table/data-table';
 import { Panel, PanelContent, PanelHeader, PanelTitle, SolidPanel } from '@/components/ui/panel';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { formatINR, paise, toRupees } from '@/lib/money';
+import { formatINR, paise } from '@/lib/money';
 
 const ZERO = paise(0);
 import { formatDate } from '@/lib/format';
@@ -55,18 +52,36 @@ export default async function CustomerJournalPage({
   }
 
   const { from, to } = rangeInYear(context.activeFinancialYear);
-  const canFinance = hasPermission(context, 'finance.applications.view');
-  const canManageFinance = hasPermission(context, 'finance.applications.manage');
 
-  const [ledger, accounts, parties, receivable, applications, pickers] = await Promise.all([
+  const [ledger, accounts, parties, receivable] = await Promise.all([
     getCustomerLedger({ customerId: customer.id, from, to }),
     getPostableAccounts(),
     getJournalParties({ customers: false }),
     getReceivableAccountId(),
-    canFinance ? getFinanceApplications({ status: 'ALL', branchId: null, q: customer.customer_code }) : Promise.resolve([]),
-    canManageFinance ? getFinancePickers() : Promise.resolve({ companies: [], bankAccounts: [] }),
   ]);
-  const financeRows = applications.filter((a) => a.customerId === customer.id);
+  const byCode = (code: string) => accounts.find((a) => a.code === code)?.id ?? '';
+  const me = `CUSTOMER:${customer.id}`;
+  const recv = receivable ?? byCode('1300');
+  // The entries the accountant makes most on a customer, as in the dealer's own
+  // ledgers: the loan moved to the financier, the charges and the discount.
+  const templates = [
+    { label: 'Finance', narration: 'Finance', lines: [
+      { accountId: byCode('1400'), side: 'DEBIT' as const, party: '' },
+      { accountId: recv, side: 'CREDIT' as const, party: me },
+    ], hint: 'Choose the finance company on the first line.' },
+    { label: 'Document charges', narration: 'Document charges', lines: [
+      { accountId: recv, side: 'DEBIT' as const, party: me },
+      { accountId: byCode('5920'), side: 'CREDIT' as const, party: '' },
+    ] },
+    { label: 'Discount', narration: 'Discount', lines: [
+      { accountId: '', side: 'DEBIT' as const, party: '' },
+      { accountId: recv, side: 'CREDIT' as const, party: me },
+    ], hint: 'Choose the discount account on the first line.' },
+    { label: 'Insurance', narration: 'Insurance charges', lines: [
+      { accountId: recv, side: 'DEBIT' as const, party: me },
+      { accountId: '', side: 'CREDIT' as const, party: '' },
+    ], hint: 'Choose the insurance account on the second line.' },
+  ];
   const th = 'px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-500';
   const closing = ledger?.closing ?? ZERO;
 
@@ -78,7 +93,7 @@ export default async function CustomerJournalPage({
 
       <PageHeader
         title={`Journal — ${customer.name}`}
-        description={`${customer.customer_code} · Tally the customer's account: every line below names them, so it reaches their ledger.`}
+        description={`${customer.customer_code} · Tally the customer's account: debit and credit until the balance is right.`}
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -98,66 +113,19 @@ export default async function CustomerJournalPage({
         </Panel>
       </div>
 
-      {financeRows.length > 0 && (
-        <SolidPanel className="overflow-hidden">
-          <div className="border-b border-ink-100 px-4 py-3">
-            <h2 className="text-sm font-semibold text-ink-900">Finance</h2>
-            <p className="text-xs text-ink-500">
-              Receive the financier&rsquo;s DD here. Enter what they kept back — document charges, freight — and
-              choose whether the customer pays it or it is the dealer&rsquo;s cost.
-            </p>
-          </div>
-          <table className="w-full border-collapse text-sm">
-            <thead><tr>
-              <th className={`${th} text-left`}>Application</th><th className={`${th} text-left`}>Financier</th>
-              <th className={`${th} text-right`}>Loan</th><th className={`${th} text-right`}>Received</th>
-              <th className={`${th} text-right`}>Pending</th><th className={th} />
-            </tr></thead>
-            <tbody>
-              {financeRows.map((a) => (
-                <tr key={a.id} className="border-t border-ink-100">
-                  <td className="px-3 py-2">
-                    <span className="font-mono text-xs">{a.applicationNumber}</span>
-                    <span className="ml-2"><Badge variant={a.disbursementStatus === 'DISBURSED' ? 'positive' : 'neutral'}>
-                      {a.approvalStatus === 'APPROVED' ? a.disbursementStatus : a.approvalStatus}
-                    </Badge></span>
-                    {a.ddNumber && <span className="block text-[11px] text-ink-400">DD {a.ddNumber}</span>}
-                  </td>
-                  <td className="px-3 py-2">{a.companyName}</td>
-                  <td className="numeric px-3 py-2">{formatINR(a.approvedAmount ?? a.loanAmount)}</td>
-                  <td className="numeric px-3 py-2">{formatINR(a.disbursedAmount)}</td>
-                  <td className="numeric px-3 py-2 font-medium">{formatINR(a.pendingAmount)}</td>
-                  <td className="px-3 py-2">
-                    <ApplicationActions
-                      applicationId={a.id}
-                      applicationNumber={a.applicationNumber}
-                      approvalStatus={a.approvalStatus}
-                      disbursementStatus={a.disbursementStatus}
-                      pendingAmount={toRupees(a.pendingAmount)}
-                      bankAccounts={pickers.bankAccounts}
-                      canManage={canManageFinance}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </SolidPanel>
-      )}
-
       <Panel>
         <PanelHeader><PanelTitle>New journal entry</PanelTitle></PanelHeader>
         <PanelContent>
           <p className="mb-3 text-xs text-ink-500">
-            The first line is this customer&rsquo;s receivable. Debit it to charge them (e.g. document or freight
-            charges: Cr Other Income), credit it to reduce what they owe (a discount allowed: Dr the sales
-            account). A line can also name a finance company or supplier.
+            Start from a template or write the lines yourself. Debit the customer to charge them; credit them to
+            reduce what they owe. On a two-line entry the amount you type fills the other line.
           </p>
           <JournalEntryForm
             accounts={accounts}
             defaultAccountId={receivable ?? undefined}
             parties={parties}
             defaultParty={{ type: 'CUSTOMER', id: customer.id, label: `${customer.name} (${customer.customer_code})` }}
+            templates={templates}
             afterPost="stay"
           />
         </PanelContent>
