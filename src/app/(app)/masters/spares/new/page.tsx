@@ -21,13 +21,12 @@ export default async function Page() {
         { name: 'item_type', label: 'Type', type: 'select' as const, required: true, options: [
           { value: 'ACCESSORY', label: 'Accessory' }, { value: 'SPARE', label: 'Spare part' },
         ] },
-        { name: 'uom', label: 'Unit of measure', type: 'select' as const, required: true, options: [
-          { value: 'NOS', label: 'Nos' }, { value: 'SET', label: 'Set' }, { value: 'PAIR', label: 'Pair' },
-          { value: 'LTR', label: 'Litre' }, { value: 'KG', label: 'Kilogram' },
-          { value: 'MTR', label: 'Metre' }, { value: 'BOX', label: 'Box' },
-        ] },
+        { name: 'uom', label: 'Unit of measure', type: 'select' as const, required: true,
+          options: pickers.units.map((u) => ({ value: u.code, label: u.label })) },
         { name: 'brand', label: 'Brand', type: 'text' as const },
         { name: 'category', label: 'Category', type: 'text' as const },
+        { name: 'item_group_id', label: 'Item group', type: 'select' as const,
+          options: pickers.itemGroups.map((g) => ({ value: g.id, label: g.label })) },
         { name: 'is_fitment', label: 'Can be fitted to a vehicle at sale', type: 'checkbox' as const, wide: true },
         { name: 'status', label: 'Status', type: 'select' as const, required: true, options: [
           { value: 'ACTIVE', label: 'Active' }, { value: 'INACTIVE', label: 'Inactive' },

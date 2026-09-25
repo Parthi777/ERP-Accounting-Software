@@ -104,3 +104,12 @@ export function formatMobile(value: string | null | undefined): string {
   }
   return value;
 }
+
+/** `₹1,25,000.00 Dr` / `₹4,500.00 Cr` — a balance held debit-positive, as ledgers show it. */
+export function formatDrCr(value: number): string {
+  if (!value) return '—';
+  const amount = new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(Math.abs(value));
+  return `${amount} ${value > 0 ? 'Dr' : 'Cr'}`;
+}

@@ -105,7 +105,9 @@ export const inventoryItemSchema = z.object({
   item_type: z.enum(['ACCESSORY', 'SPARE']),
   brand: optional(60),
   category: optional(60),
-  uom: z.enum(['NOS', 'SET', 'PAIR', 'LTR', 'KG', 'MTR', 'BOX']).default('NOS'),
+  // A code from the units master (0094); the database checks it exists.
+  uom: z.string().trim().regex(/^[A-Z]{2,8}$/, 'Choose a unit.').default('NOS'),
+  item_group_id: z.string().uuid().optional().or(z.literal('')).transform((v) => (v ? v : undefined)),
   hsn_code_id: z.string().uuid().optional().or(z.literal('')).transform((v) => (v ? v : undefined)),
   tax_code: optional(30),
   standard_cost: z.coerce.number().min(0).default(0),

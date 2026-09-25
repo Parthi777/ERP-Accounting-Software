@@ -11,6 +11,8 @@ import { DealerSwitches } from '@/components/admin/dealer-switches';
 import { ActionForm } from '@/components/forms/action-form';
 import { getQuickBillTaxCodes, HEAD_LABEL, type BillHead } from '@/server/services/billing/quick-bill-service';
 import { saveQuickBillTaxCodesAction } from '@/server/services/billing/quick-bill-actions';
+import { listNarrationTemplates, VOUCHER_TYPES } from '@/server/services/accounting/narration-service';
+import { addNarrationTemplateAction, setNarrationTemplateStatusAction } from '@/server/services/accounting/narration-actions';
 import { DataTable, PageHeader, type Column } from '@/components/data-table/data-table';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
@@ -82,8 +84,9 @@ export default async function SettingsPage() {
     getDealerSwitches(),
     requireTenantContext(),
   ]);
-  const quickBill = context.dealerId && context.permissions.has('admin.settings.manage')
-    ? await getQuickBillTaxCodes() : null;
+  const canManage = Boolean(context.dealerId) && context.permissions.has('admin.settings.manage');
+  const quickBill = canManage ? await getQuickBillTaxCodes() : null;
+  const narrations = canManage ? await listNarrationTemplates() : [];
 
   return (
     <div className="space-y-5">
@@ -120,6 +123,42 @@ export default async function SettingsPage() {
                 { name: `${head}_hsn`, label: `${HEAD_LABEL[head]} — HSN/SAC`, defaultValue: quickBill.hsn[head],
                   placeholder: 'from the tax code' },
               ])} />
+          </PanelContent>
+        </Panel>
+      )}
+
+      {canManage && (
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Narration templates</PanelTitle>
+          </PanelHeader>
+          <PanelContent>
+            <p className="mb-3 text-xs text-ink-500">
+              Sentences offered while writing a payment, receipt or journal narration. The voucher keeps its own
+              copy, so changing or retiring a template never alters what was posted.
+            </p>
+            <ActionForm action={addNarrationTemplateAction} submitLabel="Add narration" columns={3}
+              fields={[
+                { name: 'voucherType', label: 'Voucher', type: 'select' as const, required: true, defaultValue: 'ANY',
+                  options: VOUCHER_TYPES.map((t) => ({ value: t, label: t === 'ANY' ? 'Any voucher' : t.charAt(0) + t.slice(1).toLowerCase() })) },
+                { name: 'text', label: 'Narration', required: true, wide: true, placeholder: 'Being cash paid for office expenses' },
+              ]} />
+            {narrations.length > 0 && (
+              <ul className="mt-4 divide-y divide-ink-100 text-sm">
+                {narrations.map((n) => (
+                  <li key={n.id} className="flex items-center justify-between gap-3 py-2">
+                    <span className={n.status === 'ACTIVE' ? 'text-ink-800' : 'text-ink-400 line-through'}>
+                      <Badge variant="neutral" className="mr-2">{n.voucherType.toLowerCase()}</Badge>{n.text}
+                    </span>
+                    <div className="w-32">
+                      <ActionForm action={setNarrationTemplateStatusAction} columns={1} fields={[]}
+                        fixed={{ id: n.id, status: n.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }}
+                        submitLabel={n.status === 'ACTIVE' ? 'Retire' : 'Restore'} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </PanelContent>
         </Panel>
       )}

@@ -1,5 +1,6 @@
 'use client';
 
+import { SAVE_SHORTCUT, SHORTCUTS } from '@/config/shortcuts';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Command } from 'cmdk';
@@ -87,6 +88,17 @@ export function CommandPalette({
                 ))}
               </Command.Group>
             ))}
+
+            <Command.Group
+              heading="Keyboard shortcuts"
+              className="px-1 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-400 [&_[cmdk-group-items]]:mt-1 [&_[cmdk-group-items]]:space-y-0.5"
+            >
+              {SHORTCUTS.filter((sc) => sections.some((section) =>
+                section.href === sc.href || section.items?.some((item) => item.href === sc.href))).map((sc) => (
+                <PaletteItem key={sc.code} label={sc.label} hint={sc.keys} onSelect={() => go(sc.href)} />
+              ))}
+              <PaletteItem label="Save the form you are in" hint={SAVE_SHORTCUT} onSelect={() => onOpenChange(false)} />
+            </Command.Group>
           </Command.List>
         </Command>
       </div>

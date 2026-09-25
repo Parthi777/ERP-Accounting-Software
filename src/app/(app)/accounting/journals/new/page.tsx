@@ -10,6 +10,7 @@ import {
 } from '@/server/services/accounting/journal-entry-service';
 import { JournalEntryForm, type PartyOption } from '@/components/accounting/journal-entry-form';
 import { PageHeader } from '@/components/data-table/data-table';
+import { narrationsFor } from '@/server/services/accounting/narration-service';
 import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = { title: 'New journal entry' };
@@ -28,10 +29,11 @@ export default async function NewJournalPage({
 }) {
   await requirePermission('accounting.journals.post');
   const params = await searchParams;
-  const [accounts, parties, correcting] = await Promise.all([
+  const [accounts, parties, correcting, narrations] = await Promise.all([
     getPostableAccounts(),
     getJournalParties(),
     params.correct ? getJournalForCorrection(params.correct) : Promise.resolve(null),
+    narrationsFor('JOURNAL'),
   ]);
 
   const [type, id] = (params.party ?? '').split(':');
@@ -59,6 +61,7 @@ export default async function NewJournalPage({
         parties={parties}
         defaultParty={defaultParty}
         initialLines={correcting?.lines}
+        narrations={narrations}
         defaultNarration={correcting ? `Correction of ${correcting.entryNumber}: ${correcting.narration}` : ''}
       />
     </>

@@ -143,6 +143,7 @@ export const PERMISSIONS = [
   { code: 'accounting.journals.post', module: 'accounting', description: 'Post journal entries' },
   { code: 'accounting.journals.reverse', module: 'accounting', description: 'Reverse a posted journal entry' },
   { code: 'accounting.journals.approve', module: 'accounting', description: 'Approve or reject manual journals submitted by someone else' },
+  { code: 'accounting.tds.manage', module: 'accounting', description: 'Manage TDS sections, payee profiles and remittances' },
   { code: 'attachments.upload', module: 'accounting', description: 'Attach supporting files to documents' },
   { code: 'assets.view', module: 'accounting', description: 'View the fixed asset register' },
   { code: 'assets.manage', module: 'accounting', description: 'Register, depreciate and dispose of fixed assets' },

@@ -79,6 +79,8 @@ export interface PurchaseBill extends PurchaseListRow {
   readonly branchId: string;
   readonly supplierId: string;
   readonly notes: string | null;
+  /** AUTO deducts TDS by the supplier's section; NONE marks the bill as bearing none (0093). */
+  readonly tdsMode: 'AUTO' | 'NONE';
   readonly journalEntryId: string | null;
   readonly postedAt: string | null;
   readonly cgstAmount: Paise;
@@ -229,7 +231,7 @@ export async function getPurchaseBill(id: string): Promise<PurchaseBill | null> 
   const { data, error } = await supabase
     .from('purchase_bills')
     .select(
-      'id, branch_id, supplier_id, bill_number, supplier_bill_number, bill_date, due_date, status, taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount, notes, journal_entry_id, posted_at, suppliers!inner ( name, supplier_code ), branches!inner ( name )',
+      'id, branch_id, supplier_id, bill_number, supplier_bill_number, bill_date, due_date, status, taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount, notes, tds_mode, journal_entry_id, posted_at, suppliers!inner ( name, supplier_code ), branches!inner ( name )',
     )
     .eq('id', id)
     .maybeSingle();
@@ -312,6 +314,7 @@ export async function getPurchaseBill(id: string): Promise<PurchaseBill | null> 
     status: data.status as PurchaseStatus,
     lineCount: lines.length,
     notes: data.notes,
+    tdsMode: data.tds_mode as 'AUTO' | 'NONE',
     journalEntryId: data.journal_entry_id,
     postedAt: data.posted_at,
     taxableValue: fromDb(data.taxable_value),

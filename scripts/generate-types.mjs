@@ -157,6 +157,8 @@ const TRIGGER_FILLED = {
   suppliers: ['supplier_code'],
   purchase_bills: ['bill_number'],
   purchase_returns: ['return_number'],
+  purchase_orders: ['po_number'],
+  goods_receipts: ['grn_number'],
   inventory_transactions: ['balance_after'],
   cash_transactions: ['balance_after'],
   bank_transactions: ['balance_after'],
@@ -307,6 +309,18 @@ const RPC = new Set([
   'receive_finance_dd',
   // Quick service and counter bills (0088).
   'create_quick_bill', 'party_statement', 'party_statement_opening',
+  // Ledger master, groups and financial years (0090).
+  'update_account', 'set_ledger_opening_balance', 'ledger_opening_entered', 'ledger_master',
+  'create_financial_year', 'close_financial_year', 'reopen_financial_year',
+  // Bill-wise openings, split vouchers, the day book (0091).
+  'post_opening_bills', 'record_money_voucher', 'day_book',
+  // Purchase order → goods receipt → bill (0092).
+  'create_purchase_order', 'approve_purchase_order', 'close_purchase_order', 'post_goods_receipt',
+  'cancel_goods_receipt', 'add_receipt_lines_to_bill', 'unbilled_receipt_lines', 'pending_purchase_orders',
+  'grni_outstanding',
+  // TDS (0093).
+  'review_tds_section', 'end_tds_section', 'tds_preview', 'record_tds_remittance', 'tds_register',
+  'tds_control_check',
 ]);
 
 function argsType(args) {

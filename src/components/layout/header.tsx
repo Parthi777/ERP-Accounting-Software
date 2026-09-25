@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { ChevronRight, CircleHelp, LogOut, Menu, Search } from 'lucide-react';
 
 import { initials } from '@/lib/format';
@@ -11,6 +11,7 @@ import { guideSectionFor } from '@/content/process-guide';
 import { Button } from '@/components/ui/button';
 import { signOut } from '@/server/auth/actions';
 import { CommandPalette } from '@/components/layout/command-palette';
+import { SHORTCUTS } from '@/config/shortcuts';
 import {
   FinancialYearSwitcher,
   type FinancialYearOption,
@@ -35,6 +36,7 @@ export function Header({
   onToggleSidebar,
 }: HeaderProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const crumbs = breadcrumbsFor(pathname);
@@ -52,11 +54,31 @@ export function Header({
       if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+      // Alt+S saves the form the cursor is in (BUSY F21).
+      if (event.altKey && !event.shiftKey && !event.metaKey && !event.ctrlKey && event.code === 'KeyS') {
+        const form = (document.activeElement as HTMLElement | null)?.closest('form');
+        if (form) {
+          event.preventDefault();
+          form.requestSubmit();
+        }
+        return;
+      }
+      // Alt+Shift+letter opens a voucher or a book — only one the role can see.
+      if (event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey) {
+        const shortcut = SHORTCUTS.find((s) => s.code === event.code);
+        const allowed = shortcut && sections.some((section) =>
+          section.href === shortcut.href || section.items?.some((item) => item.href === shortcut.href));
+        if (shortcut && allowed) {
+          event.preventDefault();
+          router.push(shortcut.href);
+        }
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [router, sections]);
 
   return (
     <>

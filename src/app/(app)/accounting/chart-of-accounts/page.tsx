@@ -20,7 +20,9 @@ const TYPE_TONE: Record<string, 'info' | 'warning' | 'accent' | 'positive' | 'da
   EXPENSE: 'danger',
 };
 
-const columns: Column<ChartAccount>[] = [
+type ChartRow = ChartAccount & { readonly depth: number };
+
+const columns: Column<ChartRow>[] = [
   {
     key: 'code',
     header: 'Code',
@@ -42,8 +44,11 @@ const columns: Column<ChartAccount>[] = [
     key: 'name',
     header: 'Account',
     render: (row) => (
-      // Group headers sit flush; postable leaves are indented beneath them.
-      <span className={cn(row.isGroup ? 'font-semibold text-ink-900' : 'pl-5 text-ink-700')}>
+      // Indented by depth: heading, group, sub-group, ledger.
+      <span
+        className={cn(row.isGroup ? 'font-semibold text-ink-900' : 'text-ink-700')}
+        style={{ paddingLeft: `${row.depth * 1.25}rem` }}
+      >
         {row.name}
       </span>
     ),
@@ -82,15 +87,41 @@ const columns: Column<ChartAccount>[] = [
 
 // Only people who may change the chart see the switch; the database refuses
 // the rest regardless (0076), including deactivating an account in use.
-const statusColumn: Column<ChartAccount> = {
+const statusColumn: Column<ChartRow> = {
   key: 'manage',
   header: '',
-  render: (row) =>
-    row.isGroup ? null : <AccountStatusToggle accountId={row.id} status={row.status} />,
+  render: (row) => (
+    <span className="flex items-center justify-end gap-2">
+      <Link href={`/accounting/ledgers/account/${row.id}`} className="text-xs font-medium text-brand-700 hover:underline">
+        Modify
+      </Link>
+      {!row.isGroup && <AccountStatusToggle accountId={row.id} status={row.status} />}
+    </span>
+  ),
 };
 
+/** Tree order — each heading or group followed by what sits beneath it. */
+function inTreeOrder(accounts: readonly ChartAccount[]): ChartRow[] {
+  const ids = new Set(accounts.map((a) => a.id));
+  const children = new Map<string | null, ChartAccount[]>();
+  for (const a of accounts) {
+    const key = a.parentId && ids.has(a.parentId) ? a.parentId : null;
+    children.set(key, [...(children.get(key) ?? []), a]);
+  }
+  const out: ChartRow[] = [];
+  const walk = (parent: string | null, depth: number) => {
+    for (const a of (children.get(parent) ?? []).sort((x, y) => x.code.localeCompare(y.code))) {
+      out.push({ ...a, depth });
+      walk(a.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return out;
+}
+
 export default async function ChartOfAccountsPage() {
-  const [accounts, context] = await Promise.all([getChartOfAccounts(), requireTenantContext()]);
+  const [chart, context] = await Promise.all([getChartOfAccounts(), requireTenantContext()]);
+  const accounts = inTreeOrder(chart);
   const canManage = context.permissions.has('accounting.coa.manage');
   const headings = accounts
     .filter((a) => a.isGroup && a.status === 'ACTIVE')

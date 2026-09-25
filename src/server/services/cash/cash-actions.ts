@@ -25,6 +25,18 @@ export async function recordCashAction(
   }
 }
 
+export async function recordCashVoucherAction(
+  input: Parameters<typeof service.recordCashVoucher>[0],
+): Promise<service.CashResult> {
+  try {
+    const result = await service.recordCashVoucher(input);
+    if (result.ok) refreshCashBook();
+    return result;
+  } catch (error) {
+    return { ok: false, error: toAppError(error).userMessage };
+  }
+}
+
 export async function closeCashDayAction(input: {
   date: string;
   physicalCash: number;

@@ -238,6 +238,64 @@ export interface CashTransactionInput {
   readonly idempotencyKey: string;
 }
 
+/**
+ * One cash receipt or payment split over several accounts (0091, BUSY F24):
+ * petty cash spent on fuel, tea and courier is one voucher, one cash book row
+ * and one balanced journal, not three.
+ */
+export async function recordCashVoucher(input: {
+  readonly direction: 'RECEIPT' | 'PAYMENT';
+  readonly particular: string;
+  readonly lines: readonly { readonly accountId: string; readonly amount: number; readonly narration?: string }[];
+  readonly reference: string | null;
+  readonly date: string;
+  readonly idempotencyKey: string;
+}): Promise<CashResult> {
+  const context = await requirePermission(
+    input.direction === 'RECEIPT' ? 'cashbook.receipts.create' : 'cashbook.payments.create',
+  );
+  if (!context.activeBranch) return { ok: false, error: 'Select a branch before recording cash.' };
+  if (!input.particular.trim()) return { ok: false, error: 'Describe what this voucher is for.' };
+  const lines = input.lines.filter((l) => l.accountId || l.amount);
+  if (lines.length === 0) return { ok: false, error: 'Add at least one line.' };
+  const bad = lines.findIndex((l) => !l.accountId || !(l.amount > 0));
+  if (bad >= 0) return { ok: false, error: `Line ${bad + 1}: choose the account and enter an amount above zero.` };
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc('record_money_voucher', {
+    p_book: 'CASH',
+    p_direction: input.direction,
+    p_lines: lines.map((l) => ({ account_id: l.accountId, amount: l.amount, narration: l.narration?.trim() || null })),
+    p_particular: input.particular.trim(),
+    p_branch_id: context.activeBranch.id,
+    p_date: input.date,
+    p_reference: input.reference?.trim() || undefined,
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) {
+    console.error('[cash] voucher failed', error.message);
+    return { ok: false, error: describeCashError(error.message) };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  await recordAudit({
+    action: 'CREATE',
+    entityType: 'cash_transactions',
+    entityId: String(row?.transaction_id ?? ''),
+    dealerId: context.dealerId,
+    branchId: context.activeBranch.id,
+    userId: context.userId,
+    userEmail: context.email,
+    newData: { direction: input.direction, particular: input.particular, lines: lines.length, date: input.date },
+  });
+
+  return {
+    ok: true,
+    id: row?.transaction_id != null ? String(row.transaction_id) : undefined,
+    message: `Recorded. Cash in hand is now ${formatINR(fromDb(row?.balance_after ?? 0))}.`,
+  };
+}
+
 export async function recordCashTransaction(input: CashTransactionInput): Promise<CashResult> {
   const context = await requirePermission(
     input.direction === 'RECEIPT' ? 'cashbook.receipts.create' : 'cashbook.payments.create',

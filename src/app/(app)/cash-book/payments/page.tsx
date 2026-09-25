@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 
 import { getCashDay, getContraAccounts } from '@/server/services/cash/cash-service';
 import { getCustomerOptions } from '@/server/services/customers/customer-service';
+import { narrationsFor } from '@/server/services/accounting/narration-service';
 import { requirePermission } from '@/server/auth/tenant-context';
 import { PageHeader } from '@/components/data-table/data-table';
 import { CashEntryForm } from '@/components/cash/cash-entry-form';
@@ -23,10 +24,11 @@ export default async function Page({
   const params = await searchParams;
   const date = params.date ?? new Date().toISOString().slice(0, 10);
 
-  const [day, accounts, customers] = await Promise.all([
+  const [day, accounts, customers, narrations] = await Promise.all([
     getCashDay({ date }),
     getContraAccounts('PAYMENT'),
     getCustomerOptions(),
+    narrationsFor('PAYMENT'),
   ]);
 
   if (!day) {
@@ -64,6 +66,7 @@ export default async function Page({
           branchName={day.branchName}
           currentBalance={day.expectedClosing}
           locked={day.status === 'CLOSED'}
+          narrations={narrations}
         />
       </div>
     </>

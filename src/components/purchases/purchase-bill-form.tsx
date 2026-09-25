@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { QuickAdd } from '@/components/forms/quick-add';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
@@ -86,6 +87,7 @@ export function PurchaseBillForm({
           <div className="sm:col-span-2">
             <Label htmlFor="supplier" className="mb-1.5 block">
               Supplier<span className="ml-0.5 text-danger-600">*</span>
+              <QuickAdd href="/masters/suppliers/new" noun="supplier" />
             </Label>
             <SearchSelect
               id="supplier"

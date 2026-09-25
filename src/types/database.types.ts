@@ -52,6 +52,7 @@ type AccountingPeriodsRow = {
   closed_by: string | null;
   created_at: string;
   updated_at: string;
+  status_reason: string | null;
 };
 
 type AccountingPeriodsRowInsert = Insertable<AccountingPeriodsRow, 'dealer_id' | 'name' | 'start_date' | 'end_date'>;
@@ -447,6 +448,7 @@ type ChartOfAccountsRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  alias: string | null;
 };
 
 type ChartOfAccountsRowInsert = Insertable<ChartOfAccountsRow, 'dealer_id' | 'code' | 'name' | 'account_type' | 'normal_balance'>;
@@ -882,6 +884,49 @@ type FixedAssetsRow = {
 
 type FixedAssetsRowInsert = Insertable<FixedAssetsRow, 'dealer_id' | 'branch_id' | 'asset_code' | 'name' | 'asset_account_id' | 'accumulated_account_id' | 'expense_account_id' | 'acquired_on' | 'depreciation_start' | 'cost' | 'method'>;
 
+type GoodsReceiptLinesRow = {
+  id: string;
+  goods_receipt_id: string;
+  dealer_id: string;
+  po_line_id: string;
+  line_number: number;
+  line_type: string;
+  item_id: string;
+  source: string;
+  quantity: string;
+  unit_cost: string;
+  value: string;
+};
+
+type GoodsReceiptLinesRowInsert = Insertable<GoodsReceiptLinesRow, 'goods_receipt_id' | 'dealer_id' | 'po_line_id' | 'line_number' | 'line_type' | 'item_id' | 'source' | 'quantity' | 'unit_cost' | 'value'>;
+
+type GoodsReceiptsRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  grn_number: string;
+  purchase_order_id: string;
+  supplier_id: string;
+  receipt_date: string;
+  supplier_challan_number: string | null;
+  transporter: string | null;
+  lr_number: string | null;
+  vehicle_number: string | null;
+  origin: string | null;
+  origin_pincode: string | null;
+  status: 'POSTED' | 'CANCELLED';
+  total_value: string;
+  journal_entry_id: string | null;
+  idempotency_key: string | null;
+  cancel_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type GoodsReceiptsRowInsert = Insertable<GoodsReceiptsRow, 'dealer_id' | 'branch_id' | 'purchase_order_id' | 'supplier_id'>;
+
 type GstFiledDocumentsRow = {
   id: string;
   return_id: string;
@@ -1033,7 +1078,7 @@ type InventoryItemsRow = {
   item_type: 'ACCESSORY' | 'SPARE';
   brand: string | null;
   category: string | null;
-  uom: 'NOS' | 'SET' | 'PAIR' | 'LTR' | 'KG' | 'MTR' | 'BOX';
+  uom: string;
   hsn_code_id: string | null;
   tax_code: string | null;
   standard_cost: string;
@@ -1045,6 +1090,7 @@ type InventoryItemsRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  item_group_id: string | null;
 };
 
 type InventoryItemsRowInsert = Insertable<InventoryItemsRow, 'dealer_id' | 'item_code' | 'name' | 'item_type'>;
@@ -1119,6 +1165,30 @@ type ItcClaimLinesRow = {
 };
 
 type ItcClaimLinesRowInsert = Insertable<ItcClaimLinesRow, 'return_id' | 'dealer_id' | 'claim_kind'>;
+
+type ItemGroupsRow = {
+  id: string;
+  dealer_id: string;
+  name: string;
+  parent_id: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+  created_by: string | null;
+};
+
+type ItemGroupsRowInsert = Insertable<ItemGroupsRow, 'dealer_id' | 'name'>;
+
+type ItemUnitConversionsRow = {
+  id: string;
+  dealer_id: string;
+  item_id: string;
+  unit_code: string;
+  factor: string;
+  created_at: string;
+  created_by: string | null;
+};
+
+type ItemUnitConversionsRowInsert = Insertable<ItemUnitConversionsRow, 'dealer_id' | 'item_id' | 'unit_code' | 'factor'>;
 
 type JobCardsRow = {
   id: string;
@@ -1246,6 +1316,35 @@ type LoansRow = {
 
 type LoansRowInsert = Insertable<LoansRow, 'dealer_id' | 'branch_id' | 'loan_number' | 'lender' | 'account_id' | 'principal' | 'interest_rate' | 'start_date' | 'tenure_months'>;
 
+type NarrationTemplatesRow = {
+  id: string;
+  dealer_id: string;
+  voucher_type: 'PAYMENT' | 'RECEIPT' | 'JOURNAL' | 'CONTRA' | 'ANY';
+  text: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type NarrationTemplatesRowInsert = Insertable<NarrationTemplatesRow, 'dealer_id' | 'voucher_type' | 'text'>;
+
+type OpeningBillsRow = {
+  id: string;
+  dealer_id: string;
+  party_type: 'CUSTOMER' | 'SUPPLIER';
+  party_id: string;
+  line_id: string;
+  bill_reference: string;
+  bill_date: string;
+  due_date: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type OpeningBillsRowInsert = Insertable<OpeningBillsRow, 'dealer_id' | 'party_type' | 'party_id' | 'line_id' | 'bill_reference' | 'bill_date'>;
+
 type PartyAllocationsRow = {
   id: string;
   dealer_id: string;
@@ -1333,6 +1432,7 @@ type PurchaseBillLinesRow = {
   tax_category: 'TAXABLE' | 'ZERO_RATED' | 'NIL_RATED' | 'EXEMPT' | 'NON_GST';
   reverse_charge: boolean;
   itc_category: 'ELIGIBLE' | 'CAPITAL_GOODS' | 'COMMON' | 'BLOCKED' | 'PERSONAL';
+  grn_line_id: string | null;
 };
 
 type PurchaseBillLinesRowInsert = Insertable<PurchaseBillLinesRow, 'purchase_bill_id' | 'dealer_id' | 'line_number' | 'line_type' | 'description' | 'quantity' | 'unit_rate' | 'taxable_value' | 'total_amount'>;
@@ -1361,9 +1461,54 @@ type PurchaseBillsRow = {
   created_by: string | null;
   updated_by: string | null;
   reverse_charge_tax: string;
+  tds_mode: 'AUTO' | 'NONE';
+  tds_section_code: string | null;
 };
 
 type PurchaseBillsRowInsert = Insertable<PurchaseBillsRow, 'dealer_id' | 'branch_id' | 'supplier_bill_number' | 'supplier_id'>;
+
+type PurchaseOrderLinesRow = {
+  id: string;
+  purchase_order_id: string;
+  dealer_id: string;
+  line_number: number;
+  line_type: 'ACCESSORY' | 'SPARE';
+  item_id: string;
+  source: 'LOCAL' | 'COMPANY';
+  description: string;
+  quantity: string;
+  unit_rate: string;
+  cgst_rate: string;
+  sgst_rate: string;
+  igst_rate: string;
+  entry_unit: string | null;
+  entry_quantity: string | null;
+  entry_rate: string | null;
+  entry_factor: string;
+};
+
+type PurchaseOrderLinesRowInsert = Insertable<PurchaseOrderLinesRow, 'purchase_order_id' | 'dealer_id' | 'line_number' | 'line_type' | 'item_id' | 'source' | 'description' | 'quantity' | 'unit_rate'>;
+
+type PurchaseOrdersRow = {
+  id: string;
+  dealer_id: string;
+  branch_id: string;
+  po_number: string;
+  supplier_id: string;
+  order_date: string;
+  expected_date: string | null;
+  status: 'DRAFT' | 'APPROVED' | 'PARTIAL' | 'RECEIVED' | 'CLOSED' | 'CANCELLED';
+  notes: string | null;
+  idempotency_key: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+type PurchaseOrdersRowInsert = Insertable<PurchaseOrdersRow, 'dealer_id' | 'branch_id' | 'supplier_id'>;
 
 type PurchaseReturnLinesRow = {
   id: string;
@@ -1671,6 +1816,14 @@ type SuppliersRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  tds_section_code: string | null;
+  tds_payee_type: 'INDIVIDUAL_HUF' | 'COMPANY' | 'FIRM_LLP' | 'OTHER' | null;
+  tds_pan_verified: boolean;
+  ldc_number: string | null;
+  ldc_rate: string | null;
+  ldc_valid_from: string | null;
+  ldc_valid_to: string | null;
+  ldc_limit: string | null;
 };
 
 type SuppliersRowInsert = Insertable<SuppliersRow, 'dealer_id' | 'name'>;
@@ -1712,6 +1865,90 @@ type TaxCodesRow = {
 };
 
 type TaxCodesRowInsert = Insertable<TaxCodesRow, 'dealer_id' | 'code' | 'name' | 'effective_from'>;
+
+type TdsDeductionsRow = {
+  id: string;
+  dealer_id: string;
+  purchase_bill_id: string;
+  supplier_id: string;
+  section_id: string;
+  section_code: string;
+  act: string;
+  section_ref: string;
+  bill_date: string;
+  base: string;
+  deductible_base: string;
+  rate: string;
+  rate_basis: 'SECTION' | 'NO_PAN' | 'CERTIFICATE' | 'BELOW_THRESHOLD';
+  amount: string;
+  certificate: string | null;
+  status: 'POSTED' | 'CANCELLED';
+  journal_entry_id: string | null;
+  remittance_id: string | null;
+  created_at: string;
+};
+
+type TdsDeductionsRowInsert = Insertable<TdsDeductionsRow, 'dealer_id' | 'purchase_bill_id' | 'supplier_id' | 'section_id' | 'section_code' | 'act' | 'section_ref' | 'bill_date' | 'base' | 'deductible_base' | 'rate' | 'rate_basis' | 'amount'>;
+
+type TdsDeductorRow = {
+  dealer_id: string;
+  tan: string | null;
+  enabled: boolean;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+type TdsDeductorRowInsert = Insertable<TdsDeductorRow, 'dealer_id'>;
+
+type TdsRemittancesRow = {
+  id: string;
+  dealer_id: string;
+  bank_account_id: string;
+  deposit_date: string;
+  challan_number: string;
+  bsr_code: string;
+  amount: string;
+  bank_transaction_id: number | null;
+  journal_entry_id: string | null;
+  idempotency_key: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type TdsRemittancesRowInsert = Insertable<TdsRemittancesRow, 'dealer_id' | 'bank_account_id' | 'deposit_date' | 'challan_number' | 'bsr_code' | 'amount'>;
+
+type TdsSectionsRow = {
+  id: string;
+  dealer_id: string;
+  code: string;
+  act: 'IT_1961' | 'IT_2025';
+  section_ref: string;
+  description: string;
+  payee_types: string[] | null;
+  rate: string;
+  rate_without_pan: string | null;
+  single_threshold: string | null;
+  aggregate_threshold: string | null;
+  threshold_basis: 'THIS_BILL' | 'WHOLE_AGGREGATE' | 'EXCESS_ONLY';
+  effective_from: string;
+  effective_to: string | null;
+  source_note: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type TdsSectionsRowInsert = Insertable<TdsSectionsRow, 'dealer_id' | 'code' | 'act' | 'section_ref' | 'description' | 'rate' | 'effective_from' | 'source_note'>;
+
+type UnitsRow = {
+  code: string;
+  name: string;
+  decimals: number;
+  gst_uqc: string;
+};
+
+type UnitsRowInsert = Insertable<UnitsRow, 'code' | 'name' | 'gst_uqc'>;
 
 type UserBranchesRow = {
   user_id: string;
@@ -2892,6 +3129,69 @@ export interface Database {
           },
         ];
       };
+      goods_receipt_lines: {
+        Row: GoodsReceiptLinesRow;
+        Insert: GoodsReceiptLinesRowInsert;
+        Update: Partial<GoodsReceiptLinesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'grl_item_tenant_fkey';
+            columns: ['item_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'inventory_items';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'grl_po_line_tenant_fkey';
+            columns: ['po_line_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_order_lines';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'grl_receipt_tenant_fkey';
+            columns: ['goods_receipt_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'goods_receipts';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      goods_receipts: {
+        Row: GoodsReceiptsRow;
+        Insert: GoodsReceiptsRowInsert;
+        Update: Partial<GoodsReceiptsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'goods_receipts_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'goods_receipts_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'goods_receipts_order_tenant_fkey';
+            columns: ['purchase_order_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_orders';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'goods_receipts_supplier_tenant_fkey';
+            columns: ['supplier_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'suppliers';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       gst_filed_documents: {
         Row: GstFiledDocumentsRow;
         Insert: GstFiledDocumentsRowInsert;
@@ -3031,11 +3331,25 @@ export interface Database {
             referencedColumns: ['id'];
           },
           {
+            foreignKeyName: 'inventory_items_group_tenant_fkey';
+            columns: ['item_group_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'item_groups';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
             foreignKeyName: 'inventory_items_hsn_tenant_fkey';
             columns: ['hsn_code_id', 'dealer_id'];
             isOneToOne: false;
             referencedRelation: 'hsn_codes';
             referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'inventory_items_uom_fkey';
+            columns: ['uom'];
+            isOneToOne: false;
+            referencedRelation: 'units';
+            referencedColumns: ['code'];
           },
         ];
       };
@@ -3134,6 +3448,55 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'gst_returns';
             referencedColumns: ['id'];
+          },
+        ];
+      };
+      item_groups: {
+        Row: ItemGroupsRow;
+        Insert: ItemGroupsRowInsert;
+        Update: Partial<ItemGroupsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'item_groups_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'item_groups_parent_tenant_fkey';
+            columns: ['parent_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'item_groups';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      item_unit_conversions: {
+        Row: ItemUnitConversionsRow;
+        Insert: ItemUnitConversionsRowInsert;
+        Update: Partial<ItemUnitConversionsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'item_unit_conversions_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'item_unit_conversions_unit_code_fkey';
+            columns: ['unit_code'];
+            isOneToOne: false;
+            referencedRelation: 'units';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'iuc_item_tenant_fkey';
+            columns: ['item_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'inventory_items';
+            referencedColumns: ['id', 'dealer_id'];
           },
         ];
       };
@@ -3312,6 +3675,41 @@ export interface Database {
           },
         ];
       };
+      narration_templates: {
+        Row: NarrationTemplatesRow;
+        Insert: NarrationTemplatesRowInsert;
+        Update: Partial<NarrationTemplatesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'narration_templates_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      opening_bills: {
+        Row: OpeningBillsRow;
+        Insert: OpeningBillsRowInsert;
+        Update: Partial<OpeningBillsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'opening_bills_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'opening_bills_line_tenant_fkey';
+            columns: ['line_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'journal_entry_lines';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       party_allocations: {
         Row: PartyAllocationsRow;
         Insert: PartyAllocationsRowInsert;
@@ -3408,6 +3806,13 @@ export interface Database {
             referencedColumns: ['id', 'dealer_id'];
           },
           {
+            foreignKeyName: 'pbl_grn_line_tenant_fkey';
+            columns: ['grn_line_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'goods_receipt_lines';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
             foreignKeyName: 'pbl_item_tenant_fkey';
             columns: ['item_id', 'dealer_id'];
             isOneToOne: false;
@@ -3451,6 +3856,62 @@ export interface Database {
           },
           {
             foreignKeyName: 'purchase_bills_supplier_tenant_fkey';
+            columns: ['supplier_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'suppliers';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      purchase_order_lines: {
+        Row: PurchaseOrderLinesRow;
+        Insert: PurchaseOrderLinesRowInsert;
+        Update: Partial<PurchaseOrderLinesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'pol_item_tenant_fkey';
+            columns: ['item_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'inventory_items';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'pol_order_tenant_fkey';
+            columns: ['purchase_order_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_orders';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'purchase_order_lines_entry_unit_fkey';
+            columns: ['entry_unit'];
+            isOneToOne: false;
+            referencedRelation: 'units';
+            referencedColumns: ['code'];
+          },
+        ];
+      };
+      purchase_orders: {
+        Row: PurchaseOrdersRow;
+        Insert: PurchaseOrdersRowInsert;
+        Update: Partial<PurchaseOrdersRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'purchase_orders_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'purchase_orders_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'purchase_orders_supplier_tenant_fkey';
             columns: ['supplier_id', 'dealer_id'];
             isOneToOne: false;
             referencedRelation: 'suppliers';
@@ -3835,6 +4296,96 @@ export interface Database {
           },
         ];
       };
+      tds_deductions: {
+        Row: TdsDeductionsRow;
+        Insert: TdsDeductionsRowInsert;
+        Update: Partial<TdsDeductionsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'tds_deductions_bill_tenant_fkey';
+            columns: ['purchase_bill_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'purchase_bills';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'tds_deductions_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'tds_deductions_remittance_tenant_fkey';
+            columns: ['remittance_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'tds_remittances';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'tds_deductions_section_tenant_fkey';
+            columns: ['section_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'tds_sections';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'tds_deductions_supplier_tenant_fkey';
+            columns: ['supplier_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'suppliers';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      tds_deductor: {
+        Row: TdsDeductorRow;
+        Insert: TdsDeductorRowInsert;
+        Update: Partial<TdsDeductorRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'tds_deductor_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      tds_remittances: {
+        Row: TdsRemittancesRow;
+        Insert: TdsRemittancesRowInsert;
+        Update: Partial<TdsRemittancesRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'tds_remittances_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      tds_sections: {
+        Row: TdsSectionsRow;
+        Insert: TdsSectionsRowInsert;
+        Update: Partial<TdsSectionsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'tds_sections_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      units: {
+        Row: UnitsRow;
+        Insert: UnitsRowInsert;
+        Update: Partial<UnitsRow>;
+        Relationships: [];
+      };
       user_branches: {
         Row: UserBranchesRow;
         Insert: UserBranchesRowInsert;
@@ -4123,6 +4674,10 @@ export interface Database {
         Args: { p_account_id: string; p_as_on: string };
         Returns: unknown;
       };
+      add_receipt_lines_to_bill: {
+        Args: { p_bill_id: string; p_lines: Json };
+        Returns: unknown;
+      };
       add_service_line: {
         Args: { p_invoice_id: string; p_line_type: string; p_description: string; p_quantity: number; p_unit_rate: number; p_item_id?: string | null; p_tax_code?: string | null; p_discount?: number | null };
         Returns: string;
@@ -4138,6 +4693,10 @@ export interface Database {
       allocate_stock: {
         Args: { p_item_id: string; p_branch_id: string; p_quantity: number };
         Returns: { source: string; quantity: string; unit_cost: string; available: string }[];
+      };
+      approve_purchase_order: {
+        Args: { p_order_id: string };
+        Returns: undefined;
       };
       attendance_summary: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
@@ -4167,6 +4726,10 @@ export interface Database {
         Args: { p_from: string; p_to: string };
         Returns: { branch_id: string; branch_code: string; branch_name: string; vehicle_units: number; vehicle_revenue: string; vehicle_cost: string; vehicle_margin: string; service_jobs: number; service_revenue: string; service_cost: string; bookings_open: number; booking_advances: string; cash_in_hand: string; receivables: string }[];
       };
+      cancel_goods_receipt: {
+        Args: { p_receipt_id: string; p_reason: string };
+        Returns: undefined;
+      };
       cancel_gst_note: {
         Args: { p_note_id: string; p_reason: string };
         Returns: string;
@@ -4186,6 +4749,14 @@ export interface Database {
       close_cash_day: {
         Args: { p_branch_id: string; p_date: string; p_physical_cash: number; p_denominations?: Json | null; p_remarks?: string | null };
         Returns: { expected: string; counted: string; difference: string }[];
+      };
+      close_financial_year: {
+        Args: { p_period_id: string };
+        Returns: undefined;
+      };
+      close_purchase_order: {
+        Args: { p_order_id: string; p_reason: string };
+        Returns: string;
       };
       complete_bank_reconciliation: {
         Args: { p_bank_account_id: string; p_from_date: string; p_to_date: string; p_statement_closing: number; p_notes?: string | null };
@@ -4227,6 +4798,10 @@ export interface Database {
         Args: { p_finance_company_id: string; p_branch_id: string; p_from: string; p_to: string; p_gross: number; p_commission?: number | null; p_deductions?: number | null; p_settlement_date?: string | null; p_notes?: string | null };
         Returns: { settlement_id: string; settlement_number: string }[];
       };
+      create_financial_year: {
+        Args: Record<string, never>;
+        Returns: string;
+      };
       create_job_card: {
         Args: { p_branch_id: string; p_customer_id: string; p_service_type?: string | null; p_registration_no?: string | null; p_odometer?: number | null; p_complaint?: string | null; p_customer_vehicle_id?: string | null; p_service_advisor_id?: string | null; p_technician_id?: string | null; p_promised_at?: string | null; p_job_date?: string | null };
         Returns: { job_card_id: string; job_card_number: string }[];
@@ -4237,6 +4812,10 @@ export interface Database {
       };
       create_payroll_run: {
         Args: { p_period: string; p_branch_id: string };
+        Returns: string;
+      };
+      create_purchase_order: {
+        Args: { p_branch_id: string; p_supplier_id: string; p_lines: Json; p_order_date?: string | null; p_expected_date?: string | null; p_notes?: string | null; p_idempotency_key?: string | null };
         Returns: string;
       };
       create_quick_bill: {
@@ -4270,6 +4849,10 @@ export interface Database {
       dashboard_unit_counts: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
         Returns: { vehicle_sales_units: number; bookings: number; deliveries: number; vehicle_stock_qty: number; accessory_stock_qty: string; spare_stock_qty: string; finance_units: number }[];
+      };
+      day_book: {
+        Args: { p_date: string; p_branch_id?: string | null };
+        Returns: { entry_id: string; entry_number: string; entry_time: string; document_type: string; document_ref: string; narration: string; status: string; branch_name: string; line_number: number; account_code: string; account_name: string; party_name: string; line_narration: string; debit: string; credit: string }[];
       };
       dealer_readiness: {
         Args: { p_dealer_id: string };
@@ -4315,6 +4898,10 @@ export interface Database {
         Args: { p_employee_id: string; p_as_on?: string | null };
         Returns: string;
       };
+      end_tds_section: {
+        Args: { p_section_id: string; p_effective_to: string };
+        Returns: undefined;
+      };
       ensure_cash_day: {
         Args: { p_branch_id: string; p_date?: string | null };
         Returns: string;
@@ -4354,6 +4941,10 @@ export interface Database {
       fixed_asset_register: {
         Args: { p_as_on?: string | null };
         Returns: { asset_id: string; asset_code: string; name: string; category: string; branch_name: string; account_code: string; acquired_on: string; method: string; cost: string; accumulated: string; net_book_value: string; status: string; last_period: string; disposed_on: string }[];
+      };
+      grni_outstanding: {
+        Args: Record<string, never>;
+        Returns: { grn_line_id: string; grn_number: string; receipt_date: string; supplier_name: string; description: string; unbilled: string; unit_cost: string; value: string }[];
       };
       gst_cross_checks: {
         Args: { p_gstin: string; p_period: string };
@@ -4435,6 +5026,14 @@ export interface Database {
         Args: { p_as_on?: string | null };
         Returns: { purchase_bill_id: string; bill_number: string; supplier_bill_number: string; supplier_name: string; branch_id: string; bill_date: string; days_outstanding: number; bill_total: string; unpaid: string; cgst_due: string; sgst_due: string; igst_due: string }[];
       };
+      ledger_master: {
+        Args: { p_search?: string | null; p_group_id?: string | null; p_from?: string | null; p_limit?: number | null; p_offset?: number | null; p_kind?: string | null; p_id?: string | null };
+        Returns: { kind: string; id: string; code: string; name: string; alias: string; group_id: string; group_name: string; account_type: string; opening: string; closing: string; status: string; contact: string; is_system: boolean }[];
+      };
+      ledger_opening_entered: {
+        Args: { p_kind: string; p_id: string };
+        Returns: unknown;
+      };
       loan_schedule: {
         Args: { p_loan_id: string };
         Returns: { instalment: number; due_date: string; emi: string; principal: string; interest: string; balance: string }[];
@@ -4491,8 +5090,16 @@ export interface Database {
         Args: { p_run_id: string; p_bank_account_id: string; p_date?: string | null };
         Returns: string;
       };
+      pending_purchase_orders: {
+        Args: { p_include_closed?: boolean | null };
+        Returns: { order_id: string; po_number: string; order_date: string; expected_date: string; status: string; supplier_name: string; branch_name: string; po_line_id: string; description: string; ordered: string; received: string; billed: string; pending: string; unit_rate: string; overdue: boolean }[];
+      };
       post_finance_settlement: {
         Args: { p_settlement_id: string; p_bank_account_id: string };
+        Returns: string;
+      };
+      post_goods_receipt: {
+        Args: { p_order_id: string; p_lines: Json; p_receipt_date?: string | null; p_transport?: Json | null; p_idempotency_key?: string | null };
         Returns: string;
       };
       post_gst_setoff: {
@@ -4506,6 +5113,10 @@ export interface Database {
       post_opening_balances: {
         Args: { p_party_type: string; p_rows: Json; p_as_on?: string | null; p_narration?: string | null; p_idempotency_key?: string | null; p_dealer_id?: string | null };
         Returns: { journal_entry_id: string; parties: number; total: string }[];
+      };
+      post_opening_bills: {
+        Args: { p_party_type: string; p_rows: Json; p_as_on?: string | null; p_idempotency_key?: string | null };
+        Returns: { journal_entry_id: string; bills: number; total: string }[];
       };
       post_payroll_run: {
         Args: { p_run_id: string };
@@ -4599,6 +5210,10 @@ export interface Database {
         Args: { p_loan_id: string; p_kind: string; p_bank_account_id: string; p_date: string; p_principal: number; p_interest?: number | null; p_idempotency_key?: string | null };
         Returns: string;
       };
+      record_money_voucher: {
+        Args: { p_book: string; p_direction: string; p_lines: Json; p_particular: string; p_branch_id?: string | null; p_bank_account_id?: string | null; p_date?: string | null; p_reference?: string | null; p_utr?: string | null; p_instrument?: string | null; p_idempotency_key?: string | null };
+        Returns: { transaction_id: number; journal_entry_id: string; balance_after: string }[];
+      };
       record_sale_payment: {
         Args: { p_sale_id: string; p_amount: number; p_payment_mode: string; p_reference?: string | null; p_finance_company_id?: string | null; p_idempotency_key?: string | null };
         Returns: { receipt_number: string; journal_entry_id: string }[];
@@ -4606,6 +5221,10 @@ export interface Database {
       record_service_payment: {
         Args: { p_invoice_id: string; p_amount: number; p_payment_mode?: string | null; p_reference?: string | null; p_date?: string | null; p_idempotency_key?: string | null };
         Returns: { payment_id: string; receipt_number: string; balance_due: string }[];
+      };
+      record_tds_remittance: {
+        Args: { p_bank_account_id: string; p_deposit_date: string; p_challan_number: string; p_bsr_code: string; p_deduction_ids: string; p_idempotency_key?: string | null };
+        Returns: string;
       };
       record_trade_advance: {
         Args: { p_finance_company_id: string; p_branch_id: string; p_type: string; p_amount: number; p_bank_account_id?: string | null; p_date?: string | null; p_narration?: string | null; p_reference?: string | null; p_idempotency_key?: string | null };
@@ -4629,6 +5248,10 @@ export interface Database {
       };
       reopen_cash_day: {
         Args: { p_branch_id: string; p_date: string; p_reason: string };
+        Returns: undefined;
+      };
+      reopen_financial_year: {
+        Args: { p_period_id: string; p_reason: string };
         Returns: undefined;
       };
       request_manual_journal: {
@@ -4663,6 +5286,10 @@ export interface Database {
         Args: { p_journal_entry_id: string; p_reason: string; p_reversal_date?: string | null };
         Returns: { journal_entry_id: string; entry_number: string }[];
       };
+      review_tds_section: {
+        Args: { p_section_id: string };
+        Returns: undefined;
+      };
       run_depreciation: {
         Args: { p_month: string };
         Returns: { assets: number; total: string; journals: number }[];
@@ -4687,6 +5314,10 @@ export interface Database {
         Args: { p_locked_through: string; p_reason: string };
         Returns: { locked_through: string; previous: string }[];
       };
+      set_ledger_opening_balance: {
+        Args: { p_kind: string; p_id: string; p_amount: number; p_side: string };
+        Returns: string;
+      };
       settle_counter_invoice: {
         Args: { p_invoice_id: string; p_payment_mode?: string | null; p_reference?: string | null; p_idempotency_key?: string | null };
         Returns: { journal_entry_id: string; receipt_number: string; amount_received: string }[];
@@ -4703,6 +5334,18 @@ export interface Database {
         Args: { p_bank_account_id: string; p_date_window?: number | null };
         Returns: { statement_line_id: number; statement_date: string; narration: string; debit: string; credit: string; transaction_id: number; transaction_date: string; particular: string; amount: string; confidence: string; reason: string }[];
       };
+      tds_control_check: {
+        Args: { p_as_on?: string | null };
+        Returns: { ledger_balance: string; unremitted: string; difference: string }[];
+      };
+      tds_preview: {
+        Args: { p_bill_id: string };
+        Returns: { section_code: string; act: string; section_ref: string; base: string; deductible_base: string; rate: string; rate_basis: string; amount: string; certificate: string }[];
+      };
+      tds_register: {
+        Args: { p_from: string; p_to: string };
+        Returns: { deduction_id: string; bill_date: string; bill_number: string; supplier_name: string; pan: string; payee_type: string; section_code: string; act: string; section_ref: string; base: string; deductible_base: string; rate: string; rate_basis: string; amount: string; status: string; challan_number: string; bsr_code: string; deposit_date: string }[];
+      };
       transfer_inventory_stock: {
         Args: { p_item_id: string; p_from_branch_id: string; p_to_branch_id: string; p_quantity: number; p_source?: string | null; p_remarks?: string | null };
         Returns: undefined;
@@ -4711,12 +5354,20 @@ export interface Database {
         Args: { p_as_on?: string | null; p_branch_id?: string | null };
         Returns: { account_id: string; account_code: string; account_name: string; account_type: string; debit_balance: string; credit_balance: string }[];
       };
+      unbilled_receipt_lines: {
+        Args: { p_supplier_id: string; p_branch_id?: string | null };
+        Returns: { grn_line_id: string; grn_number: string; receipt_date: string; po_number: string; item_id: string; description: string; source: string; received: string; billed: string; unbilled: string; unit_cost: string }[];
+      };
       unbilled_vehicles: {
         Args: { p_branch_id?: string | null; p_search?: string | null };
         Returns: { vehicle_id: string; chassis_no: string; engine_no: string; model_label: string; branch_name: string; purchase_cost: string; stock_date: string }[];
       };
       unmatch_bank_line: {
         Args: { p_statement_line_id: number };
+        Returns: undefined;
+      };
+      update_account: {
+        Args: { p_account_id: string; p_name: string; p_code: string; p_parent_id: string; p_alias?: string | null };
         Returns: undefined;
       };
       update_bank_account: {

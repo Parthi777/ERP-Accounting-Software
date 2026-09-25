@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 
-import { getTrialBalance } from '@/server/services/accounting/accounting-service';
+import { getChartOfAccounts, getTrialBalance, type ChartAccount } from '@/server/services/accounting/accounting-service';
 import { requireTenantContext } from '@/server/auth/tenant-context';
 import { PageHeader } from '@/components/data-table/data-table';
 import { SolidPanel } from '@/components/ui/panel';
@@ -11,6 +11,56 @@ import { ExportButtons } from '@/components/export/export-buttons';
 import { add, formatINR, ZERO, type Paise } from '@/lib/money';
 import { formatDate } from '@/lib/format';
 import { asOnInYear } from '@/lib/period';
+import { cn } from '@/lib/utils';
+
+type TbRow = Awaited<ReturnType<typeof getTrialBalance>>[number];
+type Line =
+  | { readonly kind: 'group'; readonly key: string; readonly name: string; readonly depth: number; readonly debit: Paise; readonly credit: Paise }
+  | { readonly kind: 'ledger'; readonly key: string; readonly row: TbRow; readonly depth: number };
+
+/**
+ * The trial balance under its groups, as BUSY prints it: each heading and
+ * group with the total of the ledgers beneath it, then the ledgers. Groups
+ * with nothing in them are left out. Any row the chart cannot place (none,
+ * in a healthy book) is listed at the end rather than dropped.
+ */
+function grouped(rows: readonly TbRow[], chart: readonly ChartAccount[]): Line[] {
+  const byCode = new Map(rows.map((r) => [r.code, r]));
+  const ids = new Set(chart.map((a) => a.id));
+  const children = new Map<string | null, ChartAccount[]>();
+  for (const a of chart) {
+    const key = a.parentId && ids.has(a.parentId) ? a.parentId : null;
+    children.set(key, [...(children.get(key) ?? []), a]);
+  }
+  const placed = new Set<string>();
+  const walk = (parent: string | null, depth: number): { lines: Line[]; debit: Paise; credit: Paise } => {
+    const lines: Line[] = [];
+    let debit = ZERO;
+    let credit = ZERO;
+    for (const a of (children.get(parent) ?? []).sort((x, y) => x.code.localeCompare(y.code))) {
+      if (a.isGroup) {
+        const sub = walk(a.id, depth + 1);
+        if (sub.lines.length === 0) continue;
+        lines.push({ kind: 'group', key: a.id, name: a.name, depth, debit: sub.debit, credit: sub.credit }, ...sub.lines);
+        debit = add(debit, sub.debit);
+        credit = add(credit, sub.credit);
+      } else {
+        const row = byCode.get(a.code);
+        if (!row) continue;
+        placed.add(a.code);
+        lines.push({ kind: 'ledger', key: a.code, row, depth });
+        debit = add(debit, row.debit);
+        credit = add(credit, row.credit);
+      }
+    }
+    return { lines, debit, credit };
+  };
+  const { lines } = walk(null, 0);
+  for (const row of rows) {
+    if (!placed.has(row.code)) lines.push({ kind: 'ledger', key: row.code, row, depth: 0 });
+  }
+  return lines;
+}
 
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
@@ -27,6 +77,11 @@ export default async function TrialBalancePage({
   const branchId = params.branch === 'all' ? null : (params.branch ?? null);
 
   const rows = await getTrialBalance(asOn, branchId);
+  // Grouped when the chart is readable to this role; flat otherwise.
+  const chart = context.permissions.has('accounting.coa.view') ? await getChartOfAccounts() : null;
+  const lines: Line[] = chart
+    ? grouped(rows, chart)
+    : rows.map((row) => ({ kind: 'ledger' as const, key: row.code, row, depth: 0 }));
 
   const totalDebit = rows.reduce<Paise>((sum, row) => add(sum, row.debit), ZERO);
   const totalCredit = rows.reduce<Paise>((sum, row) => add(sum, row.credit), ZERO);
@@ -71,23 +126,36 @@ export default async function TrialBalancePage({
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
-                  <tr key={row.code} className="border-t border-ink-100 hover:bg-brand-50/40">
-                    <td className="px-4 py-2 font-mono text-xs">
-                      {/* Every figure drillable to its transactions (spec §43). */}
-                      <Link
-                        href={`/accounting/ledger?code=${row.code}&to=${asOn}`}
-                        className="text-brand-700 hover:underline"
-                      >
-                        {row.code}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2 text-ink-800">{row.name}</td>
-                    <td className="px-4 py-2 text-xs text-ink-500">{row.type}</td>
-                    <td className="numeric px-4 py-2">{row.debit === 0 ? '—' : formatINR(row.debit)}</td>
-                    <td className="numeric px-4 py-2">{row.credit === 0 ? '—' : formatINR(row.credit)}</td>
-                  </tr>
-                ))
+                lines.map((line) =>
+                  line.kind === 'group' ? (
+                    <tr key={line.key} className="border-t border-ink-100 bg-ink-50/60">
+                      <td className="px-4 py-2" />
+                      <td className={cn('px-4 py-2', line.depth === 0 ? 'font-bold text-ink-900' : 'font-semibold text-ink-800')}
+                        style={{ paddingLeft: `${1 + line.depth * 1.25}rem` }}>
+                        {line.name}
+                      </td>
+                      <td className="px-4 py-2" />
+                      <td className="numeric px-4 py-2 font-semibold">{line.debit === 0 ? '—' : formatINR(line.debit)}</td>
+                      <td className="numeric px-4 py-2 font-semibold">{line.credit === 0 ? '—' : formatINR(line.credit)}</td>
+                    </tr>
+                  ) : (
+                    <tr key={line.key} className="border-t border-ink-100 hover:bg-brand-50/40">
+                      <td className="px-4 py-2 font-mono text-xs">
+                        {/* Every figure drillable to its transactions (spec §43). */}
+                        <Link
+                          href={`/accounting/ledger?code=${line.row.code}&to=${asOn}`}
+                          className="text-brand-700 hover:underline"
+                        >
+                          {line.row.code}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2 text-ink-800" style={{ paddingLeft: `${1 + line.depth * 1.25}rem` }}>{line.row.name}</td>
+                      <td className="px-4 py-2 text-xs text-ink-500">{line.row.type}</td>
+                      <td className="numeric px-4 py-2">{line.row.debit === 0 ? '—' : formatINR(line.row.debit)}</td>
+                      <td className="numeric px-4 py-2">{line.row.credit === 0 ? '—' : formatINR(line.row.credit)}</td>
+                    </tr>
+                  ),
+                )
               )}
             </tbody>
             <tfoot>

@@ -140,6 +140,7 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('gst.reports.view',                'gst',        'View GST reports', false),
   ('gst.notes.manage',                'gst',        'Issue and cancel credit and debit notes', false),
   ('gst.itc.manage',                  'gst',        'Reverse and re-claim input tax credit', false),
+  ('accounting.tds.manage',           'accounting', 'Manage TDS sections, payee profiles and remittances', false),
   ('gst.returns.prepare',             'gst',        'Import GSTR-2B and prepare GST returns', false),
   ('gst.returns.file',                'gst',        'Sign off and record the filing of GST returns', false),
 
@@ -460,6 +461,11 @@ begin
   for v_account in
     select * from (values
       ('1000', 'Assets',                    'ASSET',     'DEBIT',  true,  null,   false),
+      ('1001', 'Cash-in-Hand',              'ASSET',     'DEBIT',  true,  '1000', false),
+      ('1002', 'Bank Accounts',             'ASSET',     'DEBIT',  true,  '1000', false),
+      ('1003', 'Sundry Debtors',            'ASSET',     'DEBIT',  true,  '1000', false),
+      ('1004', 'Stock-in-Hand',             'ASSET',     'DEBIT',  true,  '1000', false),
+      ('1005', 'Current Assets',            'ASSET',     'DEBIT',  true,  '1000', false),
       ('1100', 'Cash',                      'ASSET',     'DEBIT',  false, '1000', true),
       ('1200', 'Bank',                      'ASSET',     'DEBIT',  false, '1000', true),
       ('1300', 'Customer Receivable',       'ASSET',     'DEBIT',  false, '1000', false),
@@ -477,6 +483,10 @@ begin
       ('1959', 'Accumulated Depreciation',  'ASSET',     'DEBIT',  false, '1950', false),
 
       ('2000', 'Liabilities',               'LIABILITY', 'CREDIT', true,  null,   false),
+      ('2001', 'Current Liabilities',       'LIABILITY', 'CREDIT', true,  '2000', false),
+      ('2002', 'Sundry Creditors',          'LIABILITY', 'CREDIT', true,  '2000', false),
+      ('2003', 'Duties & Taxes',            'LIABILITY', 'CREDIT', true,  '2000', false),
+      ('2004', 'Loans (Liability)',         'LIABILITY', 'CREDIT', true,  '2000', false),
       ('2100', 'Customer Advances',         'LIABILITY', 'CREDIT', false, '2000', false),
       ('2200', 'Supplier Payables',         'LIABILITY', 'CREDIT', false, '2000', false),
       ('2300', 'Output CGST',               'LIABILITY', 'CREDIT', false, '2000', false),
@@ -489,16 +499,23 @@ begin
       ('2730', 'ESI Payable',               'LIABILITY', 'CREDIT', false, '2000', false),
       ('2740', 'TDS Payable',               'LIABILITY', 'CREDIT', false, '2000', false),
       ('2750', 'Professional Tax Payable',  'LIABILITY', 'CREDIT', false, '2000', false),
+      ('2745', 'TDS Payable — Suppliers',   'LIABILITY', 'CREDIT', false, '2003', false),
+      ('2760', 'Goods Received Not Invoiced', 'LIABILITY', 'CREDIT', false, '2001', false),
       ('2590', 'GST Payable — Reverse Charge', 'LIABILITY', 'CREDIT', false, '2000', false),
       ('2800', 'Loans',                     'LIABILITY', 'CREDIT', false, '2000', false),
 
       ('3000', 'Equity',                    'EQUITY',    'CREDIT', true,  null,   false),
+      ('3001', 'Capital Account',           'EQUITY',    'CREDIT', true,  '3000', false),
+      ('3002', 'Reserves & Surplus',        'EQUITY',    'CREDIT', true,  '3000', false),
       ('3100', 'Share Capital',             'EQUITY',    'CREDIT', false, '3000', false),
       ('3200', 'Retained Earnings',         'EQUITY',    'CREDIT', false, '3000', false),
       ('3300', 'Opening Balance Equity',  'EQUITY',    'CREDIT', false, '3000', false),
       ('3400', 'Drawings',                  'EQUITY',    'CREDIT', false, '3000', false),
 
       ('4000', 'Income',                    'INCOME',    'CREDIT', true,  null,   false),
+      ('4001', 'Sales Accounts',            'INCOME',    'CREDIT', true,  '4000', false),
+      ('4002', 'Direct Incomes',            'INCOME',    'CREDIT', true,  '4000', false),
+      ('4003', 'Indirect Incomes',          'INCOME',    'CREDIT', true,  '4000', false),
       ('4100', 'Vehicle Sales',             'INCOME',    'CREDIT', false, '4000', true),
       ('4200', 'Accessories Sales',         'INCOME',    'CREDIT', false, '4000', true),
       ('4300', 'Spare Sales',               'INCOME',    'CREDIT', false, '4000', true),
@@ -512,6 +529,9 @@ begin
       ('4420', 'Consumables Sales',         'INCOME',    'CREDIT', false, '4000', true),
 
       ('5000', 'Costs and Expenses',        'EXPENSE',   'DEBIT',  true,  null,   false),
+      ('5001', 'Cost of Sales (Purchase)',  'EXPENSE',   'DEBIT',  true,  '5000', false),
+      ('5002', 'Direct Expenses',           'EXPENSE',   'DEBIT',  true,  '5000', false),
+      ('5003', 'Indirect Expenses',         'EXPENSE',   'DEBIT',  true,  '5000', false),
       ('5100', 'Vehicle COGS',              'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5200', 'Accessories COGS',          'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5300', 'Spare COGS',                'EXPENSE',   'DEBIT',  false, '5000', true),
@@ -566,6 +586,12 @@ begin
   perform app.seed_finance_deduction_accounts(v_dealer_id);
   -- Waterwash and consumables heads, and the quick-bill GST codes (0088).
   perform app.seed_quick_bill_accounts(v_dealer_id);
+  -- BUSY-style ledger groups (listed above) and the ledgers moved into them (0090).
+  perform app.seed_ledger_groups(v_dealer_id);
+  -- Goods Received Not Invoiced and its purchase-order posting rules (0092).
+  perform app.seed_purchase_order_accounts(v_dealer_id);
+  -- TDS Payable — Suppliers and its posting rule (0093).
+  perform app.seed_tds_accounts(v_dealer_id);
 
   -- ── One cash account per branch (spec §36) ────────────────────────────────
   -- Here rather than with the branches above, because a cash account needs a

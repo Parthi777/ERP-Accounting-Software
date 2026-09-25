@@ -14,12 +14,17 @@ import {
 } from '@/server/services/purchases/purchase-return-service';
 import { requirePermission, hasPermission } from '@/server/auth/tenant-context';
 import { PurchaseBillEditor } from '@/components/purchases/purchase-bill-editor';
+import { ReceiptLinesPicker } from '@/components/purchases/purchase-order-forms';
+import { getUnbilledReceiptLines } from '@/server/services/purchases/purchase-order-service';
+import { getTdsPreview } from '@/server/services/accounting/tds-service';
+import { setBillTdsModeAction } from '@/server/services/accounting/tds-actions';
+import { ActionForm } from '@/components/forms/action-form';
 import { PurchaseReturnForm } from '@/components/purchases/purchase-return-form';
 import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { Panel, PanelContent, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { add, formatINR, subtract, ZERO } from '@/lib/money';
+import { add, formatINR, fromRupees, subtract, ZERO } from '@/lib/money';
 import { formatDate, formatDateTime } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Purchase bill' };
@@ -49,7 +54,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
   // Only a draft can gain lines, so the pickers are only worth loading for one;
   // only a posted bill can be returned against, so the same holds there.
-  const [vehicles, pickers, returnable, notes, gstRates] = await Promise.all([
+  const [vehicles, pickers, returnable, notes, gstRates, receiptLines, tds] = await Promise.all([
     bill.status === 'DRAFT' && can.edit
       ? getUnbilledVehicles({ branchId: bill.branchId })
       : Promise.resolve([]),
@@ -62,6 +67,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     bill.status === 'DRAFT' ? Promise.resolve([]) : getReturnsForBill(bill.id),
     // From the tax master, never a list written into the editor (spec §16).
     bill.status === 'DRAFT' && can.edit ? getPurchaseGstRates() : Promise.resolve([]),
+    // Goods already received from this supplier, waiting for their bill (0092).
+    bill.status === 'DRAFT' && can.edit ? getUnbilledReceiptLines(bill.supplierId, bill.branchId) : Promise.resolve([]),
+    // What the bill will deduct as TDS when posted, or why it cannot post (0093).
+    bill.status === 'DRAFT' ? getTdsPreview(bill.id) : Promise.resolve({ preview: null, problem: null }),
   ]);
 
   // Reversed notes took nothing back, so they do not count against the bill.
@@ -104,6 +113,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <AttachmentsPanel entityType="PURCHASE_BILL" entityId={bill.id} revalidate={`/purchases/${bill.id}`} />
+
+          {bill.status === 'DRAFT' && can.edit && <ReceiptLinesPicker billId={bill.id} lines={receiptLines} />}
 
           <PurchaseBillEditor
             gstRates={gstRates}
@@ -154,6 +165,30 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </div>
 
         <div className="space-y-4">
+          {bill.status === 'DRAFT' && (tds.preview || tds.problem || bill.tdsMode === 'NONE') && (
+            <Panel>
+              <PanelHeader><PanelTitle>TDS</PanelTitle></PanelHeader>
+              <PanelContent>
+                {tds.problem && <p role="alert" className="mb-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{tds.problem}</p>}
+                {tds.preview && (
+                  <dl className="space-y-2">
+                    <Row label={`${tds.preview.sectionRef}`} value={`${tds.preview.rate}%`} />
+                    <Row label="Deducted on" value={formatINR(fromRupees(tds.preview.deductibleBase))} />
+                    <Row label="TDS kept back" value={formatINR(fromRupees(tds.preview.amount))} strong />
+                  </dl>
+                )}
+                {bill.tdsMode === 'NONE' && <p className="text-xs text-ink-600">Marked as bearing no TDS.</p>}
+                {can.edit && (
+                  <div className="mt-3">
+                    <ActionForm fields={[]} fixed={{ billId: bill.id, mode: bill.tdsMode === 'NONE' ? 'AUTO' : 'NONE' }}
+                      action={setBillTdsModeAction} columns={1}
+                      submitLabel={bill.tdsMode === 'NONE' ? 'Apply TDS to this bill' : 'This bill bears no TDS'} />
+                  </div>
+                )}
+              </PanelContent>
+            </Panel>
+          )}
+
           <Panel>
             <PanelHeader><PanelTitle>Summary</PanelTitle></PanelHeader>
             <PanelContent>

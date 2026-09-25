@@ -6,6 +6,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
+import { AmountInput } from '@/components/forms/amount-input';
 import { Input, Label } from '@/components/ui/input';
 import { SearchSelect } from '@/components/forms/search-select';
 import { useIdempotencyKey } from '@/components/forms/use-idempotency-key';
@@ -71,6 +72,7 @@ export function JournalEntryForm({
   defaultParty,
   defaultNarration = '',
   templates = [],
+  narrations,
   initialLines,
   afterPost = 'navigate',
   onDone,
@@ -88,6 +90,8 @@ export function JournalEntryForm({
   readonly defaultParty?: PartyOption;
   readonly defaultNarration?: string;
   readonly templates?: readonly JournalTemplate[];
+  /** Narration templates (0091), offered as suggestions; still editable. */
+  readonly narrations?: readonly string[];
   /** Pre-filled lines — correcting a posted entry starts from its lines. */
   readonly initialLines?: readonly { accountId: string; debit: number; credit: number; narration: string | null; party: string }[];
   /**
@@ -242,7 +246,13 @@ export function JournalEntryForm({
             <Input
               id="narration" value={narration} onChange={(e) => setNarration(e.target.value)}
               placeholder="Bank charges for August"
+              list={narrations?.length ? 'journal-narrations' : undefined}
             />
+            {narrations && narrations.length > 0 && (
+              <datalist id="journal-narrations">
+                {narrations.map((n) => <option key={n} value={n} />)}
+              </datalist>
+            )}
             <p className="mt-1 text-xs text-ink-400">
               What this entry is for. It is what makes the ledger readable a year from now.
             </p>
@@ -294,19 +304,19 @@ export function JournalEntryForm({
                     />
                   </td>
                   <td className="px-3 py-2">
-                    <Input
-                      type="number" step="0.01" min="0" className="numeric w-32"
+                    <AmountInput
+                      className="w-32" aria-label="Debit"
                       value={line.debit}
                       // A line is one side or the other; typing in one clears
                       // the other rather than letting both carry a figure.
-                      onChange={(e) => update(line.key, { debit: e.target.value, credit: '' })}
+                      onValueChange={(v) => update(line.key, { debit: v, credit: '' })}
                     />
                   </td>
                   <td className="px-3 py-2">
-                    <Input
-                      type="number" step="0.01" min="0" className="numeric w-32"
+                    <AmountInput
+                      className="w-32" aria-label="Credit"
                       value={line.credit}
-                      onChange={(e) => update(line.key, { credit: e.target.value, debit: '' })}
+                      onValueChange={(v) => update(line.key, { credit: v, debit: '' })}
                     />
                   </td>
                   <td className="px-3 py-2">

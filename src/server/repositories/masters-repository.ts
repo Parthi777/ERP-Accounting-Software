@@ -184,10 +184,12 @@ export async function listPickerOptions(): Promise<{
   accounts: { id: string; label: string }[];
   models: { id: string; label: string }[];
   taxCodes: { code: string; label: string }[];
+  units: { code: string; label: string }[];
+  itemGroups: { id: string; label: string }[];
 }> {
   const supabase = await createSupabaseServerClient();
 
-  const [hsn, accounts, models, taxes] = await Promise.all([
+  const [hsn, accounts, models, taxes, units, itemGroups] = await Promise.all([
     supabase.from('hsn_codes').select('id, code, description').eq('status', 'ACTIVE').order('code'),
     supabase
       .from('chart_of_accounts')
@@ -197,6 +199,9 @@ export async function listPickerOptions(): Promise<{
       .order('code'),
     supabase.from('vehicle_models').select('id, brand, name').eq('status', 'ACTIVE').order('brand'),
     supabase.from('tax_codes').select('code, name').eq('status', 'ACTIVE').order('code'),
+    // Units and item groups are masters since 0094 (F14, F15).
+    supabase.from('units').select('code, name, gst_uqc').order('code'),
+    supabase.from('item_groups').select('id, name').eq('status', 'ACTIVE').order('name'),
   ]);
 
   return {
@@ -207,5 +212,7 @@ export async function listPickerOptions(): Promise<{
     taxCodes: [
       ...new Map((taxes.data ?? []).map((r) => [r.code, { code: r.code, label: `${r.code} — ${r.name}` }])).values(),
     ],
+    units: (units.data ?? []).map((r) => ({ code: r.code, label: `${r.name} (${r.code})` })),
+    itemGroups: (itemGroups.data ?? []).map((r) => ({ id: r.id, label: r.name })),
   };
 }

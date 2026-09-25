@@ -67,10 +67,13 @@ begin
   -- Inter-Branch Stock in Transit; 62 since 0084 added 2590 GST Payable (RCM)
   -- and 5990 Input Tax Credit Reversed; 64 since 0087 added 5920 Finance
   -- Document Charges and 5930 Freight Charges; 66 since 0088 added 4410
-  -- Waterwash Income and 4420 Consumables Sales. Asserting the exact
+  -- Waterwash Income and 4420 Consumables Sales; 83 since 0090 added the
+  -- seventeen BUSY-style ledger groups; 84 since 0092 added 2760 Goods
+  -- Received Not Invoiced; 85 since 0093 added 2745 TDS Payable —
+  -- Suppliers. Asserting the exact
   -- number is deliberate: an account silently missing from a new dealer's chart
   -- is not visible until a posting rule cannot resolve it.
-  perform app_test.assert_equals(v_res.accounts_created, 66, 'the full chart of accounts is seeded');
+  perform app_test.assert_equals(v_res.accounts_created, 85, 'the full chart of accounts is seeded');
   perform app_test.assert_equals(v_res.rules_created > 0, true, 'and the accounting rules with it');
 
   -- ═══ It can actually trade ═══════════════════════════════════════════════
@@ -158,7 +161,7 @@ begin
 
   -- Their own chart of accounts, however, is there and complete.
   select count(*)::int into v_count from public.chart_of_accounts;
-  perform app_test.assert_equals(v_count, 66,
+  perform app_test.assert_equals(v_count, 85,
     'but their own chart of accounts is fully visible to them');
 end;
 $$;
@@ -228,7 +231,7 @@ do $$
 declare v_count int;
 begin
   select count(*)::int into v_count from public.chart_of_accounts;
-  perform app_test.assert_equals(v_count, 66,
+  perform app_test.assert_equals(v_count, 85,
     'and reactivating restores it — suspension is a switch, not a deletion');
 end;
 $$;

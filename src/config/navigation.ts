@@ -159,6 +159,7 @@ export const NAVIGATION: readonly NavSection[] = [
     permission: 'purchases.view',
     status: 'ready',
     items: [
+      { label: 'Purchase Orders', href: '/purchases/orders', permission: 'purchases.view', status: 'ready' },
       { label: 'Purchase Bills', href: '/purchases', permission: 'purchases.view', status: 'ready' },
       { label: 'New Purchase Bill', href: '/purchases/new', permission: 'purchases.create', status: 'ready' },
       { label: 'Purchase Returns', href: '/purchases/returns', permission: 'purchases.view', status: 'ready' },
@@ -217,7 +218,12 @@ export const NAVIGATION: readonly NavSection[] = [
     status: 'ready',
     items: [
       { label: 'Chart of Accounts', href: '/accounting/chart-of-accounts', permission: 'accounting.coa.view', status: 'ready' },
+      { label: 'Ledgers', href: '/accounting/ledgers', permission: 'accounting.coa.view', status: 'ready' },
+      { label: 'Ledger Groups', href: '/accounting/ledger-groups', permission: 'accounting.coa.view', status: 'ready' },
+      { label: 'Financial Years', href: '/accounting/financial-years', permission: 'accounting.journals.view', status: 'ready' },
+      { label: 'TDS', href: '/accounting/tds', permission: 'accounting.tds.manage', status: 'ready' },
       { label: 'Account Ledger', href: '/accounting/ledger', permission: 'accounting.ledgers.view', status: 'ready' },
+      { label: 'Day Book', href: '/accounting/day-book', permission: 'accounting.journals.view', status: 'ready' },
       { label: 'Journal Entries', href: '/accounting/journals', permission: 'accounting.journals.view', status: 'ready' },
       { label: 'New Journal Entry', href: '/accounting/journals/new', permission: 'accounting.journals.post', status: 'ready' },
       { label: 'Approvals', href: '/accounting/approvals', permission: 'accounting.journals.view', status: 'ready' },
@@ -325,6 +331,7 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Import Suppliers', href: '/masters/suppliers/upload', permission: 'masters.suppliers.manage', status: 'ready' },
       { label: 'Accessories', href: '/masters/accessories', permission: 'inventory.items.manage', status: 'ready' },
       { label: 'Spares', href: '/masters/spares', permission: 'inventory.items.manage', status: 'ready' },
+      { label: 'Item Groups', href: '/masters/item-groups', permission: 'inventory.view', status: 'ready' },
       { label: 'Pricing', href: '/masters/pricing', permission: 'masters.pricing.manage', status: 'ready', phase: 3 },
     ],
   },

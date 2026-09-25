@@ -45,3 +45,43 @@ export async function commitOpeningBalancesAction(
     return { ok: false, error: toAppError(error).userMessage };
   }
 }
+
+export async function previewOpeningBillsAction(
+  partyType: service.PartyType,
+  csv: string,
+  asOn: string,
+): Promise<service.OpeningBillPreview> {
+  try {
+    return await service.previewOpeningBills(partyType, csv, asOn);
+  } catch (error) {
+    return {
+      rows: [{
+        rowNumber: 0, party_code: '', party_name: '', bill_reference: '', bill_date: '', due_date: '', amount: '',
+        errors: [toAppError(error).userMessage],
+      }],
+      validCount: 0,
+      errorCount: 1,
+      headers: [],
+      total: 0,
+    };
+  }
+}
+
+export async function commitOpeningBillsAction(
+  partyType: service.PartyType,
+  csv: string,
+  asOn: string,
+  idempotencyKey: string,
+): Promise<service.OpeningBalanceResult> {
+  try {
+    const result = await service.commitOpeningBills(partyType, csv, asOn, idempotencyKey);
+    if (result.ok) {
+      revalidatePath('/accounting/trial-balance');
+      revalidatePath('/accounting/ageing');
+      revalidatePath('/accounting/ledgers');
+    }
+    return result;
+  } catch (error) {
+    return { ok: false, error: toAppError(error).userMessage };
+  }
+}
