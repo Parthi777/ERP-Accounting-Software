@@ -110,13 +110,16 @@ export default async function SettingsPage() {
           <PanelContent>
             <p className="mb-3 text-xs text-ink-500">
               The cashier types what the customer pays; GST is worked out of that amount at the code chosen here
-              for each head. A change applies to bills made from now on — earlier bills keep their tax.
+              for each head, and the line is reported in GSTR-1 under the HSN (goods) or SAC (services) given.
+              A change applies to bills made from now on — earlier bills keep theirs.
             </p>
-            <ActionForm action={saveQuickBillTaxCodesAction} submitLabel="Save GST codes" columns={3} resetOnSuccess={false}
-              fields={(Object.keys(HEAD_LABEL) as BillHead[]).map((head) => ({
-                name: head, label: HEAD_LABEL[head], type: 'select' as const, required: true,
-                defaultValue: quickBill.codes[head], options: quickBill.options,
-              }))} />
+            <ActionForm action={saveQuickBillTaxCodesAction} submitLabel="Save GST codes" columns={4} resetOnSuccess={false}
+              fields={(Object.keys(HEAD_LABEL) as BillHead[]).flatMap((head) => [
+                { name: head, label: `${HEAD_LABEL[head]} — GST`, type: 'select' as const, required: true,
+                  defaultValue: quickBill.codes[head], options: quickBill.options },
+                { name: `${head}_hsn`, label: `${HEAD_LABEL[head]} — HSN/SAC`, defaultValue: quickBill.hsn[head],
+                  placeholder: 'from the tax code' },
+              ])} />
           </PanelContent>
         </Panel>
       )}

@@ -120,6 +120,31 @@ begin
 end;
 $$;
 
+-- Rejected, and for the reason expected — a statement that fails for some other
+-- reason (a missing fixture, a typo) must not pass as proof of a guard.
+create or replace function app_test.assert_raises(p_sql text, p_message text, p_expected text)
+returns void
+language plpgsql
+as $$
+declare
+  v_error text;
+begin
+  begin
+    execute p_sql;
+  exception
+    when others then
+      v_error := sqlerrm;
+  end;
+  if v_error is null then
+    raise exception 'ASSERTION FAILED: % — statement was accepted but should have been rejected.', p_message;
+  end if;
+  if position(p_expected in v_error) = 0 then
+    raise exception 'ASSERTION FAILED: % — rejected, but for the wrong reason: %', p_message, v_error;
+  end if;
+  raise notice '  ok  % (rejected: %)', p_message, replace(v_error, E'\n', ' ');
+end;
+$$;
+
 -- The RLS tests run as `authenticated`, so that role needs to reach these helpers.
 grant usage on schema app_test to anon, authenticated, service_role;
 grant execute on all functions in schema app_test to anon, authenticated, service_role;

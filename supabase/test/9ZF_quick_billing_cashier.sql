@@ -123,4 +123,15 @@ begin
     (select created_by from public.journal_entries where id =
        (select journal_entry_id from public.service_invoices where id = v_inv)),
     '33333333-3333-4333-8333-333333333333'::uuid, 'the journal remembers the cashier who raised it');
+  perform app_test.assert_equals(
+    (select string_agg(line_type || ' ' || hsn_code, ', ' order by line_number) from public.service_lines where invoice_id = v_inv),
+    'SPARE 8714, LABOUR 998714, WATERWASH 998714, CONSUMABLES 87141010',
+    'each head is reported under its own HSN/SAC: services under SAC 998714, not the vehicle''s HSN (0089)');
+  perform app_test.assert_equals(
+    (select count(*)::int from public.service_history(null, 'TN34AZ1434')), 2,
+    'both visits appear in the service history, found by the vehicle number (0089)');
+  perform app_test.assert_equals(
+    (select visit_count || ' visits, ' || lifetime_value::numeric(18, 0) from public.customer_service_summary(
+       (select customer_id from public.service_invoices where id = v_inv))), '2 visits, 1800',
+    'and in the customer''s service rollup');
 end $$;

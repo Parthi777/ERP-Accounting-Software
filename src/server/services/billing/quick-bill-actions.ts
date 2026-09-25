@@ -33,10 +33,11 @@ export async function findBillCustomerAction(input: { mobile?: string; vehicleNo
 
 export async function saveQuickBillTaxCodesAction(v: Record<string, string>) {
   try {
-    const result = await service.setQuickBillTaxCodes({
-      SPARES: v.SPARES ?? 'GST18', ACCESSORIES: v.ACCESSORIES ?? 'GST18', LABOUR: v.LABOUR ?? 'GST18',
-      WATERWASH: v.WATERWASH ?? 'GST18', CONSUMABLES: v.CONSUMABLES ?? 'GST18', OTHER: v.OTHER ?? 'GST18',
-    });
+    const heads = ['SPARES', 'ACCESSORIES', 'LABOUR', 'WATERWASH', 'CONSUMABLES', 'OTHER'] as const;
+    const result = await service.setQuickBillTaxCodes(
+      Object.fromEntries(heads.map((h) => [h, v[h] || 'GST18'])) as Record<(typeof heads)[number], string>,
+      Object.fromEntries(heads.map((h) => [h, (v[`${h}_hsn`] ?? '').trim()])) as Record<(typeof heads)[number], string>,
+    );
     if (result.ok) revalidatePath('/admin/settings');
     return result;
   } catch (error) {

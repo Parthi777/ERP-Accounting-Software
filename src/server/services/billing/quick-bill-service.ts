@@ -245,30 +245,47 @@ export async function getPrintableBill(id: string): Promise<PrintableBill | null
 
 // ── Settings: the GST code for each head ─────────────────────────────────────
 
-export async function getQuickBillTaxCodes(): Promise<{ codes: Record<BillHead, string>; options: { value: string; label: string }[] }> {
+export async function getQuickBillTaxCodes(): Promise<{ codes: Record<BillHead, string>; hsn: Record<BillHead, string>; options: { value: string; label: string }[] }> {
   const context = await requireTenantContext();
   if (!context.permissions.has('admin.settings.manage')) throw new ForbiddenError('admin.settings.manage');
   const supabase = await createSupabaseServerClient();
-  const [{ data: setting }, { data: codes }] = await Promise.all([
+  const [{ data: setting }, { data: hsnSetting }, { data: codes }] = await Promise.all([
     supabase.from('system_settings').select('value').eq('key', 'quick_bill.tax_codes').eq('dealer_id', context.dealerId!).maybeSingle(),
+    supabase.from('system_settings').select('value').eq('key', 'quick_bill.hsn_codes').eq('dealer_id', context.dealerId!).maybeSingle(),
     supabase.from('tax_codes').select('code, name').eq('status', 'ACTIVE').is('effective_to', null).order('code'),
   ]);
   const value = (setting?.value ?? {}) as Partial<Record<BillHead, string>>;
   const heads: BillHead[] = ['SPARES', 'ACCESSORIES', 'LABOUR', 'WATERWASH', 'CONSUMABLES', 'OTHER'];
+  // The defaults create_quick_bill() applies when a head has no code (0089).
+  const hsnDefaults: Partial<Record<BillHead, string>> = { SPARES: '8714', ACCESSORIES: '8714', LABOUR: '998714', WATERWASH: '998714' };
+  const hsnValue = { ...hsnDefaults, ...((hsnSetting?.value ?? {}) as Partial<Record<BillHead, string>>) };
   return {
     codes: Object.fromEntries(heads.map((h) => [h, value[h] ?? 'GST18'])) as Record<BillHead, string>,
+    hsn: Object.fromEntries(heads.map((h) => [h, hsnValue[h] ?? ''])) as Record<BillHead, string>,
     options: (codes ?? []).map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` })),
   };
 }
 
-export async function setQuickBillTaxCodes(codes: Record<BillHead, string>): Promise<{ ok: boolean; error?: string; message?: string }> {
+export async function setQuickBillTaxCodes(
+  codes: Record<BillHead, string>,
+  hsn: Record<BillHead, string>,
+): Promise<{ ok: boolean; error?: string; message?: string }> {
   const context = await requireTenantContext();
   if (!context.permissions.has('admin.settings.manage')) return { ok: false, error: 'You may not change settings.' };
+  const bad = Object.entries(hsn).find(([, v]) => v && !/^[0-9]{4,8}$/.test(v));
+  if (bad) return { ok: false, error: `The HSN/SAC for ${HEAD_LABEL[bad[0] as BillHead]} must be 4 to 8 digits.` };
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from('system_settings').upsert({
-    dealer_id: context.dealerId!, key: 'quick_bill.tax_codes', value: codes as never, value_type: 'json',
-    description: 'GST code applied to each head of a quick service or counter bill (values entered are GST-inclusive).',
-    is_public: true, updated_by: context.userId,
-  }, { onConflict: 'dealer_id,key' });
-  return error ? { ok: false, error: error.message } : { ok: true, message: 'Saved. New bills use these rates.' };
+  const { error } = await supabase.from('system_settings').upsert([
+    {
+      dealer_id: context.dealerId!, key: 'quick_bill.tax_codes', value: codes as never, value_type: 'json',
+      description: 'GST code applied to each head of a quick service or counter bill (values entered are GST-inclusive).',
+      is_public: true, updated_by: context.userId,
+    },
+    {
+      dealer_id: context.dealerId!, key: 'quick_bill.hsn_codes', value: hsn as never, value_type: 'json',
+      description: 'HSN (goods) or SAC (services) each head of a quick bill is reported under in GSTR-1.',
+      is_public: true, updated_by: context.userId,
+    },
+  ], { onConflict: 'dealer_id,key' });
+  return error ? { ok: false, error: error.message } : { ok: true, message: 'Saved. New bills use these codes.' };
 }
