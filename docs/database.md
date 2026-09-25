@@ -80,6 +80,7 @@ Forward-only, applied in numerical order. Each file opens with its purpose and r
 | `0084_gst_categories_notes_rcm_itc.sql` | `tax_codes.tax_category`; `gst_notes` credit/debit notes (`issue_gst_note()`, `cancel_gst_note()`); reverse-charge and ITC-category purchase lines (2590 RCM payable); `itc_adjustments` with 5990; `itc_rule37_candidates()`, `gst_supply_categories()` |
 | `0085_gst_returns_2b_3b.sql` | `app.gst_outward_documents()` behind GSTR-1 (now with notes and transfer invoices); `gstr2b_imports` / `gstr2b_lines` and matching; `itc_claimable()`; `gstr3b_working()`, `gstr3b_setoff()`, `post_gst_setoff()`; `gst_returns` (prepare, sign off, file), `gst_filed_documents`, `itc_claim_lines`; `gstr1_amendments()`, `gst_cross_checks()` |
 | `0086_orphan_branch_reference.sql` | Data repair: a profile's default branch deleted with foreign keys suspended (found by the restore drill) |
+| `0087_finance_dd_deductions_party_journals.sql` | `receive_finance_dd()`: a financier's DD with its deductions (document charges, freight, other) charged to the customer or the dealer (5920, 5930), clearing Finance Receivable in full; journal lines may name only this dealer's customers, suppliers, finance companies and employees |
 
 No extensions are required. `gen_random_uuid()` has been core since PostgreSQL 13, and
 case-insensitive email uses a `lower()` unique index rather than `citext` — which keeps the

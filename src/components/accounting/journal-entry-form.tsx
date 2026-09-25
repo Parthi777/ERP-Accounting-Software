@@ -19,15 +19,30 @@ interface AccountOption {
   readonly type: string;
 }
 
+export type JournalPartyType = 'CUSTOMER' | 'SUPPLIER' | 'FINANCE_COMPANY';
+
+/** Someone a line can be held against — a customer, supplier or finance company. */
+export interface PartyOption {
+  readonly type: JournalPartyType;
+  readonly id: string;
+  readonly label: string;
+}
+
 interface Line {
   readonly key: number;
   accountId: string;
   debit: string;
   credit: string;
   narration: string;
+  /** `TYPE:id`, or '' for no party. */
+  party: string;
 }
 
-const blank = (key: number): Line => ({ key, accountId: '', debit: '', credit: '', narration: '' });
+const blank = (key: number): Line => ({ key, accountId: '', debit: '', credit: '', narration: '', party: '' });
+const partyKey = (p: { type: string; id: string }) => `${p.type}:${p.id}`;
+const TYPE_LABEL: Record<JournalPartyType, string> = {
+  CUSTOMER: 'Customer', SUPPLIER: 'Supplier', FINANCE_COMPANY: 'Finance co.',
+};
 
 /**
  * A journal entry written by hand — spec §9, §21.
@@ -44,12 +59,24 @@ const blank = (key: number): Line => ({ key, accountId: '', debit: '', credit: '
 export function JournalEntryForm({
   accounts,
   defaultAccountId,
+  parties = [],
+  defaultParty,
+  defaultNarration = '',
   afterPost = 'navigate',
   onDone,
 }: {
   readonly accounts: readonly AccountOption[];
   /** Pre-fills the first line — used when entering from an account's ledger. */
   readonly defaultAccountId?: string;
+  /**
+   * Who a line can be held against. A receivable, payable or finance line
+   * without one moves the control account but no one's ledger, so the party's
+   * statement and the tie-out stop agreeing.
+   */
+  readonly parties?: readonly PartyOption[];
+  /** Pre-fills the first line's party — entering from a customer's page. */
+  readonly defaultParty?: PartyOption;
+  readonly defaultNarration?: string;
   /**
    * 'navigate' opens the new entry; 'stay' refreshes in place, which is what an
    * inline panel on a ledger wants — the point of entering there is to see the
@@ -63,11 +90,13 @@ export function JournalEntryForm({
   const [error, setError] = React.useState<string | null>(null);
 
   const [entryDate, setEntryDate] = React.useState(() => new Date().toISOString().slice(0, 10));
-  const [narration, setNarration] = React.useState('');
-  const [lines, setLines] = React.useState<Line[]>(() => [
-    { ...blank(1), accountId: defaultAccountId ?? '' },
-    blank(2),
-  ]);
+  const [narration, setNarration] = React.useState(defaultNarration);
+  const firstLine = (key: number): Line => ({
+    ...blank(key),
+    accountId: defaultAccountId ?? '',
+    party: defaultParty ? partyKey(defaultParty) : '',
+  });
+  const [lines, setLines] = React.useState<Line[]>(() => [firstLine(1), blank(2)]);
   const nextKey = React.useRef(3);
 
   const idempotency = useIdempotencyKey('manual-journal');
@@ -76,6 +105,12 @@ export function JournalEntryForm({
     () => accounts.map((a) => ({ id: a.id, label: `${a.code} · ${a.name}` })),
     [accounts],
   );
+  const partyOptions = React.useMemo(() => {
+    const all = defaultParty && !parties.some((p) => partyKey(p) === partyKey(defaultParty))
+      ? [defaultParty, ...parties] : [...parties];
+    return all.map((p) => ({ id: partyKey(p), label: `${TYPE_LABEL[p.type]} · ${p.label}` }));
+  }, [parties, defaultParty]);
+  const showParty = partyOptions.length > 0;
 
   const totals = lines.reduce(
     (sum, l) => ({
@@ -103,6 +138,8 @@ export function JournalEntryForm({
             debit: Number(l.debit) > 0 ? fromRupees(Number(l.debit)) : paise(0),
             credit: Number(l.credit) > 0 ? fromRupees(Number(l.credit)) : paise(0),
             narration: l.narration || null,
+            partyType: l.party ? (l.party.split(':')[0] as JournalPartyType) : null,
+            partyId: l.party ? l.party.split(':')[1] : null,
           })),
         idempotencyKey: idempotency.key(),
       });
@@ -123,8 +160,8 @@ export function JournalEntryForm({
 
       // Reset for the next line rather than clearing to nothing: someone adding
       // entries against one account is usually adding several.
-      setLines([{ ...blank(nextKey.current++), accountId: defaultAccountId ?? '' }, blank(nextKey.current++)]);
-      setNarration('');
+      setLines([firstLine(nextKey.current++), blank(nextKey.current++)]);
+      setNarration(defaultNarration);
       router.refresh();
       onDone?.();
     });
@@ -165,7 +202,7 @@ export function JournalEntryForm({
             <caption className="sr-only">Journal lines</caption>
             <thead>
               <tr className="border-b border-ink-100">
-                {['Account', 'Narration', 'Debit', 'Credit', ''].map((h) => (
+                {['Account', ...(showParty ? ['Party'] : []), 'Narration', 'Debit', 'Credit', ''].map((h) => (
                   <th key={h} scope="col" className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-500">
                     {h}
                   </th>
@@ -184,6 +221,17 @@ export function JournalEntryForm({
                       onChange={(id) => update(line.key, { accountId: id })}
                     />
                   </td>
+                  {showParty && (
+                    <td className="min-w-56 px-3 py-2">
+                      <SearchSelect
+                        name={`party-${line.key}`}
+                        options={partyOptions}
+                        defaultValue={line.party}
+                        placeholder="No party"
+                        onChange={(id) => update(line.key, { party: id })}
+                      />
+                    </td>
+                  )}
                   <td className="px-3 py-2">
                     <Input
                       value={line.narration}
@@ -222,7 +270,7 @@ export function JournalEntryForm({
             </tbody>
             <tfoot>
               <tr className="border-t border-ink-200 bg-ink-50/60">
-                <td className="px-3 py-2 text-xs font-medium text-ink-600" colSpan={2}>Total</td>
+                <td className="px-3 py-2 text-xs font-medium text-ink-600" colSpan={showParty ? 3 : 2}>Total</td>
                 <td className="numeric px-3 py-2 font-semibold">{formatINR(fromRupees(totals.debit))}</td>
                 <td className="numeric px-3 py-2 font-semibold">{formatINR(fromRupees(totals.credit))}</td>
                 <td />

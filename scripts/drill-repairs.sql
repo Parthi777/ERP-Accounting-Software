@@ -8,8 +8,5 @@
 -- holds. Remove a repair once production has the migration.
 -- =============================================================================
 
--- 0086: a profile's default branch deleted with foreign keys suspended.
-update public.user_profiles p
-   set default_branch_id = null
- where p.default_branch_id is not null
-   and not exists (select 1 from public.branches b where b.id = p.default_branch_id);
+-- (none pending: 0086 is applied in production, and its repair removed from here.)
+select 1;

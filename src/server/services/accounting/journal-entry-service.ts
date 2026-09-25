@@ -238,6 +238,42 @@ export async function getPostableAccounts(): Promise<
   }));
 }
 
+/**
+ * Who a journal line can be held against (0087): customers, suppliers and
+ * finance companies of this dealer. The database refuses any other party.
+ */
+export async function getJournalParties(options: { readonly customers?: boolean } = {}): Promise<
+  readonly { type: 'CUSTOMER' | 'SUPPLIER' | 'FINANCE_COMPANY'; id: string; label: string }[]
+> {
+  await requirePermission('accounting.journals.view');
+  const supabase = await createSupabaseServerClient();
+  const [finance, suppliers, customers] = await Promise.all([
+    supabase.from('finance_companies').select('id, code, name').eq('status', 'ACTIVE').order('name'),
+    supabase.from('suppliers').select('id, supplier_code, name').order('name').limit(2000),
+    options.customers === false
+      ? Promise.resolve({ data: [] as { id: string; customer_code: string; name: string; mobile: string | null }[] })
+      : supabase.from('customers').select('id, customer_code, name, mobile').order('name').limit(3000),
+  ]);
+  return [
+    ...(finance.data ?? []).map((f) => ({ type: 'FINANCE_COMPANY' as const, id: f.id, label: `${f.name} (${f.code})` })),
+    ...(suppliers.data ?? []).map((x) => ({ type: 'SUPPLIER' as const, id: x.id, label: `${x.name} (${x.supplier_code})` })),
+    ...(customers.data ?? []).map((c) => ({
+      type: 'CUSTOMER' as const, id: c.id,
+      label: `${c.name} (${c.customer_code}${c.mobile ? ` · ${c.mobile}` : ''})`,
+    })),
+  ];
+}
+
+/** The account a customer's balance sits on: the invoice rule's receivable. */
+export async function getReceivableAccountId(): Promise<string | null> {
+  await requirePermission('accounting.journals.view');
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase.from('accounting_rules').select('account_id')
+    .eq('module', 'SALES').eq('event', 'INVOICE').eq('component', 'RECEIVABLE').eq('status', 'ACTIVE')
+    .is('branch_id', null).limit(1).maybeSingle();
+  return data?.account_id ?? null;
+}
+
 function describeJournalError(message: string): string {
   // The database names the line and the account for these, which is already
   // the message an operator needs; rewording it would lose the line number.

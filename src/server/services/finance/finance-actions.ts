@@ -14,6 +14,8 @@ function refresh() {
   revalidatePath('/accounting/journals');
   revalidatePath('/reports/finance');
   revalidatePath('/dashboard');
+  // The customer's page shows their finance and their ledger.
+  revalidatePath('/customers', 'layout');
 }
 
 export async function createFinanceApplicationAction(
@@ -52,6 +54,18 @@ export async function disburseFinanceApplicationAction(input: {
 }): Promise<service.FinanceResult> {
   try {
     const result = await service.disburseFinanceApplication(input);
+    if (result.ok) refresh();
+    return result;
+  } catch (error) {
+    return { ok: false, error: toAppError(error).userMessage };
+  }
+}
+
+export async function receiveFinanceDdAction(
+  input: Parameters<typeof service.receiveFinanceDd>[0],
+): Promise<service.FinanceResult> {
+  try {
+    const result = await service.receiveFinanceDd(input);
     if (result.ok) refresh();
     return result;
   } catch (error) {

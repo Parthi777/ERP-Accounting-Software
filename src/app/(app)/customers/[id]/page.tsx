@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Pencil } from 'lucide-react';
+import { ArrowLeft, BookOpen, FileText, Pencil } from 'lucide-react';
 
 import { getCustomer, getCustomer360 } from '@/server/services/customers/customer-service';
 import { requireTenantContext } from '@/server/auth/tenant-context';
@@ -44,6 +44,8 @@ export default async function CustomerDetailPage({
   const summary = await getCustomer360(customer.id);
 
   const canEdit = context.permissions.has('customers.edit');
+  // Tallying a customer's account is the accountant's job (spec §6).
+  const canJournal = context.permissions.has('accounting.journals.post');
   const branch = context.accessibleBranches.find((b) => b.id === customer.origin_branch_id);
 
   const identity: { label: string; value: string }[] = [
@@ -86,14 +88,30 @@ export default async function CustomerDetailPage({
             <p className="mt-0.5 font-mono text-sm text-ink-500">{customer.customer_code}</p>
           </div>
 
-          {canEdit && (
+          <div className="flex flex-wrap gap-2">
+            {canJournal && (
+              <Button asChild>
+                <Link href={`/customers/${customer.id}/journal`}>
+                  <BookOpen aria-hidden />
+                  Journal entry
+                </Link>
+              </Button>
+            )}
             <Button variant="secondary" asChild>
-              <Link href={`/customers/${customer.id}/edit`}>
-                <Pencil aria-hidden />
-                Edit
+              <Link href={`/customers/ledger?customer=${customer.id}`}>
+                <FileText aria-hidden />
+                Ledger
               </Link>
             </Button>
-          )}
+            {canEdit && (
+              <Button variant="secondary" asChild>
+                <Link href={`/customers/${customer.id}/edit`}>
+                  <Pencil aria-hidden />
+                  Edit
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

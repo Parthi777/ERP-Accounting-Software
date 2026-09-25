@@ -303,6 +303,8 @@ const RPC = new Set([
   'import_gstr2b', 'match_gstr2b', 'gstr2b_reconciliation', 'itc_claimable', 'gstr3b_working',
   'gstr3b_setoff', 'prepare_gst_return', 'sign_off_gst_return', 'record_gst_filing', 'post_gst_setoff',
   'gstr1_amendments', 'gst_cross_checks',
+  // Finance DD with deductions (0087).
+  'receive_finance_dd',
 ]);
 
 function argsType(args) {

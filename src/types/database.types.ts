@@ -770,6 +770,7 @@ type FinanceApplicationsRow = {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  deductions_amount: string;
 };
 
 type FinanceApplicationsRowInsert = Insertable<FinanceApplicationsRow, 'dealer_id' | 'branch_id' | 'application_number' | 'customer_id' | 'finance_company_id'>;
@@ -823,7 +824,7 @@ type FinanceTransactionsRow = {
   branch_id: string;
   finance_company_id: string;
   transaction_date: string;
-  transaction_type: 'ADVANCE_RECEIVED' | 'VEHICLE_ADJUSTMENT' | 'SETTLEMENT' | 'REFUND' | 'COMMISSION' | 'MANUAL_ADJUSTMENT' | 'DISBURSEMENT';
+  transaction_type: 'ADVANCE_RECEIVED' | 'VEHICLE_ADJUSTMENT' | 'SETTLEMENT' | 'REFUND' | 'COMMISSION' | 'MANUAL_ADJUSTMENT' | 'DISBURSEMENT' | 'DEDUCTION';
   debit: string;
   credit: string;
   balance_after: string;
@@ -4535,6 +4536,10 @@ export interface Database {
       };
       queue_eway_bill: {
         Args: { p_document_type: string; p_document_id: string; p_transport_mode?: string | null; p_vehicle_number?: string | null; p_distance_km?: number | null; p_transporter_id?: string | null; p_transporter_name?: string | null };
+        Returns: string;
+      };
+      receive_finance_dd: {
+        Args: { p_application_id: string; p_bank_account_id: string; p_dd_amount: number; p_deductions?: Json | null; p_dd_number?: string | null; p_bank_reference?: string | null; p_date?: string | null; p_idempotency_key?: string | null };
         Returns: string;
       };
       receive_vehicle_transfer: {

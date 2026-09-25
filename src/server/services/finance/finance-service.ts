@@ -331,6 +331,87 @@ export async function disburseFinanceApplication(input: {
   return { ok: true, message: 'Recorded. The bank book and the company ledger both show it.' };
 }
 
+export type DeductionKind = 'DOCUMENT_CHARGES' | 'FREIGHT' | 'OTHER';
+export type DeductionBearer = 'CUSTOMER' | 'DEALER';
+
+export interface FinanceDeduction {
+  readonly kind: DeductionKind;
+  /** Rupees. */
+  readonly amount: number;
+  readonly borneBy: DeductionBearer;
+  readonly note?: string | null;
+}
+
+/**
+ * A finance company's DD, and what it kept back from the loan (0087).
+ *
+ * The DD reaches the bank; each deduction is charged to the customer (their
+ * ledger, to be collected) or to the dealer (an expense); and Finance
+ * Receivable falls by the whole amount settled, so the company's ledger
+ * clears instead of carrying the deductions forever.
+ */
+export async function receiveFinanceDd(input: {
+  readonly applicationId: string;
+  readonly bankAccountId: string;
+  /** Rupees. */
+  readonly ddAmount: number;
+  readonly deductions: readonly FinanceDeduction[];
+  readonly ddNumber?: string | null;
+  readonly bankReference?: string | null;
+  readonly date?: string | null;
+  readonly idempotencyKey: string;
+}): Promise<FinanceResult> {
+  const context = await requirePermission('finance.applications.manage');
+  const supabase = await createSupabaseServerClient();
+
+  const deductions = input.deductions.filter((d) => d.amount > 0);
+  if (!(input.ddAmount >= 0)) return { ok: false, error: 'Enter the DD amount.' };
+  if (input.ddAmount > 0 && !input.bankAccountId) {
+    return { ok: false, error: 'Choose the bank account the DD was deposited in.' };
+  }
+  if (deductions.some((d) => d.kind === 'OTHER' && !d.note?.trim())) {
+    return { ok: false, error: 'Say what the other deduction is for.' };
+  }
+
+  const { data, error } = await supabase.rpc('receive_finance_dd', {
+    p_application_id: input.applicationId,
+    p_bank_account_id: input.bankAccountId,
+    p_dd_amount: input.ddAmount,
+    p_deductions: deductions.map((d) => ({
+      kind: d.kind, amount: d.amount, borne_by: d.borneBy, note: d.note?.trim() || null,
+    })) as never,
+    p_dd_number: input.ddNumber?.trim() || undefined,
+    p_bank_reference: input.bankReference?.trim() || undefined,
+    p_date: input.date || undefined,
+    p_idempotency_key: input.idempotencyKey,
+  });
+
+  if (error) {
+    console.error('[finance] DD failed', error.message);
+    return { ok: false, error: describeFinanceError(error.message) };
+  }
+
+  await recordAudit({
+    action: 'POST',
+    entityType: 'finance_applications',
+    entityId: input.applicationId,
+    dealerId: context.dealerId,
+    branchId: context.activeBranch?.id ?? null,
+    userId: context.userId,
+    userEmail: context.email,
+    newData: { dd: input.ddAmount, ddNumber: input.ddNumber, deductions },
+  });
+
+  const kept = deductions.reduce((sum, d) => sum + d.amount, 0);
+  return {
+    ok: true,
+    id: String(data ?? ''),
+    message: kept > 0
+      ? 'DD recorded, with the deductions charged as chosen. The finance company is cleared by the full amount.'
+      : 'DD recorded. The bank book and the company ledger both show it.',
+  };
+}
+
 // ── Trade advances — spec §26 ────────────────────────────────────────────────
 
 export { TRADE_ADVANCE_TYPES, BANK_BACKED_TYPES } from '@/lib/finance/trade-advance';

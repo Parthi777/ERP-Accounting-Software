@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
 import { requirePermission } from '@/server/auth/tenant-context';
-import { getPostableAccounts } from '@/server/services/accounting/journal-entry-service';
+import { getJournalParties, getPostableAccounts } from '@/server/services/accounting/journal-entry-service';
 import { JournalEntryForm } from '@/components/accounting/journal-entry-form';
 import { PageHeader } from '@/components/data-table/data-table';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function NewJournalPage() {
   await requirePermission('accounting.journals.post');
-  const accounts = await getPostableAccounts();
+  const [accounts, parties] = await Promise.all([getPostableAccounts(), getJournalParties()]);
 
   return (
     <>
@@ -27,7 +27,7 @@ export default async function NewJournalPage() {
         }
       />
 
-      <JournalEntryForm accounts={accounts} />
+      <JournalEntryForm accounts={accounts} parties={parties} />
     </>
   );
 }

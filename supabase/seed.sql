@@ -518,6 +518,8 @@ begin
       ('5700', 'Utilities',                 'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5800', 'Bank Charges',              'EXPENSE',   'DEBIT',  false, '5000', true),
       ('5900', 'Other Expenses',            'EXPENSE',   'DEBIT',  false, '5000', true),
+      ('5920', 'Finance Document Charges',  'EXPENSE',   'DEBIT',  false, '5000', false),
+      ('5930', 'Freight Charges',           'EXPENSE',   'DEBIT',  false, '5000', false),
       ('5950', 'Depreciation',              'EXPENSE',   'DEBIT',  false, '5000', false),
       ('5960', 'Interest Expense',          'EXPENSE',   'DEBIT',  false, '5000', false),
       ('5970', 'Stock Adjustments',         'EXPENSE',   'DEBIT',  false, '5000', false),
@@ -556,6 +558,8 @@ begin
   perform app.seed_purchase_accounting_rules(v_dealer_id);
   -- RCM payable, ITC reversed and the nil/exempt/non-GST tax codes (0084).
   perform app.seed_gst_compliance(v_dealer_id);
+  -- Document charges and freight a financier keeps back from its DD (0087).
+  perform app.seed_finance_deduction_accounts(v_dealer_id);
 
   -- ── One cash account per branch (spec §36) ────────────────────────────────
   -- Here rather than with the branches above, because a cash account needs a
