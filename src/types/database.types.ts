@@ -601,6 +601,46 @@ type EinvoicesRow = {
 
 type EinvoicesRowInsert = Insertable<EinvoicesRow, 'dealer_id' | 'document_type' | 'document_id' | 'document_number' | 'document_date'>;
 
+type EmployeeClaimsRow = {
+  id: string;
+  dealer_id: string;
+  hr_claim_id: string;
+  claim_no: number | null;
+  hr_voucher_no: number | null;
+  employee_id: string;
+  employee_name: string;
+  employee_code: string | null;
+  branch_id: string | null;
+  hr_branch_id: string;
+  claim_type: string;
+  type_label: string;
+  title: string;
+  description: string | null;
+  amount: string;
+  approved_at: string | null;
+  approved_by: string | null;
+  has_photo: boolean;
+  has_document: boolean;
+  hr_status: string;
+  status: 'AWAITING_MAPPING' | 'APPROVED' | 'PAID' | 'CANCELLED' | 'NEEDS_REVIEW';
+  accrual_journal_id: string | null;
+  reversal_journal_id: string | null;
+  payment_journal_id: string | null;
+  cash_transaction_id: number | null;
+  bank_transaction_id: number | null;
+  paid_at: string | null;
+  paid_by: string | null;
+  payment_ref: string | null;
+  callback_status: 'NONE' | 'PENDING' | 'SENT' | 'FAILED';
+  callback_attempts: number;
+  callback_error: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type EmployeeClaimsRowInsert = Insertable<EmployeeClaimsRow, 'dealer_id' | 'hr_claim_id' | 'employee_id' | 'employee_name' | 'hr_branch_id' | 'claim_type' | 'type_label' | 'title' | 'amount' | 'hr_status' | 'status'>;
+
 type EmployeeDocumentsRow = {
   id: string;
   dealer_id: string;
@@ -1055,6 +1095,54 @@ type Gstr2bLinesRow = {
 
 type Gstr2bLinesRowInsert = Insertable<Gstr2bLinesRow, 'import_id' | 'dealer_id' | 'supplier_gstin' | 'document_number'>;
 
+type HrBranchMapRow = {
+  id: string;
+  dealer_id: string;
+  hr_branch_id: string;
+  hr_branch_name: string;
+  branch_id: string | null;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+type HrBranchMapRowInsert = Insertable<HrBranchMapRow, 'dealer_id' | 'hr_branch_id' | 'hr_branch_name'>;
+
+type HrClaimHeadsRow = {
+  id: string;
+  dealer_id: string;
+  claim_type: string;
+  label: string;
+  account_id: string | null;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+type HrClaimHeadsRowInsert = Insertable<HrClaimHeadsRow, 'dealer_id' | 'claim_type' | 'label'>;
+
+type HrInboundEventsRow = {
+  id: string;
+  dealer_id: string;
+  event_id: string;
+  event_type: string;
+  received_at: string;
+  outcome: string;
+  error: string | null;
+};
+
+type HrInboundEventsRowInsert = Insertable<HrInboundEventsRow, 'dealer_id' | 'event_id' | 'event_type' | 'outcome'>;
+
+type HrLinksRow = {
+  dealer_id: string;
+  workspace_slug: string | null;
+  workspace_name: string | null;
+  last_claims_sync_at: string | null;
+  last_people_sync_at: string | null;
+  last_error: string | null;
+  updated_at: string;
+};
+
+type HrLinksRowInsert = Insertable<HrLinksRow, 'dealer_id'>;
+
 type HsnCodesRow = {
   id: string;
   dealer_id: string;
@@ -1391,6 +1479,7 @@ type PayrollRunsRow = {
   posted_at: string | null;
   posted_by: string | null;
   paid_at: string | null;
+  source: 'ERP' | 'HR';
 };
 
 type PayrollRunsRowInsert = Insertable<PayrollRunsRow, 'dealer_id' | 'branch_id' | 'period'>;
@@ -2800,6 +2889,34 @@ export interface Database {
           },
         ];
       };
+      employee_claims: {
+        Row: EmployeeClaimsRow;
+        Insert: EmployeeClaimsRowInsert;
+        Update: Partial<EmployeeClaimsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'employee_claims_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'employee_claims_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'employee_claims_employee_tenant_fkey';
+            columns: ['employee_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'employees';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
       employee_documents: {
         Row: EmployeeDocumentsRow;
         Insert: EmployeeDocumentsRowInsert;
@@ -3301,6 +3418,76 @@ export interface Database {
             isOneToOne: false;
             referencedRelation: 'gstr2b_imports';
             referencedColumns: ['id', 'dealer_id'];
+          },
+        ];
+      };
+      hr_branch_map: {
+        Row: HrBranchMapRow;
+        Insert: HrBranchMapRowInsert;
+        Update: Partial<HrBranchMapRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'hr_branch_map_branch_tenant_fkey';
+            columns: ['branch_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'branches';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'hr_branch_map_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      hr_claim_heads: {
+        Row: HrClaimHeadsRow;
+        Insert: HrClaimHeadsRowInsert;
+        Update: Partial<HrClaimHeadsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'hr_claim_heads_account_tenant_fkey';
+            columns: ['account_id', 'dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'chart_of_accounts';
+            referencedColumns: ['id', 'dealer_id'];
+          },
+          {
+            foreignKeyName: 'hr_claim_heads_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      hr_inbound_events: {
+        Row: HrInboundEventsRow;
+        Insert: HrInboundEventsRowInsert;
+        Update: Partial<HrInboundEventsRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'hr_inbound_events_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      hr_links: {
+        Row: HrLinksRow;
+        Insert: HrLinksRowInsert;
+        Update: Partial<HrLinksRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'hr_links_dealer_id_fkey';
+            columns: ['dealer_id'];
+            isOneToOne: false;
+            referencedRelation: 'dealers';
+            referencedColumns: ['id'];
           },
         ];
       };
@@ -4986,6 +5173,22 @@ export interface Database {
         Args: { p_gstin: string; p_period: string };
         Returns: { section: string; description: string; taxable_value: string; igst_amount: string; cgst_amount: string; sgst_amount: string }[];
       };
+      hr_mark_callback: {
+        Args: { p_dealer_id: string; p_claim_id: string; p_ok: boolean; p_error?: string | null };
+        Returns: undefined;
+      };
+      hr_receive_event: {
+        Args: { p_dealer_id: string; p_event_id: string; p_type: string; p_data: Json };
+        Returns: string;
+      };
+      hr_record_sync_error: {
+        Args: { p_dealer_id: string; p_error: string };
+        Returns: undefined;
+      };
+      hr_sync_batch: {
+        Args: { p_dealer_id: string; p_claims: Json; p_employees: Json; p_workspace?: Json | null };
+        Returns: unknown;
+      };
       ignore_bank_line: {
         Args: { p_statement_line_id: number };
         Returns: undefined;
@@ -5001,6 +5204,10 @@ export interface Database {
       import_gstr2b: {
         Args: { p_gstin: string; p_period: string; p_lines: Json; p_file_name?: string | null };
         Returns: string;
+      };
+      import_hr_payroll: {
+        Args: { p_period: string; p_lines: Json };
+        Returns: unknown;
       };
       inventory_condition_report: {
         Args: { p_branch_id?: string | null };
@@ -5037,6 +5244,14 @@ export interface Database {
       loan_schedule: {
         Args: { p_loan_id: string };
         Returns: { instalment: number; due_date: string; emi: string; principal: string; interest: string; balance: string }[];
+      };
+      map_hr_branch: {
+        Args: { p_hr_branch_id: string; p_branch_id: string };
+        Returns: unknown;
+      };
+      map_hr_claim_head: {
+        Args: { p_claim_type: string; p_account_id: string };
+        Returns: unknown;
       };
       margin_report: {
         Args: { p_from: string; p_to: string; p_branch_id?: string | null };
@@ -5085,6 +5300,10 @@ export interface Database {
       party_statement_opening: {
         Args: { p_party_type: string; p_party_id: string; p_as_on: string };
         Returns: unknown;
+      };
+      pay_employee_claims: {
+        Args: { p_claim_ids: string; p_book: string; p_branch_id?: string | null; p_bank_account_id?: string | null; p_date?: string | null; p_reference?: string | null; p_idempotency_key?: string | null };
+        Returns: { transaction_id: number; journal_entry_id: string; balance_after: string }[];
       };
       pay_payroll_run: {
         Args: { p_run_id: string; p_bank_account_id: string; p_date?: string | null };
@@ -5265,6 +5484,10 @@ export interface Database {
       resolve_account: {
         Args: { p_dealer_id: string; p_module: string; p_event: string; p_component: string; p_branch_id?: string | null };
         Returns: string;
+      };
+      resolve_employee_claim_review: {
+        Args: { p_claim_id: string; p_note: string };
+        Returns: undefined;
       };
       resolve_tax_code: {
         Args: { p_dealer_id: string; p_code: string; p_on_date?: string | null };

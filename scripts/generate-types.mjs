@@ -321,6 +321,9 @@ const RPC = new Set([
   // TDS (0093).
   'review_tds_section', 'end_tds_section', 'tds_preview', 'record_tds_remittance', 'tds_register',
   'tds_control_check',
+  // The HR Payroll app (0095).
+  'hr_receive_event', 'hr_sync_batch', 'hr_record_sync_error', 'hr_mark_callback', 'map_hr_claim_head',
+  'map_hr_branch', 'pay_employee_claims', 'resolve_employee_claim_review', 'import_hr_payroll',
 ]);
 
 function argsType(args) {

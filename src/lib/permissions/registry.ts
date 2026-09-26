@@ -116,6 +116,8 @@ export const PERMISSIONS = [
   { code: 'hr.attendance.view', module: 'hr', description: 'View the attendance register' },
   { code: 'hr.attendance.sync', module: 'hr', description: 'Pull attendance from the external system' },
   { code: 'hr.attendance.edit', module: 'hr', description: 'Correct an attendance day by hand' },
+  { code: 'hr.claims.view', module: 'hr', description: 'View employee claims from the HR app' },
+  { code: 'hr.claims.pay', module: 'hr', description: 'Pay approved employee claims from the cash or bank book' },
   { code: 'hr.mapping.manage', module: 'hr', description: 'Map employees to the external attendance system' },
 
   // ── Service ───────────────────────────────────────────────────────────────

@@ -251,6 +251,7 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Cash Receipts', href: '/cash-book/receipts', permission: 'cashbook.receipts.create', status: 'ready', phase: 5 },
       { label: 'Cash Payments', href: '/cash-book/payments', permission: 'cashbook.payments.create', status: 'ready', phase: 5 },
       { label: 'Day Close', href: '/cash-book/day-close', permission: 'cashbook.day_close', status: 'ready', phase: 5 },
+      { label: 'Claims to Pay', href: '/cash-book/claims', permission: 'hr.claims.view', status: 'ready' },
     ],
   },
   {
@@ -313,6 +314,7 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Attendance', href: '/hr/attendance', permission: 'hr.attendance.view', status: 'ready' },
       { label: 'Payroll', href: '/hr/payroll', permission: 'hr.payroll.run', status: 'ready' },
       { label: 'Shifts & Leave', href: '/hr/settings', permission: 'masters.employees.view', status: 'ready' },
+      { label: 'HR App Link', href: '/hr/integration', permission: 'hr.mapping.manage', status: 'ready' },
     ],
   },
   {

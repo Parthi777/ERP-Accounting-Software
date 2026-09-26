@@ -118,6 +118,8 @@ insert into public.permissions (code, module, description, is_sensitive) values
   ('hr.attendance.sync',              'hr',         'Pull attendance from the external system', false),
   ('hr.attendance.edit',              'hr',         'Correct an attendance day by hand', false),
   ('hr.mapping.manage',               'hr',         'Map employees to the external attendance system', false),
+  ('hr.claims.view',                  'hr',         'View employee claims from the HR app', false),
+  ('hr.claims.pay',                   'hr',         'Pay approved employee claims from the cash or bank book', false),
   ('accounting.reports.view',         'accounting', 'View trial balance, P&L and balance sheet', false),
 
   ('cashbook.view',                   'cashbook',   'View the daily cash book', false),
@@ -242,7 +244,8 @@ select r.id, p.code
           -- the accountant is usually an employee too (see migration 0053).
           'hr.settings.manage', 'hr.leave.view', 'hr.leave.manage',
           'hr.documents.view', 'hr.documents.manage',
-          'hr.attendance.view', 'hr.attendance.sync', 'hr.attendance.edit', 'hr.mapping.manage'
+          'hr.attendance.view', 'hr.attendance.sync', 'hr.attendance.edit', 'hr.mapping.manage',
+          'hr.claims.view', 'hr.claims.pay'
         )
    );
 
@@ -263,7 +266,9 @@ select r.id, p.code
      'vehicles.stock.view', 'vehicles.pricing.view',
      'service.billing.create', 'service.payments.collect',
      'inventory.counter_sale.create',
-     'cashbook.view', 'cashbook.receipts.create', 'cashbook.payments.create'
+     'cashbook.view', 'cashbook.receipts.create', 'cashbook.payments.create',
+     -- Paying claims approved in the HR app (0095).
+     'hr.claims.view', 'hr.claims.pay'
    );
 
 -- SALES_EXECUTIVE: customers, bookings, sale preparation, vehicle availability.
@@ -501,6 +506,7 @@ begin
       ('2750', 'Professional Tax Payable',  'LIABILITY', 'CREDIT', false, '2000', false),
       ('2745', 'TDS Payable — Suppliers',   'LIABILITY', 'CREDIT', false, '2003', false),
       ('2760', 'Goods Received Not Invoiced', 'LIABILITY', 'CREDIT', false, '2001', false),
+      ('2770', 'Employee Claims Payable',   'LIABILITY', 'CREDIT', false, '2001', false),
       ('2590', 'GST Payable — Reverse Charge', 'LIABILITY', 'CREDIT', false, '2000', false),
       ('2800', 'Loans',                     'LIABILITY', 'CREDIT', false, '2000', false),
 
@@ -592,6 +598,8 @@ begin
   perform app.seed_purchase_order_accounts(v_dealer_id);
   -- TDS Payable — Suppliers and its posting rule (0093).
   perform app.seed_tds_accounts(v_dealer_id);
+  -- Employee Claims Payable, for claims approved in the HR app (0095).
+  perform app.seed_hr_claim_accounts(v_dealer_id);
 
   -- ── One cash account per branch (spec §36) ────────────────────────────────
   -- Here rather than with the branches above, because a cash account needs a

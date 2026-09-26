@@ -76,6 +76,17 @@ const serverSchema = z.object({
   ATTENDANCE_API_KEY_HEADER: z.string().default('x-api-key'),
   /** Path appended to the base URL for the attendance query. */
   ATTENDANCE_API_PATH: z.string().default('/attendance'),
+
+  // The HR Payroll app (0095): claims, people, payroll. Unconfigured is "not
+  // connected", never an error. HR_API_KEY and HR_WEBHOOK_SECRET are shown once
+  // in the HR app under Accounting ERP → Connect.
+  HR_API_BASE_URL: z.string().url().optional().or(z.literal('')),
+  HR_API_KEY: z.string().optional(),
+  HR_WEBHOOK_SECRET: z.string().optional(),
+  /** Which dealer (dealers.code) the HR workspace belongs to. */
+  HR_DEALER_CODE: z.string().optional(),
+  /** Shared secret for a scheduler calling /api/integrations/hr/sync. */
+  HR_SYNC_SECRET: z.string().min(16).optional().or(z.literal('')),
 });
 
 type ServerEnv = z.infer<typeof serverSchema>;
@@ -108,6 +119,11 @@ export function serverEnv(): ServerEnv {
     GST_API_GSTIN: process.env.GST_API_GSTIN,
     SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET,
     ATTENDANCE_API_BASE_URL: process.env.ATTENDANCE_API_BASE_URL,
+    HR_API_BASE_URL: process.env.HR_API_BASE_URL,
+    HR_API_KEY: process.env.HR_API_KEY,
+    HR_WEBHOOK_SECRET: process.env.HR_WEBHOOK_SECRET,
+    HR_DEALER_CODE: process.env.HR_DEALER_CODE,
+    HR_SYNC_SECRET: process.env.HR_SYNC_SECRET,
     ATTENDANCE_API_KEY: process.env.ATTENDANCE_API_KEY,
     ATTENDANCE_API_AUTH: process.env.ATTENDANCE_API_AUTH,
     ATTENDANCE_API_KEY_HEADER: process.env.ATTENDANCE_API_KEY_HEADER,

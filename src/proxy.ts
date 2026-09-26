@@ -4,7 +4,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isSupabaseConfigured, publicEnv } from '@/config/env';
 
 /** Routes reachable without a session. */
-const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/setup', '/api/health'];
+const PUBLIC_PATHS = [
+  '/login', '/forgot-password', '/reset-password', '/setup', '/api/health',
+  // Called by the HR app and by a scheduler, never by a browser. Each proves
+  // itself — an HMAC signature, a shared secret — inside the route handler.
+  '/api/integrations/hr/webhook', '/api/integrations/hr/sync',
+];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
